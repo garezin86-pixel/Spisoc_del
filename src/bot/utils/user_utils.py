@@ -5,8 +5,8 @@ from src.bot.keyboards.main import (
     main_menu_admin,
     main_menu_user,
     task_edit_keyboard,
-    main_menu_manager,  # добавить импорт
-    task_edit_manager_keyboard,  # добавить импорт
+    main_menu_manager,
+    task_edit_manager_keyboard,
 )
 
 
