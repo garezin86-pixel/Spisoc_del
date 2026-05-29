@@ -1,0 +1,30 @@
+services:
+  app:
+    env_file:
+      - path: .env.prod
+        required: false
+    environment:
+      ENV: production
+    restart: always
+
+  bot:
+    env_file:
+      - path: .env.prod
+        required: false
+    environment:
+      ENV: production
+    restart: always
+
+  postgres:
+    ports: []
+    restart: always
+
+  redis:
+    ports: []
+    restart: always
+
+  prometheus:
+    restart: always
+
+  grafana:
+    restart: always

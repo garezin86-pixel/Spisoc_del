@@ -1,0 +1,29 @@
+# Виртуальное окружение
+venv/
+.venv/
+venv_linux/
+
+# Переменные окружения
+.env
+.env.dev
+.env.prod
+
+# Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# База данных
+*.db
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+
+# Логи
+*.log
+
+# Alembic (если не нужно коммитить кэш)
+alembic/versions/__pycache__/

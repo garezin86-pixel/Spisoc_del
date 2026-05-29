@@ -1,0 +1,44 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="container-xl">
+    <div class="page-header">
+        <div class="row align-items-center">
+            <div class="col-auto">
+                <h2 class="page-title">Новый комментарий</h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+
+            <div class="mb-3">
+                <label class="form-label text-muted">Задача ID</label>
+                <div class="form-control-plaintext fw-bold">{{ task_id }}</div>
+            </div>
+
+            <form method="POST">
+                <input type="hidden" name="task_id" value="{{ task_id }}">
+
+                <div class="mb-3">
+                    <label class="form-label">Комментарий</label>
+                    <textarea
+                        name="content"
+                        class="form-control"
+                        rows="5"
+                        placeholder="Введите комментарий..."
+                        required
+                    ></textarea>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                    <a href="javascript:history.back()" class="btn btn-secondary">Назад</a>
+                </div>
+            </form>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

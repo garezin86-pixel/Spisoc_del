@@ -1,0 +1,127 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+
+<head>
+    <meta charset="UTF-8">
+    <title>Статистика — Админка</title>
+    <style>
+        body {
+            background: #f8f9fa;
+            font-family: sans-serif;
+            padding: 0px;
+        }
+
+        .card {
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+            margin-bottom: 20px;
+        }
+
+        .stat-num {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .progress {
+            height: 25px;
+            border-radius: 12px;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="max-width:1000px; margin:0 auto;">
+        <div style="display:flex; align-items:center; gap:16px; margin-bottom:30px;">
+            <a href="/admin/" style="color:#6c757d;text-decoration:none;font-size:14px;">← Назад к админке</a>
+            <h1 style="margin:0;">📊 Общая статистика</h1>
+        </div>
+
+        <div class="card p-4">
+            <h4 class="mb-3">👥 Пользователи</h4>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="metric">
+                        <span>Всего пользователей</span>
+                        <span class="metric-value text-primary">{{total_users}}</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="metric">
+                        <span>Активных</span>
+                        <span class="metric-value text-success">{{active_users}}</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="metric">
+                        <span>Администраторов</span>
+                        <span class="metric-value text-warning">{{admin_users}}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-4">
+            <h4 class="mb-3">📋 Задачи</h4>
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <div class="metric">
+                        <span>Всего задач</span>
+                        <span class="metric-value text-primary">{{total_tasks}}</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="metric">
+                        <span>Выполнено</span>
+                        <span class="metric-value text-success">{{done_tasks}}</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="metric">
+                        <span>В работе</span>
+                        <span class="metric-value text-warning">{{pending_tasks}}</span>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="font-weight:600;">Процент выполнения всех задач</span>
+                    <span style="font-weight:700; color:#198754;">{{completion_rate}}%</span>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar bg-success"
+                        style="width:{completion_rate}%; border-radius:12px; font-size:14px; font-weight:600;">
+                        {{completion_rate}}%
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card p-4 text-center">
+                    <div class="stat-num text-info">{{total_groups}}</div>
+                    <div style="color:#6c757d; font-size:16px;">Групп</div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-4 text-center">
+                    <div class="stat-num text-secondary">{{total_comments}}</div>
+                    <div style="color:#6c757d; font-size:16px;">Комментариев</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+{% endblock %}

@@ -1,0 +1,19 @@
+services:
+  app:
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      ENV: dev
+    command: sh -c "alembic upgrade head && uvicorn src/main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - .:/app
+
+  bot:
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      ENV: dev
+    volumes:
+      - .:/app

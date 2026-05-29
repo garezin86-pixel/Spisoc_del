@@ -1,0 +1,27 @@
+бэкенд + тг бот:
+python run.py
+
+фронтенд:
+cd frontend
+npm install
+npm run dev
+
+
+
+http://localhost:8000/metrics   - метрика 
+http://localhost:3000/d/spisok-del-dashboard/ - графана логин и пароль admin
+http://localhost:9090/targets - Prometheus  
+
+
+INSERT INTO users (
+    username,
+    password_hash,
+    role,
+    is_active
+)
+VALUES (
+    'admin1',
+    '$2b$12$2ZUaFgfxFxzYg6BNLOmsT.PI1sMa6mu4Ei9EZY8BlmreE9he30.6a',
+    'admin',
+    true
+);

@@ -1,0 +1,137 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+
+<head>
+    <meta charset="UTF-8">
+    <title>Статус системы — Админка</title>
+    <style>
+        body {
+            background: #f8f9fa;
+            font-family: sans-serif;
+            padding: 0px;
+        }
+
+        .card {
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+            margin-bottom: 20px;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .status-ok {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .metric {
+            margin-bottom: 10px;
+        }
+
+        .metric-label {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .metric-value {
+            font-weight: 700;
+        }
+
+        .progress {
+            height: 20px;
+            border-radius: 10px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="max-width:1000px; margin:0 auto;">
+        <div style="display:flex; align-items:center; gap:16px; margin-bottom:30px;">
+            <a href="/admin/" style="color:#6c757d;text-decoration:none;font-size:14px;">← Назад к админке</a>
+            <h1 style="margin:0;">🔄 Статус системы</h1>
+        </div>
+
+        <div class="card p-4">
+            <h4 class="mb-3">💻 Система</h4>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="metric">
+                        <span class="metric-label">ОС:</span>
+                        <span class="metric-value">{{system_info['os']}} {{system_info['os_version']}}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Python:</span>
+                        <span class="metric-value">{{system_info['python_version']}}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">CPU ядер:</span>
+                        <span class="metric-value">{{system_info['cpu_count']}}</span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="metric">
+                        <span class="metric-label">Память:</span>
+                        <span class="metric-value">{{system_info['memory_used']}} GB / {{system_info['memory_total']}}
+                            GB</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-info"
+                            style="width:{ system_info['memory_percent'] or 0 }%; border-radius:10px;">
+                            {{system_info['memory_percent']}}%
+                        </div>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Диск:</span>
+                        <span class="metric-value">{{system_info['disk_used']}} GB / {{system_info['disk_total']}}
+                            GB</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-warning"
+                            style="width:{ system_info['disk_percent'] or 0 }%; border-radius:10px;">
+                            {{system_info['disk_percent']}}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-4">
+            <h4 class="mb-3">🔧 Компоненты</h4>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="metric">
+                        <span class="metric-label">База данных:</span>
+                        <span
+                            class="status-badge {{'status-ok' if '✅' in db_status else 'status-error'}}">{{db_status}}</span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="metric">
+                        <span class="metric-label">Telegram бот:</span>
+                        <span
+                            class="status-badge {{'status-ok' if '✅' in bot_status else 'status-error'}}">{{bot_status}}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-4">
+            <h4 class="mb-3">🕒 Время последнего обновления</h4>
+            <p style="margin:0; color:#6c757d;">{{datetime_now}}</p>
+            <small style="color:#6c757d;">Обновляется при каждом заходе на страницу</small>
+        </div>
+    </div>
+</body>
+{% endblock %}

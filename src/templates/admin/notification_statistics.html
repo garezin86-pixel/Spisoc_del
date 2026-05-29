@@ -1,0 +1,110 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>📊 Статистика уведомлений</h2>
+
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card text-white bg-primary">
+                <div class="card-body">
+                    <h5 class="card-title">Всего уведомлений</h5>
+                    <p class="card-text display-4">{{ total }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-success">
+                <div class="card-body">
+                    <h5 class="card-title">Успешно</h5>
+                    <p class="card-text display-4">{{ total_success }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-danger">
+                <div class="card-body">
+                    <h5 class="card-title">Ошибки</h5>
+                    <p class="card-text display-4">{{ total - total_success }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <h3>По типам уведомлений</h3>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Тип</th>
+                        <th>Всего</th>
+                        <th>Успешно</th>
+                        <th>% успеха</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for type in type_stats %}
+                    <tr>
+                        <td>{{ type.notification_type }}</td>
+                        <td>{{ type.count }}</td>
+                        <td>{{ type.success_count }}</td>
+                        <td>{{ (type.success_count / type.count * 100) | round(1) if type.count > 0 else 0 }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="col-md-6">
+            <h3>Топ пользователей</h3>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Пользователь</th>
+                        <th>Telegram ID</th>
+                        <th>Всего</th>
+                        <th>Успешно</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in top_users %}
+                    <tr>
+                        <td>{{ user.username }}</td>
+                        <td>{{ user.telegram_id }}</td>
+                        <td>{{ user.total }}</td>
+                        <td>{{ user.success }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <!-- После таблицы топ пользователей, внутри row или новым row -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <h3>За последние 7 дней</h3>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Всего</th>
+                        <th>Успешно</th>
+                        <th>% успеха</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in daily_stats %}
+                    <tr>
+                        <td>{{ day.date }}</td>
+                        <td>{{ day.count }}</td>
+                        <td>{{ day.success_count }}</td>
+                        <td>{{ (day.success_count / day.count * 100) | round(1) if day.count > 0 else 0 }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

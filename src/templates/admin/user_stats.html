@@ -1,0 +1,120 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div style="max-width:900px; margin:0 auto; padding:30px; background:#f8f9fa; font-family:sans-serif;">
+
+    <!-- Заголовок -->
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:24px;">
+        <a href="{{ urls.list }}" 
+        style="color:#6c757d;text-decoration:none;font-size:14px;">
+            ← Назад к пользователям
+        </a>
+    </div>
+
+    <!-- Профиль пользователя -->
+    <div class="card p-4 mb-4" style="border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h2 style="margin:0;">👤 {{ user.username }}</h2>
+                <div style="color:#6c757d; margin-top:4px;">
+                    Роль: <strong>{{ user.role }}</strong> &nbsp;·&nbsp; {{ active_badge | safe }}
+                </div>
+            </div>
+
+            <a href="{{ urls.toggle }}"
+               style="padding:8px 18px; border-radius:8px; font-size:14px; text-decoration:none; color:#fff;
+                      background:{% if user.is_active %}#dc3545{% else %}#198754{% endif %};">
+                {% if user.is_active %}
+                    Отключить пользователя ✗
+                {% else %}
+                    Включить пользователя ✓
+                {% endif %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Карточки статистики -->
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:24px;">
+        <div class="card p-3 text-center" style="border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+            <div class="stat-num text-primary" style="font-size:2.2rem; font-weight:700;">{{ total }}</div>
+            <div style="color:#6c757d; font-size:14px;">Назначено задач</div>
+        </div>
+        <div class="card p-3 text-center" style="border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+            <div class="stat-num text-success" style="font-size:2.2rem; font-weight:700;">{{ done }}</div>
+            <div style="color:#6c757d; font-size:14px;">Выполнено</div>
+        </div>
+        <div class="card p-3 text-center" style="border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+            <div class="stat-num text-warning" style="font-size:2.2rem; font-weight:700;">{{ pending }}</div>
+            <div style="color:#6c757d; font-size:14px;">В работе</div>
+        </div>
+    </div>
+
+    <!-- Прогресс-бар -->
+    <div class="card p-4 mb-4" style="border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-weight:600;">Процент выполнения</span>
+            <span style="font-weight:700; color:#198754;">{{ percent }}%</span>
+        </div>
+        <div class="progress" style="height:22px; border-radius:10px; background:#e9ecef;">
+            <div class="progress-bar bg-success" style="width:{{ percent }}%; border-radius:10px; font-size:13px; font-weight:600;">
+                {{ percent }}%
+            </div>
+        </div>
+    </div>
+
+    <!-- Созданные задачи -->
+    <div class="card p-4 mb-4" style="border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+        <h5 style="margin-bottom:16px;">✍️ Создал задач</h5>
+        <div style="display:flex; gap:24px;">
+            <div>
+                <span style="font-size:1.6rem; font-weight:700;">{{ a_total }}</span>
+                <span style="color:#6c757d; margin-left:6px;">всего</span>
+            </div>
+            <div>
+                <span style="font-size:1.6rem; font-weight:700; color:#198754;">{{ a_done }}</span>
+                <span style="color:#6c757d; margin-left:6px;">из них выполнено</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Последние назначенные задачи -->
+    <div class="card p-4" style="border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);">
+        <h5 style="margin-bottom:16px;">🕒 Последние назначенные задачи</h5>
+
+        {% if tasks %}
+        <table style="width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06);">
+            <thead>
+                <tr>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">ID</th>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">Название</th>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">Статус</th>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">Дедлайн</th>
+                </tr>
+            </thead>
+            <tbody>{% for t in tasks %}
+                <tr>
+                    <td style="padding:8px 12px;">{{t.id}}</td>
+                    <td style="padding:8px 12px;">
+                        <a href="{{task_urls.details }}{{t.id}}"
+                           style="color:#0d6efd;text-decoration:none;">{{t.title}}</a>
+                    </td>
+                    <td>
+                        {% if t.is_done %}
+                        <span style="background:#198754;color:#fff;padding:2px 8px;'
+                        'border-radius:10px;font-size:11px;">✓ Выполнено</span>
+                        {% else %}
+                        <span style="background:#ffc107;color:#000;padding:2px 8px;'
+                        'border-radius:10px;font-size:11px;">⏳ В работе</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ t.deadline.strftime("%d.%m.%Y") if t.deadline else "—" }}</td>
+                </tr>
+                {% endfor %}</tbody>
+        </table>
+        {% else %}
+        <p style="color:#6c757d;">Нет назначенных задач</p>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

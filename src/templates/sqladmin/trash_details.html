@@ -1,0 +1,153 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">
+        {% for pk in model_view.pk_columns -%}
+        {{ pk.name | title }}
+        {%- if not loop.last %};{% endif -%}
+        {% endfor %}: {{ get_object_identifier(model) }}
+      </h3>
+    </div>
+    <div class="card-body border-bottom py-3">
+
+      {# ── Таблица с полями — без изменений ── #}
+      {% block details_table %}
+      <div class="table-responsive">
+        <table class="table card-table table-vcenter text-nowrap table-hover table-bordered">
+          <thead>
+            <tr>
+              <th class="w-1">Column</th>
+              <th class="w-1">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for name in model_view._details_prop_names %}
+            {% set label = model_view._column_labels.get(name, name) %}
+            <tr>
+              <td>{{ label }}</td>
+              {% set value, formatted_value = model_view.get_detail_value(model, name) %}
+              {% if name in model_view._relation_names %}
+                {% if is_list(value) %}
+                <td>
+                  {% for elem, formatted_elem in zip(value, formatted_value) %}
+                    {% if model_view.show_compact_lists %}
+                    <a href="{{ model_view._build_url_for('admin:details', request, elem) }}">({{ formatted_elem }})</a>
+                    {% else %}
+                    <a href="{{ model_view._build_url_for('admin:details', request, elem) }}">{{ formatted_elem }}</a><br />
+                    {% endif %}
+                  {% endfor %}
+                </td>
+                {% else %}
+                <td>
+                  <a href="{{ model_view._url_for_details_with_prop(request, model, name) }}">{{ formatted_value }}</a>
+                </td>
+                {% endif %}
+              {% else %}
+              <td>{{ formatted_value }}</td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endblock %}
+
+      {# ── Футер с кнопками — заменяем стандартные Delete/Edit ── #}
+      <div class="card-footer container">
+        <div class="row row-gap-2 align-items-center">
+
+          {# Назад в корзину #}
+          <div class="col-auto">
+            <a href="{{ url_for('admin:list', identity=model_view.identity) }}" class="btn">
+              ← Назад в корзину
+            </a>
+          </div>
+
+          {# Восстановить — зелёная кнопка #}
+          <div class="col-auto">
+            <a href="#"
+               class="btn btn-success"
+               data-bs-toggle="modal"
+               data-bs-target="#modal-restore">
+              ♻ Восстановить
+            </a>
+          </div>
+
+          {# Удалить навсегда — красная кнопка #}
+          <div class="col-auto">
+            <a href="#"
+               class="btn btn-danger"
+               data-bs-toggle="modal"
+               data-bs-target="#modal-hard-delete">
+              🗑 Удалить навсегда
+            </a>
+          </div>
+
+        </div>
+      </div>
+    </div>{# /card-body #}
+  </div>{# /card #}
+</div>
+
+{# ── Модальное окно: Восстановить ── #}
+<div class="modal modal-blur fade" id="modal-restore" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="modal-status bg-success"></div>
+      <div class="modal-body text-center py-4">
+        <h3>Восстановить задачу?</h3>
+        <p class="text-muted">Задача вернётся в общий список.</p>
+      </div>
+      <div class="modal-footer">
+        <div class="w-100">
+          <div class="row">
+            <div class="col">
+              <a href="#" class="btn w-100" data-bs-dismiss="modal">Отмена</a>
+            </div>
+            <div class="col">
+              <a href="{{ model_view._url_for_action(request, 'restore') }}?pks={{ get_object_identifier(model) }}"
+                 class="btn btn-success w-100">
+                Восстановить
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Модальное окно: Удалить навсегда ── #}
+<div class="modal modal-blur fade" id="modal-hard-delete" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="modal-status bg-danger"></div>
+      <div class="modal-body text-center py-4">
+        <h3>Удалить безвозвратно?</h3>
+        <p class="text-muted">Это действие нельзя отменить. Задача будет удалена из базы данных.</p>
+      </div>
+      <div class="modal-footer">
+        <div class="w-100">
+          <div class="row">
+            <div class="col">
+              <a href="#" class="btn w-100" data-bs-dismiss="modal">Отмена</a>
+            </div>
+            <div class="col">
+              <a href="{{ model_view._url_for_action(request, 'hard-delete') }}?pks={{ get_object_identifier(model) }}"
+                 class="btn btn-danger w-100">
+                Удалить
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
