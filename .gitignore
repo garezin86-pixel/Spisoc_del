@@ -27,3 +27,6 @@ __pycache__/
 
 # Alembic (если не нужно коммитить кэш)
 alembic/versions/__pycache__/
+
+команды запуска.txt
+
