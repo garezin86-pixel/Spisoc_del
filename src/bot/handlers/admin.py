@@ -13,7 +13,7 @@ from src.bot.keyboards.main import (
     main_menu_admin,
     admin_users_keyboard,
     admin_groups_keyboard,
-    cancel_keyboard
+    cancel_keyboard,
 )
 from src.db.unit_of_work import UnitOfWork
 

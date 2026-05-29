@@ -70,7 +70,9 @@ class TaskRepository(AbstractTaskRepository):
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total"),
-                func.sum(case((SpisokModel.is_done.is_(True), 1), else_=0)).label("done"),
+                func.sum(case((SpisokModel.is_done.is_(True), 1), else_=0)).label(
+                    "done"
+                ),
                 func.sum(case((SpisokModel.is_done.is_(False), 1), else_=0)).label(
                     "pending"
                 ),
@@ -82,7 +84,9 @@ class TaskRepository(AbstractTaskRepository):
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total"),
-                func.sum(case((SpisokModel.is_done.is_(True), 1), else_=0)).label("done"),
+                func.sum(case((SpisokModel.is_done.is_(True), 1), else_=0)).label(
+                    "done"
+                ),
             ).where(SpisokModel.author_id == pk)
         )
         return result.one()
