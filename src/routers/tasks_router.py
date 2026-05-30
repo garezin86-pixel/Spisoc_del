@@ -43,7 +43,6 @@ async def add_task(
     session.info["audit_user_id"] = current_user.id
     task = await get_task_service(session).add_task(data, current_user)
     await cache_manager.invalidate_tasks()
-    background_tasks.add_task(notify_task_assigned, task.id)
     return task
 
 

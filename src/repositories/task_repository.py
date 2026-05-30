@@ -163,6 +163,8 @@ class TaskRepository(AbstractTaskRepository):
                 SpisokModel.user_id.is_(None),
                 SpisokModel.group_id.is_(None),
             )
+        elif filter_user_group_value == "author":
+            query = query.where(SpisokModel.author_id == user_id)
 
         start_today = datetime.combine(date.today(), time.min)
         end_today = datetime.combine(date.today(), time.max)

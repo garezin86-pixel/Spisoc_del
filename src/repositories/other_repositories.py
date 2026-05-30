@@ -41,7 +41,11 @@ class CommentRepository(AbstractCommentRepository):
         return list(result.scalars().all())
 
     async def select_query(self, task_id: int):
-        query = select(CommentModel).where(CommentModel.task_id == task_id)
+        query = (
+            select(CommentModel)
+            .where(CommentModel.task_id == task_id)
+            .options(selectinload(CommentModel.user))
+        )
         return query
 
     async def get_total_tasks(self, query):
