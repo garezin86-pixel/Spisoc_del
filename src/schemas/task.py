@@ -109,6 +109,7 @@ class FilterUserGroup(str, Enum):
     user = "user"
     group = "group"
     free = "free"
+    author = "author"
 
 
 class TaskResponse(BaseModel):

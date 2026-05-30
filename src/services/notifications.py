@@ -89,6 +89,8 @@ async def notify_task_assigned(task_id: int):
             if task.description:
                 text += f"\n📝 <b>Описание:</b> {task.description[:200]}"
 
+            success = True
+            error = None
             try:
                 await bot.send_message(
                     chat_id=task.user.telegram_id,
@@ -103,7 +105,6 @@ async def notify_task_assigned(task_id: int):
                     type="task_assigned",
                     task_id=task.id,
                 )
-                logger.info(f"Task assignment notification sent to user {task.user_id}")
             except Exception as e:
                 await logger.aerror(
                     "notification_failed",
@@ -113,16 +114,20 @@ async def notify_task_assigned(task_id: int):
                 logger.error(
                     f"Failed to send task notification to user {task.user_id}: {e}"
                 )
-                log = NotificationLogModel(
-                    user_id=task.user_id,
-                    notification_type="task_assigned",
-                    task_id=task.id,
-                    content=text,
-                    success=False,
-                    error=str(e)[:500],
-                )
-                uow.session.add(log)
-                await uow.commit()
+                success = False
+                error = str(e)[:500]
+
+            # ✅ Лог пишется всегда — и при успехе, и при ошибке
+            log = NotificationLogModel(
+                user_id=task.user_id,
+                notification_type="task_assigned",
+                task_id=task.id,
+                content=text,
+                success=success,
+                error=error,
+            )
+            uow.session.add(log)
+            await uow.commit()
 
         # Уведомление группе
         elif task.group:
@@ -185,7 +190,6 @@ async def notify_task_assigned(task_id: int):
                         type="group_task_assigned",
                         task_id=task.id,
                     )
-                    logger.info(f"Group task notification sent to user {user.id}")
                 except Exception as e:
                     await logger.aerror(
                         "notification_failed",

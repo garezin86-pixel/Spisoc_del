@@ -881,12 +881,12 @@ async def comments_action_choice(message: Message, state: FSMContext):
 async def add_task_comment(message: Message, state: FSMContext):
     if message.text == "❌ Отмена":
         await state.set_state(EditTask.edit_type)
-        data = await state.get_data()  # ← добавить
-        user_role = data.get("user_role", "user")  # ← добавить
-        kb = (  # ← добавить
-            task_edit_manager_keyboard()  # ← добавить
-            if user_role in ("admin", "manager")  # ← добавить
-            else task_edit_keyboard()  # ← добавить
+        data = await state.get_data() 
+        user_role = data.get("user_role", "user")
+        kb = (
+            task_edit_manager_keyboard()
+            if user_role in ("admin", "manager")
+            else task_edit_keyboard()
         )  # ← добавить
         await message.answer(
             "❌ Отменено. Возвращаемся к редактированию задачи.",
@@ -909,7 +909,6 @@ async def add_task_comment(message: Message, state: FSMContext):
 
         try:
             assert message.text and task_id is not None
-            # ← правильный CommentService + add_comment(task_id, data, user) без session
             comment = await make_comment_service(uow).add_comment(
                 task_id,
                 CommentCreate(content=message.text),
