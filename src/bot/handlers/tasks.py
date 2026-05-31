@@ -881,7 +881,7 @@ async def comments_action_choice(message: Message, state: FSMContext):
 async def add_task_comment(message: Message, state: FSMContext):
     if message.text == "❌ Отмена":
         await state.set_state(EditTask.edit_type)
-        data = await state.get_data() 
+        data = await state.get_data()
         user_role = data.get("user_role", "user")
         kb = (
             task_edit_manager_keyboard()

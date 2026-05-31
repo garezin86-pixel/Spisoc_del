@@ -36,7 +36,6 @@ def get_task_service(session: SessionDep) -> TaskService:
 @router.post("/", response_model=SpisokSchema, status_code=201)
 async def add_task(
     data: SpisokAddSchema,
-    background_tasks: BackgroundTasks,
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
@@ -115,6 +114,7 @@ async def get_task(
 async def reassign_task(
     task_id: int,
     session: SessionDep,
+    background_tasks: BackgroundTasks,
     current_user: UserModel = Depends(get_current_user),
     user_id: int | None = Query(None),
     group_id: int | None = Query(None),
@@ -124,6 +124,7 @@ async def reassign_task(
         task_id, current_user, user_id, group_id
     )
     await cache_manager.invalidate_tasks()
+    background_tasks.add_task(notify_task_assigned, result.id)
     return result
 
 

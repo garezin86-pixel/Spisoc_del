@@ -741,3 +741,24 @@ textarea {
   margin-bottom: 4px;
 }
 .view-mode-row .btn { justify-content: center; }
+
+/* ─── Task ID badge ─── */
+.task-title {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.task-id {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+  font-family: 'DM Sans', monospace;
+  letter-spacing: 0.02em;
+}

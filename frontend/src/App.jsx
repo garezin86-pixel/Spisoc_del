@@ -214,7 +214,10 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
         <article className={`task-card${task.is_done ? " done-card" : ""}`}>
             <div className="task-top">
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="task-title">{task.title}</div>
+                    <div className="task-title">
+                        <span className="task-id">#{task.id}</span>
+                        {task.title}
+                    </div>
                     {task.description && <div className="task-desc">{task.description}</div>}
                     <div className="task-meta-row">
                         {dl && (
