@@ -9,40 +9,21 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-<<<<<<< HEAD
-IS_PROD = sys.platform != "win32"  # На Render всегда Linux
-
-VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
-if not VENV_PYTHON.exists():
-    VENV_PYTHON = BASE_DIR / ".venv" / "bin" / "python"
-if not VENV_PYTHON.exists():
-    VENV_PYTHON = sys.executable
-
-
-def start_process(args: list, cwd=None) -> subprocess.Popen:
-    p = subprocess.Popen(
-        args,
-        cwd=cwd or BASE_DIR,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
-    p._cwd = cwd or BASE_DIR  # сохраняем вручную для перезапуска
-    p._args = args
-    return p
-=======
 # ── Окружение ─────────────────────────────────────────────────────────────────
 IS_WINDOWS = sys.platform == "win32"
 IS_PROD = not IS_WINDOWS  # На Render всегда Linux
+
 
 # ── Python-интерпретатор ──────────────────────────────────────────────────────
 def _find_python() -> Path:
     for candidate in [
         BASE_DIR / ".venv" / "Scripts" / "python.exe",  # Windows venv
-        BASE_DIR / ".venv" / "bin" / "python",           # Linux/Mac venv
+        BASE_DIR / ".venv" / "bin" / "python",  # Linux/Mac venv
     ]:
         if candidate.exists():
             return candidate
     return Path(sys.executable)  # fallback — системный Python
+
 
 VENV_PYTHON = _find_python()
 
@@ -50,7 +31,6 @@ VENV_PYTHON = _find_python()
 # ── Управление процессами ─────────────────────────────────────────────────────
 class ManagedProcess:
     """Обёртка над Popen с сохранением метаданных для перезапуска."""
->>>>>>> f422cdb6549b8ffc9857c9f98754f94f1f4a326a
 
     def __init__(self, name: str, args: list, cwd: Path = BASE_DIR):
         self.name = name
@@ -59,40 +39,6 @@ class ManagedProcess:
         self._proc: subprocess.Popen | None = None
         self.restart_count = 0
 
-<<<<<<< HEAD
-def main():
-    processes = {}
-
-    # ── 1. API (FastAPI / uvicorn) ────────────────────────────────────────────
-    print("[run] Starting API...")
-    processes["api"] = start_process(
-        [
-            str(VENV_PYTHON),
-            "-m",
-            "uvicorn",
-            "src.main:app",
-            "--host",
-            "0.0.0.0",  # важно для Render
-            "--port",
-            "8000",
-            # без --reload на проде
-        ]
-    )
-
-    time.sleep(2)
-
-    # ── 2. Telegram bot ───────────────────────────────────────────────────────
-    print("[run] Starting Telegram bot...")
-    processes["bot"] = start_process([str(VENV_PYTHON), "-m", "src.bot.runner"])
-
-    # ── 3. Frontend — только локально ────────────────────────────────────────
-    if FRONTEND_DIR.is_dir() and not IS_PROD:
-        print("[run] Starting frontend (npm run dev)...")
-        npm_cmd = ["npm.cmd", "run", "dev"]
-        processes["frontend"] = start_process(npm_cmd, cwd=FRONTEND_DIR)
-    else:
-        print("[run] Skipping frontend dev-server (prod or dir not found).")
-=======
     def start(self) -> None:
         self._proc = subprocess.Popen(
             self.args,
@@ -101,7 +47,6 @@ def main():
             stderr=sys.stderr,
         )
         print(f"[run] Started '{self.name}' (pid={self._proc.pid})")
->>>>>>> f422cdb6549b8ffc9857c9f98754f94f1f4a326a
 
     def restart(self) -> None:
         self.restart_count += 1
@@ -136,31 +81,41 @@ def build_services() -> list[ManagedProcess]:
     services = []
 
     # 1. API (FastAPI / uvicorn)
-    services.append(ManagedProcess(
-        name="api",
-        args=[
-            str(VENV_PYTHON), "-m", "uvicorn",
-            "src.main:app",
-            "--host", "0.0.0.0",
-            "--port", "8000",
-            *(["--reload"] if not IS_PROD else []),
-        ],
-    ))
+    services.append(
+        ManagedProcess(
+            name="api",
+            args=[
+                str(VENV_PYTHON),
+                "-m",
+                "uvicorn",
+                "src.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
+                *(["--reload"] if not IS_PROD else []),
+            ],
+        )
+    )
 
     # 2. Telegram bot
-    services.append(ManagedProcess(
-        name="bot",
-        args=[str(VENV_PYTHON), "-m", "src.bot.runner"],
-    ))
+    services.append(
+        ManagedProcess(
+            name="bot",
+            args=[str(VENV_PYTHON), "-m", "src.bot.runner"],
+        )
+    )
 
     # 3. Vite dev-сервер — только локально
     if FRONTEND_DIR.is_dir() and not IS_PROD:
         npm_cmd = ["npm.cmd", "run", "dev"] if IS_WINDOWS else ["npm", "run", "dev"]
-        services.append(ManagedProcess(
-            name="frontend",
-            args=npm_cmd,
-            cwd=FRONTEND_DIR,
-        ))
+        services.append(
+            ManagedProcess(
+                name="frontend",
+                args=npm_cmd,
+                cwd=FRONTEND_DIR,
+            )
+        )
 
     return services
 
@@ -177,22 +132,9 @@ def main() -> None:
 
     # Graceful shutdown
     def shutdown(*_):
-<<<<<<< HEAD
-        print("\n[run] Stopping all services...")
-        for name, p in processes.items():
-            if p.poll() is None:
-                print(f"[run]   terminating {name} (pid={p.pid})")
-                p.terminate()
-        for name, p in processes.items():
-            try:
-                p.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                p.kill()
-=======
         print("\n[run] Shutting down all services...")
         for svc in services:
             svc.stop()
->>>>>>> f422cdb6549b8ffc9857c9f98754f94f1f4a326a
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
@@ -200,16 +142,6 @@ def main() -> None:
 
     print("[run] All services started. Press Ctrl+C to stop.")
 
-<<<<<<< HEAD
-    while True:
-        time.sleep(2)
-        for name, p in list(processes.items()):
-            if p.poll() is not None:
-                print(
-                    f"[run] WARNING: '{name}' exited (code {p.returncode}), restarting..."
-                )
-                processes[name] = start_process(p._args, cwd=p._cwd)
-=======
     # Мониторинг и перезапуск упавших процессов
     MAX_RESTARTS = 10
 
@@ -224,7 +156,6 @@ def main() -> None:
                     )
                     shutdown()
                 svc.restart()
->>>>>>> f422cdb6549b8ffc9857c9f98754f94f1f4a326a
 
 
 if __name__ == "__main__":
