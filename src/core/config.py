@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 
@@ -66,3 +68,5 @@ ADMIN_SECRET_KEY = settings.admin_secret_key
 ADMIN_ALLOWED_IPS = settings.admin_allowed_ips
 BOT_TOKEN = settings.bot_token
 SUPER_ADMIN_TG_ID = settings.super_admin_tg_id
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
