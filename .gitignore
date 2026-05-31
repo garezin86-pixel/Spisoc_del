@@ -29,5 +29,4 @@ __pycache__/
 alembic/versions/__pycache__/
 
 команды запуска.txt
-run.py
 run2.py
