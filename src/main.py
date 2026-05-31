@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 
@@ -10,7 +12,13 @@ from src.db import get_engine
 from src.admin.setup import setup_admin
 from src.routers import api_router
 from src.core.limiter import limiter
-from src.core.config import REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
+from src.core.config import (
+    REDIS_DB,
+    REDIS_HOST,
+    REDIS_PASSWORD,
+    REDIS_PORT,
+    FRONTEND_URL,
+)
 
 from redis.asyncio import Redis
 from fastapi_cache import FastAPICache
@@ -130,6 +138,7 @@ app.add_middleware(
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        *([FRONTEND_URL] if FRONTEND_URL else []),
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -152,3 +161,8 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 app.include_router(api_router)
 setup_admin(app, get_engine())
+
+# ── Статика фронтенда (только на проде) ──────────────────────────────────────
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="static")

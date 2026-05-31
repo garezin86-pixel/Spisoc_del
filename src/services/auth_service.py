@@ -43,7 +43,9 @@ class AuthService:
             invalid_credentials(INVALID_CREDENTIALS)
             raise
 
-        token = create_access_token({"sub": str(db_user.id), "role": db_user.role, "username": db_user.username})
+        token = create_access_token(
+            {"sub": str(db_user.id), "role": db_user.role, "username": db_user.username}
+        )
         await logger.ainfo(
             "user_login",
             user_id=db_user.id,

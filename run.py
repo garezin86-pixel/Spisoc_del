@@ -7,25 +7,25 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-# Python из виртуального окружения (если есть), иначе текущий
-VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"  # Windows
+IS_PROD = sys.platform != "win32"  # На Render всегда Linux
+
+VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
 if not VENV_PYTHON.exists():
-    VENV_PYTHON = BASE_DIR / ".venv" / "bin" / "python"  # Linux/Mac
+    VENV_PYTHON = BASE_DIR / ".venv" / "bin" / "python"
 if not VENV_PYTHON.exists():
-    VENV_PYTHON = sys.executable  # fallback
-
-# npm: на Windows нужен shell=True
-IS_WINDOWS = sys.platform == "win32"
+    VENV_PYTHON = sys.executable
 
 
-def start_process(args: list, cwd=BASE_DIR, shell=False) -> subprocess.Popen:
-    return subprocess.Popen(
+def start_process(args: list, cwd=None) -> subprocess.Popen:
+    p = subprocess.Popen(
         args,
-        cwd=cwd,
+        cwd=cwd or BASE_DIR,
         stdout=sys.stdout,
         stderr=sys.stderr,
-        shell=shell,
     )
+    p._cwd = cwd or BASE_DIR  # сохраняем вручную для перезапуска
+    p._args = args
+    return p
 
 
 def main():
@@ -39,38 +39,27 @@ def main():
             "-m",
             "uvicorn",
             "src.main:app",
-            "--reload",
             "--host",
-            "127.0.0.1",
+            "0.0.0.0",  # важно для Render
             "--port",
             "8000",
+            # без --reload на проде
         ]
     )
 
-    # Даём uvicorn подняться перед запуском бота
     time.sleep(2)
 
     # ── 2. Telegram bot ───────────────────────────────────────────────────────
     print("[run] Starting Telegram bot...")
-    processes["bot"] = start_process(
-        [
-            str(VENV_PYTHON),
-            "-m",
-            "src.bot.runner",
-        ]
-    )
+    processes["bot"] = start_process([str(VENV_PYTHON), "-m", "src.bot.runner"])
 
-    # ── 3. Frontend (Vite dev-server) ─────────────────────────────────────────
-    if FRONTEND_DIR.is_dir():
+    # ── 3. Frontend — только локально ────────────────────────────────────────
+    if FRONTEND_DIR.is_dir() and not IS_PROD:
         print("[run] Starting frontend (npm run dev)...")
-        npm_cmd = ["npm.cmd", "run", "dev"] if IS_WINDOWS else ["npm", "run", "dev"]
-        processes["frontend"] = start_process(
-            npm_cmd,
-            cwd=FRONTEND_DIR,
-            shell=IS_WINDOWS,
-        )
+        npm_cmd = ["npm.cmd", "run", "dev"]
+        processes["frontend"] = start_process(npm_cmd, cwd=FRONTEND_DIR)
     else:
-        print(f"[run] Frontend dir not found ({FRONTEND_DIR}), skipping.")
+        print("[run] Skipping frontend dev-server (prod or dir not found).")
 
     # ── Graceful shutdown ─────────────────────────────────────────────────────
     def shutdown(*_):
@@ -79,14 +68,11 @@ def main():
             if p.poll() is None:
                 print(f"[run]   terminating {name} (pid={p.pid})")
                 p.terminate()
-
         for name, p in processes.items():
             try:
                 p.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                print(f"[run]   killing {name} (pid={p.pid})")
                 p.kill()
-
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
@@ -94,21 +80,14 @@ def main():
 
     print("[run] All services started. Press Ctrl+C to stop.")
 
-    # Держим процесс живым; перезапускаем упавшие дочерние процессы
     while True:
         time.sleep(2)
         for name, p in list(processes.items()):
             if p.poll() is not None:
                 print(
-                    f"[run] WARNING: '{name}' exited with code {p.returncode}, restarting..."
+                    f"[run] WARNING: '{name}' exited (code {p.returncode}), restarting..."
                 )
-                # Перезапускаем ту же команду через args
-                processes[name] = subprocess.Popen(
-                    p.args,
-                    cwd=p.cwd if hasattr(p, "cwd") else BASE_DIR,
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
-                )
+                processes[name] = start_process(p._args, cwd=p._cwd)
 
 
 if __name__ == "__main__":
