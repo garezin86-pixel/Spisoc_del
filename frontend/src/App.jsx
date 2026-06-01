@@ -965,7 +965,7 @@ function App() {
                                         onChange={e => setForm({ ...form, description: e.target.value })}
                                         placeholder="Дополнительные детали (необязательно)" />
                                 </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                <div className="form-two-col">
                                     <div className="form-group">
                                         <label className="form-label">Дедлайн</label>
                                         <input type="datetime-local" value={form.deadline}
