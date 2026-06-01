@@ -2,7 +2,6 @@ import subprocess
 import sys
 import time
 import signal
-import os
 from pathlib import Path
 
 # ── Пути ─────────────────────────────────────────────────────────────────────

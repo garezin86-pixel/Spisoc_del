@@ -528,6 +528,7 @@ textarea {
 
 @media (max-width: 600px) {
   html, body, #root { min-width: 0; }
+  body { background-attachment: scroll; }
   .page-shell { padding: 12px 12px 36px; }
   .card { padding: 18px; border-radius: var(--radius); }
   .app-header { border-radius: var(--radius); }
@@ -582,6 +583,31 @@ textarea {
   .group-add-row select,
   .group-add-row .btn {
     width: 100%;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  body { background-attachment: scroll; }
+
+  .btn,
+  .card,
+  .task-card,
+  .group-card,
+  .group-card-body,
+  .group-card-header,
+  .member-row,
+  .tab-btn {
+    animation: none;
+    transform: none;
+    transition-property: background, border-color, color, box-shadow, opacity;
+  }
+
+  .btn:hover,
+  .btn:active,
+  .task-card:hover,
+  .card:hover,
+  .group-card:hover {
+    transform: none;
   }
 }
 

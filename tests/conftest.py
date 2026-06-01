@@ -102,11 +102,23 @@ _disable_rate_limits()
 @pytest_asyncio.fixture
 async def client(engine):
     from fastapi import FastAPI
-    from src.routers import api_router
+    from src.routers import (
+        api_router,
+        auth_router,
+        users_router,
+        tasks_router,
+        group_router,
+        comments_router,
+    )
     from src.db import get_session
 
     app = FastAPI()
     app.include_router(api_router)
+    app.include_router(auth_router)
+    app.include_router(users_router)
+    app.include_router(tasks_router)
+    app.include_router(group_router)
+    app.include_router(comments_router)
 
     async_session = async_sessionmaker(
         engine, expire_on_commit=False, class_=AsyncSession
@@ -119,7 +131,9 @@ async def client(engine):
     app.dependency_overrides[get_session] = override_get_session
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        follow_redirects=True,
     ) as ac:
         yield ac
 
