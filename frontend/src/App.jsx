@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "./api";
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -29,13 +29,13 @@ function formatDeadline(deadline) {
         if (!d) return null;
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const dDay  = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        const diff  = dDay - today;
+        const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const diff = dDay - today;
         const isFmt = /^\d{2}\.\d{2}/.test(String(deadline));
         return {
             fmt: isFmt ? String(deadline) : d.toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
             isOverdue: diff < 0,
-            isToday:   diff === 0,
+            isToday: diff === 0,
         };
     } catch { return null; }
 }
@@ -49,9 +49,9 @@ function extractItems(data) {
 
 const ROLE_LABELS = { admin: "Админ", manager: "Менеджер", user: "Участник" };
 const ROLE_COLORS = {
-    admin:   { color: "var(--red)",          bg: "var(--red-dim)" },
-    manager: { color: "var(--amber)",         bg: "var(--amber-dim)" },
-    user:    { color: "var(--accent-light)",  bg: "rgba(124,106,240,0.12)" },
+    admin: { color: "var(--red)", bg: "var(--red-dim)" },
+    manager: { color: "var(--amber)", bg: "var(--amber-dim)" },
+    user: { color: "var(--accent-light)", bg: "rgba(124,106,240,0.12)" },
 };
 
 // ─── Icons ────────────────────────────────────────────────
@@ -64,27 +64,27 @@ function Icon({ d, size = 14 }) {
     );
 }
 const ICONS = {
-    check:    "M20 6L9 17l-5-5",
-    x:        "M18 6L6 18M6 6l12 12",
-    edit:     "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
-    trash:    "M3 6h18M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2",
-    restore:  "M3 12a9 9 0 109-9 9 9 0 00-9 9M3 3v6h6",
-    hardDel:  "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
-    refresh:  "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
-    plus:     "M12 5v14M5 12h14",
-    clock:    "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 6v6l4 2",
-    user:     "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
-    group:    "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
-    save:     "M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8",
-    logout:   "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9",
-    filter:   "M22 3H2l8 9.46V19l4 2v-8.54L22 3z",
-    comment:  "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
+    check: "M20 6L9 17l-5-5",
+    x: "M18 6L6 18M6 6l12 12",
+    edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
+    trash: "M3 6h18M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2",
+    restore: "M3 12a9 9 0 109-9 9 9 0 00-9 9M3 3v6h6",
+    hardDel: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+    refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
+    plus: "M12 5v14M5 12h14",
+    clock: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 6v6l4 2",
+    user: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
+    group: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
+    save: "M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8",
+    logout: "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9",
+    filter: "M22 3H2l8 9.46V19l4 2v-8.54L22 3z",
+    comment: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
     reassign: "M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5",
     chevronL: "M15 18l-6-6 6-6",
     chevronR: "M9 18l6-6-6-6",
     userPlus: "M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 100-8 4 4 0 000 8zM20 8v6M23 11h-6",
-    userMinus:"M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 100-8 4 4 0 000 8zM23 11h-6",
-    shield:   "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+    userMinus: "M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 100-8 4 4 0 000 8zM23 11h-6",
+    shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
 };
 
 // ─── Pagination ───────────────────────────────────────────
@@ -106,11 +106,11 @@ function Pagination({ page, totalPages, onPage }) {
 // ─── Comments panel ───────────────────────────────────────
 function CommentsPanel({ taskId, token }) {
     const [comments, setComments] = useState([]);
-    const [total, setTotal]       = useState(0);
-    const [page, setPage]         = useState(1);
-    const [text, setText]         = useState("");
-    const [loading, setLoading]   = useState(false);
-    const [sending, setSending]   = useState(false);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    const [text, setText] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [sending, setSending] = useState(false);
     const PAGE_SIZE = 5;
 
     const load = useCallback(async (p = 1) => {
@@ -183,24 +183,24 @@ function CommentsPanel({ taskId, token }) {
 
 // ─── TaskCard ─────────────────────────────────────────────
 function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, onReassign }) {
-    const [editing, setEditing]           = useState(false);
+    const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [showReassign, setShowReassign] = useState(false);
-    const [saving, setSaving]             = useState(false);
-    const [editForm, setEditForm]         = useState({
+    const [saving, setSaving] = useState(false);
+    const [editForm, setEditForm] = useState({
         title: task.title, description: task.description || "",
         deadline: task.deadline ? task.deadline.slice(0, 16) : "",
     });
-    const [reassignUserId, setReassignUserId]   = useState("");
+    const [reassignUserId, setReassignUserId] = useState("");
     const [reassignGroupId, setReassignGroupId] = useState("");
     const dl = formatDeadline(task.deadline);
 
     async function handleSave() {
         setSaving(true);
         await onUpdate(task, {
-            title:       editForm.title.trim(),
+            title: editForm.title.trim(),
             description: editForm.description.trim() || null,
-            deadline:    editForm.deadline ? `${editForm.deadline}:00` : null,
+            deadline: editForm.deadline ? `${editForm.deadline}:00` : null,
         });
         setSaving(false); setEditing(false);
     }
@@ -366,12 +366,12 @@ function TrashCard({ task, onRestore, onHardDelete }) {
 
 // ─── GroupPanel ───────────────────────────────────────────
 function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
-    const [members, setMembers]   = useState([]);
-    const [loading, setLoading]   = useState(false);
+    const [members, setMembers] = useState([]);
+    const [loading, setLoading] = useState(false);
     const [addUserId, setAddUserId] = useState("");
-    const [adding, setAdding]     = useState(false);
+    const [adding, setAdding] = useState(false);
     const [expanded, setExpanded] = useState(false);
-    const [error, setError]       = useState(null);
+    const [error, setError] = useState(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -508,7 +508,7 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
 
 // ─── Groups Tab ───────────────────────────────────────────
 function GroupsTab({ token, currentRole }) {
-    const [groups, setGroups]   = useState([]);
+    const [groups, setGroups] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -575,37 +575,37 @@ function GroupsTab({ token, currentRole }) {
 
 // ─── Main App ─────────────────────────────────────────────
 function App() {
-    const [token, setToken]     = useState(localStorage.getItem("spisoc_token"));
-    const [tasks, setTasks]     = useState([]);
+    const [token, setToken] = useState(localStorage.getItem("spisoc_token"));
+    const [tasks, setTasks] = useState([]);
     const [trashTasks, setTrash] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [error, setError]     = useState(null);
-    const [tab, setTab]         = useState("tasks"); // "tasks" | "groups" | "trash"
+    const [error, setError] = useState(null);
+    const [tab, setTab] = useState("tasks"); // "tasks" | "groups" | "trash"
 
     const [filterType, setFilterType] = useState("");
-    const [isDone, setIsDone]         = useState("");
-    const [viewMode, setViewMode]     = useState("user"); // "user" | "author"
+    const [isDone, setIsDone] = useState("");
+    const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
-    const [tasksPage, setTasksPage]   = useState(1);
+    const [tasksPage, setTasksPage] = useState(1);
     const [tasksTotal, setTasksTotal] = useState(0);
     const PAGE_SIZE = 50;
 
-    const [trashPage, setTrashPage]   = useState(1);
+    const [trashPage, setTrashPage] = useState(1);
     const [trashTotal, setTrashTotal] = useState(0);
 
     const [groups, setGroups] = useState([]);
-    const [users, setUsers]   = useState([]);
+    const [users, setUsers] = useState([]);
 
-    const [form, setForm]                       = useState(initialForm);
-    const [assignType, setAssignType]           = useState("self");
+    const [form, setForm] = useState(initialForm);
+    const [assignType, setAssignType] = useState("self");
     const [selectedGroupId, setSelectedGroupId] = useState("");
-    const [selectedUserId, setSelectedUserId]   = useState("");
-    const [taskDone, setTaskDone]               = useState(false);
+    const [selectedUserId, setSelectedUserId] = useState("");
+    const [taskDone, setTaskDone] = useState(false);
 
     const tokenPayload = useMemo(() => decodeToken(token), [token]);
-    const currentUserId   = useMemo(() => tokenPayload?.sub ? Number(tokenPayload.sub) : null, [tokenPayload]);
+    const currentUserId = useMemo(() => tokenPayload?.sub ? Number(tokenPayload.sub) : null, [tokenPayload]);
     const currentUsername = useMemo(() => tokenPayload?.username || tokenPayload?.sub || "Пользователь", [tokenPayload]);
-    const currentRole     = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
+    const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
 
     // ── loaders ──────────────────────────────────────────
     const loadTasks = useCallback(async (page = 1, filterUserGroup = "user") => {
@@ -616,7 +616,7 @@ function App() {
             q.set("page", page);
             q.set("size", PAGE_SIZE);
             if (filterType) q.set("filter_type", filterType);
-            if (isDone)     q.set("is_done", isDone);
+            if (isDone) q.set("is_done", isDone);
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token });
             setTasks(extractItems(data));
             setTasksTotal(data?.total ?? 0);
@@ -697,12 +697,12 @@ function App() {
                 is_done: taskDone,
                 deadline: form.deadline ? `${form.deadline}:00` : null,
             };
-            if (assignType === "self")   { payload.user_id = currentUserId; payload.group_id = null; }
-            else if (assignType === "user")  { payload.user_id = selectedUserId ? Number(selectedUserId) : null; payload.group_id = null; }
+            if (assignType === "self") { payload.user_id = currentUserId; payload.group_id = null; }
+            else if (assignType === "user") { payload.user_id = selectedUserId ? Number(selectedUserId) : null; payload.group_id = null; }
             else if (assignType === "group") { payload.group_id = selectedGroupId ? Number(selectedGroupId) : null; payload.user_id = null; }
             else { payload.user_id = null; payload.group_id = null; }
 
-            await apiRequest({ path: "/tasks/", method: "POST", token, body: payload });
+            await apiRequest({ path: "/tasks", method: "POST", token, body: payload });
             setForm(initialForm); setAssignType("self");
             setSelectedGroupId(""); setSelectedUserId(""); setTaskDone(false);
             await loadTasks(1);
@@ -733,7 +733,7 @@ function App() {
     async function handleReassignTask(taskId, userId, groupId) {
         try {
             const q = new URLSearchParams();
-            if (userId)  q.set("user_id", userId);
+            if (userId) q.set("user_id", userId);
             if (groupId) q.set("group_id", groupId);
             await apiRequest({ path: `/tasks/${taskId}/reassign?${q}`, method: "PATCH", token });
             await loadTasks(tasksPage);
@@ -757,7 +757,7 @@ function App() {
 
     const stats = useMemo(() => {
         const total = tasks.length;
-        const done  = tasks.filter(t => t.is_done).length;
+        const done = tasks.filter(t => t.is_done).length;
         return { total, done, pending: total - done, percent: total > 0 ? Math.round((done / total) * 100) : 0 };
     }, [tasks]);
 
@@ -921,7 +921,7 @@ function App() {
                                 </button>
                             </div>
                             <div className="divider" />
-                        <div className="filter-row">
+                            <div className="filter-row">
                                 <div className="form-group">
                                     <label className="form-label">Тип задачи</label>
                                     <select value={filterType} onChange={e => setFilterType(e.target.value)}>
