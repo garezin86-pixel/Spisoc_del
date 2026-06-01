@@ -22,7 +22,7 @@ def get_user_service(session: SessionDep):
     return UserService(UserRepository(session))
 
 
-@router.post("/", response_model=UserSchema, status_code=201)
+@router.post("", response_model=UserSchema, status_code=201)
 async def create_user(
     data: UserRegister,
     session: SessionDep,
@@ -36,7 +36,7 @@ async def create_user(
     return user
 
 
-@router.get("/", response_model=PaginatedResponse[UserSchema])
+@router.get("", response_model=PaginatedResponse[UserSchema])
 @cache(expire=300, namespace="users", key_builder=user_scoped_key_builder)
 async def get_users(
     session: SessionDep,

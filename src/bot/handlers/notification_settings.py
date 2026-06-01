@@ -108,28 +108,31 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
 
 @router.message(Command("settings"))
 async def settings_command(message: Message):
-    """Команда /settings - показать настройки уведомлений"""
     if not message.from_user:
         return
 
-    session_maker = get_session_maker()
-    async with UnitOfWork(session_maker) as uow:
-        user = await uow.users.get_by_telegram_id(message.from_user.id)
-        if not user:
-            await message.answer("❌ Пользователь не найден. Начните с /start")
-            return
+    try:
+        session_maker = get_session_maker()
+        async with UnitOfWork(session_maker) as uow:
+            user = await uow.users.get_by_telegram_id(message.from_user.id)
+            if not user:
+                await message.answer("❌ Пользователь не найден. Начните с /start")
+                return
 
-        settings = await _get_settings_dict(uow, user.id)
+            settings = await _get_settings_dict(uow, user.id)
 
-    text = (
-        "⚙️ <b>Настройки уведомлений</b>\n\n"
-        "Нажмите на кнопку, чтобы включить/выключить тип уведомлений:\n\n"
-        "✅ - включено\n"
-        "❌ - выключено"
-    )
-    await message.answer(
-        text, parse_mode="HTML", reply_markup=get_notification_keyboard(settings)
-    )
+        text = (
+            "⚙️ <b>Настройки уведомлений</b>\n\n"
+            "Нажмите на кнопку, чтобы включить/выключить тип уведомлений:\n\n"
+            "✅ - включено\n"
+            "❌ - выключено"
+        )
+        await message.answer(
+            text, parse_mode="HTML", reply_markup=get_notification_keyboard(settings)
+        )
+    except Exception as e:
+        logger.exception("settings_command error")
+        await message.answer(f"❌ Ошибка: {e}")
 
 
 @router.message(Command("notifications_on"))

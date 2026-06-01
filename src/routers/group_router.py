@@ -28,7 +28,7 @@ def get_group_service(session: SessionDep) -> GroupService:
     )
 
 
-@router.post("/", response_model=GroupSchema)
+@router.post("", response_model=GroupSchema)
 async def create_group(
     data: GroupCreate,
     session: SessionDep,
@@ -42,16 +42,7 @@ async def create_group(
     return group
 
 
-# @router.get("/", response_model=list[GroupSchema])
-# @cache(expire=600, namespace="groups")
-# async def get_group(
-#     session: SessionDep, current_user: UserModel = Depends(get_current_user)
-# ):
-
-#     return await get_group_service(session).get_groups()
-
-
-@router.get("/", response_model=PaginatedResponse[GroupSchema])
+@router.get("", response_model=PaginatedResponse[GroupSchema])
 @cache(expire=300, namespace="groups", key_builder=user_scoped_key_builder)
 async def get_group(
     session: SessionDep,
@@ -88,15 +79,6 @@ async def add_user_to_group(
     await cache_manager.invalidate_groups()
 
     return {"message": f"User {user_id} added to group {group_id}", "user": user}
-
-
-# @router.get("/{group_id}/users", response_model=list[UserSchema])
-# async def get_group_users(
-#     group_id: int,
-#     session: SessionDep,
-#     current_user: UserModel = Depends(get_current_user),
-# ):
-#     return await get_group_service(session).get_group_users(group_id)
 
 
 @router.get("/{group_id}/users", response_model=PaginatedResponse[UserSchema])
