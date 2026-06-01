@@ -46,7 +46,7 @@ class ManagedProcess:
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
-        print(f"[run] Started '{self.name}' (pid={self._proc.pid})")
+        print(f"[run] Started '{self.name}' (pid={self._proc.pid})", flush=True)
 
     def restart(self) -> None:
         self.restart_count += 1
@@ -149,10 +149,13 @@ def main() -> None:
         time.sleep(2)
         for svc in services:
             if svc.exited:
+                print(
+                    f"[run] '{svc.name}' exited with code {svc._proc.returncode}",
+                    flush=True,
+                )
                 if svc.restart_count >= MAX_RESTARTS:
                     print(
-                        f"[run] ERROR: '{svc.name}' exceeded {MAX_RESTARTS} restarts. "
-                        "Shutting down."
+                        f"[run] ERROR: '{svc.name}' exceeded {MAX_RESTARTS} restarts."
                     )
                     shutdown()
                 svc.restart()
