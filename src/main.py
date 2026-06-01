@@ -125,7 +125,7 @@ async def lifespan(app: FastAPI):
     await logger.ainfo("app_shutdown_complete")
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, redirect_slashes=True)
 
 # После создания app — автоматические метрики HTTP запросов
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")

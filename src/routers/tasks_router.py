@@ -33,7 +33,7 @@ def get_task_service(session: SessionDep) -> TaskService:
     )
 
 
-@router.post("/", response_model=SpisokSchema, status_code=201)
+@router.post("", response_model=SpisokSchema, status_code=201)
 async def add_task(
     data: SpisokAddSchema,
     session: SessionDep,
