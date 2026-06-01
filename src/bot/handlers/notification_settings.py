@@ -75,7 +75,8 @@ def get_notification_keyboard(settings: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-@router.message(F.text == "⚙️ Настройки уведомлений")
+# @router.message(F.text == "⚙️ Настройки уведомлений")
+@router.message(F.text.in_({"⚙️ Настройки уведомлений", "⚙️ Настройки \n уведомлений"}))
 async def settings_button(message: Message):
     await settings_command(message)  # переиспользуем существующий хендлер
 
