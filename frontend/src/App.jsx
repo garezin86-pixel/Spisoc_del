@@ -625,7 +625,7 @@ function App() {
         finally { setLoading(false); }
     }, [token, filterType, isDone]);
 
-    const loadTrash = useCallback(async (page = trashPage) => {
+    const loadTrash = useCallback(async (page = 1) => {
         setLoading(true);
         try {
             const q = new URLSearchParams();
@@ -636,6 +636,7 @@ function App() {
             setTrashPage(page);
         } catch (err) { handleAuthError(err); }
         finally { setLoading(false); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
     async function loadGroups() {
@@ -654,11 +655,14 @@ function App() {
 
     useEffect(() => {
         if (token) { loadTasks(1, viewMode); loadGroups(); loadUsers(); }
-    }, [token, filterType, isDone, viewMode]);
+        // loadTasks уже включает filterType, isDone и viewMode через useCallback
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadTasks, viewMode, token]);
 
     useEffect(() => {
         if (token && tab === "trash") loadTrash(1);
-    }, [token, tab]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab, loadTrash]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
