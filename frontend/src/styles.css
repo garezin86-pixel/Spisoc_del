@@ -474,11 +474,13 @@ textarea {
   border-radius: var(--radius);
   padding: 18px 20px;
   transition: border-color 0.2s;
-  /* Убрана slideIn анимация — transform в @keyframes создаёт GPU-слои
-     которые дублируются при React StrictMode двойном mount */
   isolation: isolate;
-  display: flex;
-  flex-direction: column;
+
+  /* Включаем Grid-поток по вертикали */
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  /* Это создаст гарантированный физический зазор между заголовком, описанием и чипами */
 }
 
 /* Лёгкий fade без transform — безопасен на мобильных */
@@ -506,7 +508,7 @@ textarea {
 }
 
 .task-top {
-  display: flex;
+  display: block;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -520,9 +522,16 @@ textarea {
 }
 
 .task-desc {
+  display: block;
+  width: 100%;
   font-size: 0.84rem;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 8px;
+  /* Увеличиваем отступ сверху, чтобы отлепить от заголовка */
+  line-height: 1.4;
+  word-break: break-word;
+  clear: both;
+  /* На всякий случай очищаем потоки */
 }
 
 .task-meta-row {
@@ -601,6 +610,22 @@ textarea {
   /* Кнопка "удалить" на всю ширину */
   .task-actions .btn-danger:last-child:nth-child(odd) {
     grid-column: 1 / -1;
+  }
+
+  .task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    overflow-x: hidden;
+    /* Предотвращает горизонтальный микродёрг экрана */
+  }
+
+  .task-card {
+    padding: 14px 16px !important;
+    /* Чуть уменьшаем внутренние отступы, давая тексту больше места */
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 }
 
@@ -1196,18 +1221,23 @@ textarea {
 
 /* ─── Task ID badge ─── */
 .task-title {
-  display: flex;
-  align-items: center;
-  /* Замените baseline на center */
-  gap: 7px;
-  flex-wrap: wrap;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  line-height: 1.4;
-  /* Фиксируем межстрочный интервал */
+  display: block;
+  /* Убираем flex, возвращаем стандартный блочный поток */
+  width: 100%;
+  font-weight: 600;
+  font-size: 0.97rem;
+  line-height: 1.5;
+  /* Увеличиваем межстрочный интервал для читаемости */
+  color: var(--text);
+  word-break: break-word;
+  /* Защита от слишком длинных слов */
+  overflow-wrap: break-word;
 }
 
 .task-id {
+  display: inline-block;
+  /* Позволяет ID аккуратно обтекать текст */
+  vertical-align: middle;
   font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-muted);
@@ -1215,7 +1245,8 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 1px 6px;
-  flex-shrink: 0;
+  margin-right: 6px;
+  /* Отступ от ID до текста */
   font-family: 'DM Sans', monospace;
   letter-spacing: 0.02em;
 }
@@ -1272,6 +1303,36 @@ textarea {
 
   .stat-label {
     font-size: 0.7rem;
+  }
+
+  .task-top {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .task-actions {
+    position: relative !important;
+    width: 100% !important;
+    justify-content: flex-end !important;
+    margin-top: 4px !important;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+
+  .task-meta-row {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .task-meta-item {
+    font-size: 0.78rem !important;
+    white-space: nowrap !important;
+    /* Запрещаем тексту внутри чипа рваться некрасиво */
   }
 }
 
