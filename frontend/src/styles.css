@@ -477,6 +477,8 @@ textarea {
   /* Убрана slideIn анимация — transform в @keyframes создаёт GPU-слои
      которые дублируются при React StrictMode двойном mount */
   isolation: isolate;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Лёгкий fade без transform — безопасен на мобильных */
@@ -508,6 +510,7 @@ textarea {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  min-height: min-content;
 }
 
 .task-title {
@@ -526,7 +529,13 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 12px;
+  /* Чуть увеличим отступ сверху */
+  align-items: center;
+  /* Центрируем по вертикали */
+  min-height: min-content;
+  /* Защита от схлопывания */
+  width: 100%;
 }
 
 .meta-chip {
@@ -1188,11 +1197,14 @@ textarea {
 /* ─── Task ID badge ─── */
 .task-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  /* Замените baseline на center */
   gap: 7px;
   flex-wrap: wrap;
   min-width: 0;
   overflow-wrap: anywhere;
+  line-height: 1.4;
+  /* Фиксируем межстрочный интервал */
 }
 
 .task-id {
