@@ -41,6 +41,9 @@ body,
   font-family: 'DM Sans', sans-serif;
   font-size: 15px;
   line-height: 1.6;
+  /* ДОБАВЬТЕ эти две строки для железной стабильности экрана: */
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Фоновый градиент через псевдоэлемент — не ломает мобильный рендеринг */
@@ -932,7 +935,8 @@ textarea {
 .tab-btn.active {
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 2px 8px var(--accent-glow);
+  /* Вместо тяжелой размытой тени делаем её плоской и легкой: */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* ─── Count badge ─── */
@@ -1100,7 +1104,6 @@ textarea {
   border-top: 1px solid var(--border);
   display: grid;
   gap: 10px;
-  isolation: isolate;
 }
 
 /* ─── Member list ─── */
