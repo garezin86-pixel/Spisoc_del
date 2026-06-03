@@ -514,23 +514,29 @@ function GroupsTab({ token, currentRole }) {
 
     const canManage = currentRole === "admin" || currentRole === "manager";
 
+    const tokenRef = React.useRef(token);
+    tokenRef.current = token;
+
     const loadGroups = useCallback(async () => {
         setLoading(true);
         try {
-            const data = await apiRequest({ path: "/groups?page=1&size=100", token });
+            const data = await apiRequest({ path: "/groups?page=1&size=100", token: tokenRef.current });
             setGroups(extractItems(data));
         } catch { setGroups([]); }
         finally { setLoading(false); }
-    }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const loadUsers = useCallback(async () => {
         try {
-            const data = await apiRequest({ path: "/users?page=1&size=100", token });
+            const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
             setAllUsers(extractItems(data));
         } catch { setAllUsers([]); }
-    }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    useEffect(() => { loadGroups(); loadUsers(); }, [loadGroups, loadUsers]);
+    // Один useEffect без зависимостей от функций — монтирование = один вызов
+    useEffect(() => { loadGroups(); loadUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="content-grid" style={{ gridTemplateColumns: "1fr" }}>
@@ -668,22 +674,20 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Первая загрузка при логине
+    // Один useEffect управляет всеми загрузками — исключает параллельные вызовы
     useEffect(() => {
-        if (token) { loadTasks(1); loadGroups(); loadUsers(); }
+        if (!token) return;
+        if (tab === "tasks") { loadTasks(1); }
+        if (tab === "groups") { /* GroupsTab сам грузит при монтировании */ }
+        if (tab === "trash") { loadTrash(1); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, tab, filterType, isDone, viewMode]);
+
+    // Группы и пользователи грузятся один раз при логине
+    useEffect(() => {
+        if (token) { loadGroups(); loadUsers(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
-
-    // Перезагрузка при смене фильтров — явно, без цепочек через useCallback
-    useEffect(() => {
-        if (token) loadTasks(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filterType, isDone, viewMode]);
-
-    useEffect(() => {
-        if (token && tab === "trash") loadTrash(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, token]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
