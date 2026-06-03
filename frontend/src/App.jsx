@@ -202,28 +202,13 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
             description: editForm.description.trim() || null,
             deadline: editForm.deadline ? `${editForm.deadline}:00` : null,
         });
-        setSaving(false);
-        setEditing(false);
-        setShowReassign(false); // закрыть другую форму
+        setSaving(false); setEditing(false);
     }
 
     async function handleReassign() {
         await onReassign(task.id, reassignUserId || null, reassignGroupId || null);
-        setShowReassign(false);
-        setReassignUserId("");
-        setReassignGroupId("");
-        setEditing(false); // закрыть редактирование
+        setShowReassign(false); setReassignUserId(""); setReassignGroupId("");
     }
-
-    // Функции для открытия форм с закрытием другой
-    const openEdit = () => {
-        setEditing(true);
-        setShowReassign(false);
-    };
-    const openReassign = () => {
-        setShowReassign(v => !v);
-        setEditing(false);
-    };
 
     return (
         <article className={`task-card${task.is_done ? " done-card" : ""}`}>
@@ -283,7 +268,7 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                             disabled={saving || !editForm.title.trim()}>
                             <Icon d={ICONS.save} /> {saving ? "Сохранение…" : "Сохранить"}
                         </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(false); setShowReassign(false); }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
                             <Icon d={ICONS.x} /> Отмена
                         </button>
                     </div>
@@ -312,7 +297,7 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                         <button className="btn btn-primary btn-sm" onClick={handleReassign}>
                             <Icon d={ICONS.reassign} /> Переназначить
                         </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setShowReassign(false); setEditing(false); }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setShowReassign(false)}>
                             <Icon d={ICONS.x} /> Отмена
                         </button>
                     </div>
@@ -324,11 +309,11 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                     <Icon d={ICONS.check} /> {task.is_done ? "Снять отметку" : "Выполнено"}
                 </button>
                 {!editing && (
-                    <button className="btn btn-ghost btn-sm" onClick={openEdit}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(true); setShowReassign(false); }}>
                         <Icon d={ICONS.edit} /> Изменить
                     </button>
                 )}
-                <button className="btn btn-ghost btn-sm" onClick={openReassign}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setShowReassign(v => !v); setEditing(false); }}>
                     <Icon d={ICONS.reassign} /> Переназначить
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowComments(v => !v)}>
@@ -428,6 +413,7 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
         } catch (err) { setError(err.message); }
     }
 
+    // пользователи не в группе — для селекта добавления
     const memberIds = new Set(members.map(m => m.id));
     const notInGroup = allUsers.filter(u => !memberIds.has(u.id));
 
@@ -448,6 +434,7 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
                 <div className="group-card-body">
                     {error && <div className="alert" style={{ marginBottom: 10 }}>{error}</div>}
 
+                    {/* Member list */}
                     {loading ? (
                         <div className="comments-empty">Загрузка…</div>
                     ) : members.length === 0 ? (
@@ -495,6 +482,7 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
                         </div>
                     )}
 
+                    {/* Add member — только для manager/admin */}
                     {canManage && (
                         <div className="group-add-row">
                             <select value={addUserId} onChange={e => setAddUserId(e.target.value)}
@@ -525,6 +513,7 @@ function GroupsTab({ token, currentRole }) {
     const [loading, setLoading] = useState(false);
 
     const canManage = currentRole === "admin" || currentRole === "manager";
+
     const tokenRef = React.useRef(token);
     tokenRef.current = token;
 
@@ -535,6 +524,7 @@ function GroupsTab({ token, currentRole }) {
             setGroups(extractItems(data));
         } catch { setGroups([]); }
         finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadUsers = useCallback(async () => {
@@ -542,9 +532,11 @@ function GroupsTab({ token, currentRole }) {
             const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
             setAllUsers(extractItems(data));
         } catch { setAllUsers([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    useEffect(() => { loadGroups(); loadUsers(); }, []);
+    // Один useEffect без зависимостей от функций — монтирование = один вызов
+    useEffect(() => { loadGroups(); loadUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="content-grid" style={{ gridTemplateColumns: "1fr" }}>
@@ -594,11 +586,11 @@ function App() {
     const [trashTasks, setTrash] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [tab, setTab] = useState("tasks");
+    const [tab, setTab] = useState("tasks"); // "tasks" | "groups" | "trash"
 
     const [filterType, setFilterType] = useState("");
     const [isDone, setIsDone] = useState("");
-    const [viewMode, setViewMode] = useState("user");
+    const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
     const [tasksPage, setTasksPage] = useState(1);
     const [tasksTotal, setTasksTotal] = useState(0);
@@ -621,6 +613,9 @@ function App() {
     const currentUsername = useMemo(() => tokenPayload?.username || tokenPayload?.sub || "Пользователь", [tokenPayload]);
     const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
 
+    // ── loaders ──────────────────────────────────────────
+    // Refs позволяют функциям читать актуальные значения без пересоздания,
+    // что исключает цепочку useCallback→useEffect→двойной setState
     const tokenRef = React.useRef(token);
     const filterTypeRef = React.useRef(filterType);
     const isDoneRef = React.useRef(isDone);
@@ -646,7 +641,8 @@ function App() {
             setTasksPage(page);
         } catch (err) { handleAuthError(err); }
         finally { setLoading(false); }
-    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // пустые зависимости — актуальные значения читаются через refs
 
     const loadTrash = useCallback(async (page = 1) => {
         setLoading(true);
@@ -659,6 +655,7 @@ function App() {
             setTrashPage(page);
         } catch (err) { handleAuthError(err); }
         finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadGroups = useCallback(async () => {
@@ -666,6 +663,7 @@ function App() {
             const data = await apiRequest({ path: "/groups?page=1&size=100", token: tokenRef.current });
             setGroups(extractItems(data));
         } catch { setGroups([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadUsers = useCallback(async () => {
@@ -673,18 +671,25 @@ function App() {
             const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
             setUsers(extractItems(data));
         } catch { setUsers([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Один useEffect управляет всеми загрузками — исключает параллельные вызовы
     useEffect(() => {
         if (!token) return;
         if (tab === "tasks") { loadTasks(1); }
+        if (tab === "groups") { /* GroupsTab сам грузит при монтировании */ }
         if (tab === "trash") { loadTrash(1); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, tab, filterType, isDone, viewMode]);
 
+    // Группы и пользователи грузятся один раз при логине
     useEffect(() => {
         if (token) { loadGroups(); loadUsers(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
+    // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
         if (["401", "403", "invalid"].some(s => err.message?.includes(s))) logout();
         else setError(err.message);
@@ -709,6 +714,7 @@ function App() {
         } catch (err) { setError(err.message); }
     }
 
+    // ── task actions ─────────────────────────────────────
     async function handleCreateTask(e) {
         e.preventDefault();
         if (!form.title.trim()) { setError("Введите заголовок задачи"); return; }
@@ -786,8 +792,11 @@ function App() {
 
     const tasksTotalPages = Math.ceil(tasksTotal / PAGE_SIZE);
     const trashTotalPages = Math.ceil(trashTotal / PAGE_SIZE);
+
+    // ── Role badge in header ──────────────────────────────
     const roleColor = ROLE_COLORS[currentRole] ?? ROLE_COLORS.user;
 
+    // ── Login screen ─────────────────────────────────────
     if (!token) {
         return (
             <div className="login-page">
@@ -820,6 +829,7 @@ function App() {
         );
     }
 
+    // ── Main screen ──────────────────────────────────────
     return (
         <div className="page-shell">
             <header className="app-header">
@@ -855,7 +865,8 @@ function App() {
                 </div>
             </header>
 
-            {tab === "tasks" && (
+            {/* ── TASKS TAB ── рендерится первым ── */}
+            <div style={{ display: tab === "tasks" ? "block" : "none" }}>
                 <div className="content-grid">
                     <aside className="sidebar-col">
                         <div className="card">
@@ -1034,13 +1045,13 @@ function App() {
                         </div>
                     </main>
                 </div>
-            )}
-
-            {tab === "groups" && (
+            </div>
+            {/* ── GROUPS TAB ── */}
+            <div style={{ display: tab === "groups" ? "block" : "none" }}>
                 <GroupsTab token={token} currentRole={currentRole} />
-            )}
-
-            {tab === "trash" && (
+            </div>
+            {/* ── TRASH TAB ── */}
+            <div style={{ display: tab === "trash" ? "block" : "none" }}>
                 <div className="card" style={{ marginTop: 0 }}>
                     <div className="section-header">
                         <div>
@@ -1067,7 +1078,7 @@ function App() {
                         </>
                     )}
                 </div>
-            )}
+            </div>
         </div>
     );
 }
