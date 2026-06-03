@@ -865,42 +865,7 @@ function App() {
                 </div>
             </header>
 
-            {/* ── GROUPS TAB ── */}
-            {tab === "groups" && (
-                <GroupsTab token={token} currentRole={currentRole} />
-            )}
-
-            {/* ── TRASH TAB ── */}
-            {tab === "trash" && (
-                <div className="card" style={{ marginTop: 0 }}>
-                    <div className="section-header">
-                        <div>
-                            <div className="section-title">Корзина</div>
-                            <div className="section-sub">Мягко удалённые задачи — можно восстановить</div>
-                        </div>
-                        <button className="btn btn-ghost btn-sm" onClick={() => loadTrash(1)} disabled={loading}>
-                            <Icon d={ICONS.refresh} /> Обновить
-                        </button>
-                    </div>
-                    {loading ? (
-                        <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
-                    ) : trashTasks.length === 0 ? (
-                        <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
-                    ) : (
-                        <>
-                            <div className="task-list">
-                                {trashTasks.map(task => (
-                                    <TrashCard key={task.id} task={task}
-                                        onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
-                                ))}
-                            </div>
-                            <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
-                        </>
-                    )}
-                </div>
-            )}
-
-            {/* ── TASKS TAB ── */}
+            {/* ── TASKS TAB ── рендерится первым ── */}
             {tab === "tasks" && (
                 <div className="content-grid">
                     <aside className="sidebar-col">
@@ -1084,5 +1049,39 @@ function App() {
         </div>
     );
 }
+            {/* ── GROUPS TAB ── */}
+            {tab === "groups" && (
+                <GroupsTab token={token} currentRole={currentRole} />
+            )}
+
+            {/* ── TRASH TAB ── */}
+            {tab === "trash" && (
+                <div className="card" style={{ marginTop: 0 }}>
+                    <div className="section-header">
+                        <div>
+                            <div className="section-title">Корзина</div>
+                            <div className="section-sub">Мягко удалённые задачи — можно восстановить</div>
+                        </div>
+                        <button className="btn btn-ghost btn-sm" onClick={() => loadTrash(1)} disabled={loading}>
+                            <Icon d={ICONS.refresh} /> Обновить
+                        </button>
+                    </div>
+                    {loading ? (
+                        <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                    ) : trashTasks.length === 0 ? (
+                        <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
+                    ) : (
+                        <>
+                            <div className="task-list">
+                                {trashTasks.map(task => (
+                                    <TrashCard key={task.id} task={task}
+                                        onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
+                                ))}
+                            </div>
+                            <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
+                        </>
+                    )}
+                </div>
+            )}
 
 export default App;
