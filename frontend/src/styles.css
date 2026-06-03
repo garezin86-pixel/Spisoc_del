@@ -869,13 +869,11 @@ textarea {
     transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease !important;
   }
 
-  /* Защита от мерцания при тапе в Chrome/Opera на Android */
+  /* Изолируем контекст карточек без создания GPU-слоёв */
   .card,
   .task-card,
   .group-card {
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    will-change: transform;
+    isolation: isolate;
   }
 
   /* Улучшаем тап-зоны для мобильных */
@@ -1074,7 +1072,8 @@ textarea {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
+  /* overflow: hidden убран — создавал stacking context и GPU compositing слои
+     которые дублировались на мобильных. Скругление углов сохраняется через border-radius. */
   transition: border-color 0.2s;
 }
 
@@ -1313,7 +1312,6 @@ textarea {
   }
 
   .task-actions {
-    position: relative !important;
     width: 100% !important;
     justify-content: flex-end !important;
     margin-top: 4px !important;

@@ -3,8 +3,18 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Spisoc React</title>
+    <!-- initial-scale=1, maximum-scale=1 — отключает авто-зум на мобильных -->
+    <!-- viewport-fit=cover — правильный рендер на iPhone с notch -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+    <!-- Отключаем аппаратное ускорение для проблемных мобильных браузеров -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Spisoc</title>
+    <style>
+        /* Критический CSS — до загрузки основных стилей предотвращает FOUC */
+        html, body { margin: 0; background: #0f1117; }
+        #root { min-height: 100dvh; }
+    </style>
 </head>
 
 <body>
