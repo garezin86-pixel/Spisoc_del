@@ -41,21 +41,22 @@ body,
   font-family: 'DM Sans', sans-serif;
   font-size: 15px;
   line-height: 1.6;
-  /* ДОБАВЬТЕ эти две строки для железной стабильности экрана: */
   overflow-x: hidden;
   max-width: 100vw;
 }
 
-/* Фоновый градиент через псевдоэлемент — не ломает мобильный рендеринг */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image:
-    radial-gradient(ellipse 600px 400px at 10% 20%, rgba(124, 106, 240, 0.06) 0%, transparent 70%),
-    radial-gradient(ellipse 500px 300px at 80% 80%, rgba(34, 197, 94, 0.04) 0%, transparent 70%);
+/* Фоновый градиент только для десктопа – убираем артефакты на мобильных */
+@media (min-width: 769px) {
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(ellipse 600px 400px at 10% 20%, rgba(124, 106, 240, 0.06) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 300px at 80% 80%, rgba(34, 197, 94, 0.04) 0%, transparent 70%);
+  }
 }
 
 /* Все дочерние элементы поверх псевдоэлемента */
@@ -477,15 +478,15 @@ textarea {
   border-radius: var(--radius);
   padding: 18px 20px;
   transition: border-color 0.2s;
-
-  /* Включаем Grid-поток по вертикали */
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
-  /* Это создаст гарантированный физический зазор между заголовком, описанием и чипами */
+  /* Исправление артефактов на мобильных: аппаратное ускорение */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-/* Лёгкий fade без transform — безопасен на мобильных */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -501,7 +502,9 @@ textarea {
 }
 
 .task-card.done-card {
-  opacity: 0.6;
+  /* Убираем opacity, которая вызывала артефакты, используем безопасный фильтр */
+  filter: grayscale(0.15);
+  background: var(--surface);
 }
 
 .task-card.done-card .task-title {
@@ -519,7 +522,9 @@ textarea {
 .task-title {
   font-weight: 600;
   font-size: 0.97rem;
-  line-height: 1.4;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .task-desc {
@@ -528,11 +533,8 @@ textarea {
   font-size: 0.84rem;
   color: var(--text-muted);
   margin-top: 8px;
-  /* Увеличиваем отступ сверху, чтобы отлепить от заголовка */
   line-height: 1.4;
   word-break: break-word;
-  clear: both;
-  /* На всякий случай очищаем потоки */
 }
 
 .task-meta-row {
@@ -540,11 +542,8 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
-  /* Чуть увеличим отступ сверху */
   align-items: center;
-  /* Центрируем по вертикали */
   min-height: min-content;
-  /* Защита от схлопывания */
   width: 100%;
 }
 
@@ -608,7 +607,6 @@ textarea {
     gap: 8px;
   }
 
-  /* Кнопка "удалить" на всю ширину */
   .task-actions .btn-danger:last-child:nth-child(odd) {
     grid-column: 1 / -1;
   }
@@ -619,12 +617,10 @@ textarea {
     gap: 12px;
     width: 100%;
     overflow-x: hidden;
-    /* Предотвращает горизонтальный микродёрг экрана */
   }
 
   .task-card {
     padding: 14px 16px !important;
-    /* Чуть уменьшаем внутренние отступы, давая тексту больше места */
     width: 100% !important;
     box-sizing: border-box !important;
   }
@@ -853,11 +849,13 @@ textarea {
 
 @media (hover: none),
 (pointer: coarse) {
+
+  /* Убираем градиент на мобильных */
   body::before {
-    display: none;
+    display: none !important;
   }
 
-  /* Безопасный сброс тяжелых анимаций без разрушения слоев GPU */
+  /* Облегчаем анимации на мобильных */
   .btn,
   .card,
   .task-card,
@@ -883,7 +881,6 @@ textarea {
     min-height: 40px;
   }
 
-  /* Исправлено: touch-action оставляем только кнопкам и ссылкам, убираем с input/textarea */
   button,
   a,
   .tab-btn {
@@ -935,7 +932,6 @@ textarea {
 .tab-btn.active {
   background: var(--accent);
   color: #fff;
-  /* Вместо тяжелой размытой тени делаем её плоской и легкой: */
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
@@ -1019,6 +1015,8 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .comment-meta {
@@ -1067,9 +1065,9 @@ textarea {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  /* overflow: hidden убран — создавал stacking context и GPU compositing слои
-     которые дублировались на мобильных. Скругление углов сохраняется через border-radius. */
   transition: border-color 0.2s;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .group-card:hover {
@@ -1213,23 +1211,8 @@ textarea {
 }
 
 /* ─── Task ID badge ─── */
-.task-title {
-  display: block;
-  /* Убираем flex, возвращаем стандартный блочный поток */
-  width: 100%;
-  font-weight: 600;
-  font-size: 0.97rem;
-  line-height: 1.5;
-  /* Увеличиваем межстрочный интервал для читаемости */
-  color: var(--text);
-  word-break: break-word;
-  /* Защита от слишком длинных слов */
-  overflow-wrap: break-word;
-}
-
 .task-id {
   display: inline-block;
-  /* Позволяет ID аккуратно обтекать текст */
   vertical-align: middle;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1239,7 +1222,6 @@ textarea {
   border-radius: 5px;
   padding: 1px 6px;
   margin-right: 6px;
-  /* Отступ от ID до текста */
   font-family: 'DM Sans', monospace;
   letter-spacing: 0.02em;
 }
@@ -1319,11 +1301,6 @@ textarea {
     flex-wrap: wrap;
     gap: 8px;
     width: 100%;
-  }
-
-  .task-meta-item {
-    font-size: 0.78rem;
-    white-space: nowrap;
   }
 }
 
