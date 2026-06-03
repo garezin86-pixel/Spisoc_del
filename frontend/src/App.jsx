@@ -1046,9 +1046,7 @@ function App() {
                     </main>
                 </div>
             )}
-        </div>
-    );
-}
+
             {/* ── GROUPS TAB ── */}
             {tab === "groups" && (
                 <GroupsTab token={token} currentRole={currentRole} />
@@ -1083,5 +1081,8 @@ function App() {
                     )}
                 </div>
             )}
+        </div>
+    );
+}
 
 export default App;
