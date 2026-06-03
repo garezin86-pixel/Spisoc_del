@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "./api";
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -608,61 +608,82 @@ function App() {
     const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
 
     // ── loaders ──────────────────────────────────────────
-    const loadTasks = useCallback(async (page = 1, filterUserGroup = "user") => {
+    // Refs позволяют функциям читать актуальные значения без пересоздания,
+    // что исключает цепочку useCallback→useEffect→двойной setState
+    const tokenRef = React.useRef(token);
+    const filterTypeRef = React.useRef(filterType);
+    const isDoneRef = React.useRef(isDone);
+    const viewModeRef = React.useRef(viewMode);
+    tokenRef.current = token;
+    filterTypeRef.current = filterType;
+    isDoneRef.current = isDone;
+    viewModeRef.current = viewMode;
+
+    const loadTasks = useCallback(async (page = 1, filterUserGroup) => {
+        const mode = filterUserGroup ?? viewModeRef.current;
         setLoading(true);
         try {
             const q = new URLSearchParams();
-            q.set("filter_user_group", filterUserGroup);
+            q.set("filter_user_group", mode);
             q.set("page", page);
             q.set("size", PAGE_SIZE);
-            if (filterType) q.set("filter_type", filterType);
-            if (isDone) q.set("is_done", isDone);
-            const data = await apiRequest({ path: `/tasks/filter?${q}`, token });
+            if (filterTypeRef.current) q.set("filter_type", filterTypeRef.current);
+            if (isDoneRef.current) q.set("is_done", isDoneRef.current);
+            const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
             setTasks(extractItems(data));
             setTasksTotal(data?.total ?? 0);
             setTasksPage(page);
         } catch (err) { handleAuthError(err); }
         finally { setLoading(false); }
-    }, [token, filterType, isDone]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // пустые зависимости — актуальные значения читаются через refs
 
     const loadTrash = useCallback(async (page = 1) => {
         setLoading(true);
         try {
             const q = new URLSearchParams();
             q.set("page", page); q.set("size", PAGE_SIZE);
-            const data = await apiRequest({ path: `/tasks/trash?${q}`, token });
+            const data = await apiRequest({ path: `/tasks/trash?${q}`, token: tokenRef.current });
             setTrash(extractItems(data));
             setTrashTotal(data?.total ?? 0);
             setTrashPage(page);
         } catch (err) { handleAuthError(err); }
         finally { setLoading(false); }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    async function loadGroups() {
+    const loadGroups = useCallback(async () => {
         try {
-            const data = await apiRequest({ path: "/groups?page=1&size=100", token });
+            const data = await apiRequest({ path: "/groups?page=1&size=100", token: tokenRef.current });
             setGroups(extractItems(data));
         } catch { setGroups([]); }
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    async function loadUsers() {
+    const loadUsers = useCallback(async () => {
         try {
-            const data = await apiRequest({ path: "/users?page=1&size=100", token });
+            const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
             setUsers(extractItems(data));
         } catch { setUsers([]); }
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
+    // Первая загрузка при логине
     useEffect(() => {
-        if (token) { loadTasks(1, viewMode); loadGroups(); loadUsers(); }
-        // loadTasks уже включает filterType, isDone и viewMode через useCallback
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadTasks, viewMode, token]);
+        if (token) { loadTasks(1); loadGroups(); loadUsers(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]);
+
+    // Перезагрузка при смене фильтров — явно, без цепочек через useCallback
+    useEffect(() => {
+        if (token) loadTasks(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filterType, isDone, viewMode]);
 
     useEffect(() => {
         if (token && tab === "trash") loadTrash(1);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, loadTrash]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab, token]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
