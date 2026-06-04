@@ -674,20 +674,26 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Один useEffect управляет всеми загрузками — исключает параллельные вызовы
+    // Единый эффект — никаких параллельных вызовов
     useEffect(() => {
         if (!token) return;
-        if (tab === "tasks") { loadTasks(1); }
-        if (tab === "groups") { /* GroupsTab сам грузит при монтировании */ }
-        if (tab === "trash") { loadTrash(1); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, tab, filterType, isDone, viewMode]);
-
-    // Группы и пользователи грузятся один раз при логине
-    useEffect(() => {
-        if (token) { loadGroups(); loadUsers(); }
+        // Все загрузки при первом появлении токена
+        loadGroups();
+        loadUsers();
+        if (tab === "tasks") loadTasks(1);
+        if (tab === "trash") loadTrash(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
+
+    // Перезагрузка задач только при смене фильтров/вкладки (не при логине)
+    const isFirstRender = React.useRef(true);
+    useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return; }
+        if (!token) return;
+        if (tab === "tasks") loadTasks(1);
+        if (tab === "trash") loadTrash(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab, filterType, isDone, viewMode]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
@@ -865,8 +871,9 @@ function App() {
                 </div>
             </header>
 
-            {/* ── TASKS TAB ── рендерится первым ── */}
-            <div style={{ display: tab === "tasks" ? "block" : "none" }}>
+            {/* ── TASKS TAB ── */}
+            {tab === "tasks" && (
+            <div>
                 <div className="content-grid">
                     <aside className="sidebar-col">
                         <div className="card">
@@ -1046,12 +1053,16 @@ function App() {
                     </main>
                 </div>
             </div>
+            )}
             {/* ── GROUPS TAB ── */}
-            <div style={{ display: tab === "groups" ? "block" : "none" }}>
+            {tab === "groups" && (
+            <div>
                 <GroupsTab token={token} currentRole={currentRole} />
             </div>
+            )}
             {/* ── TRASH TAB ── */}
-            <div style={{ display: tab === "trash" ? "block" : "none" }}>
+            {tab === "trash" && (
+            <div>
                 <div className="card" style={{ marginTop: 0 }}>
                     <div className="section-header">
                         <div>
@@ -1079,6 +1090,7 @@ function App() {
                     )}
                 </div>
             </div>
+            )}
         </div>
     );
 }
