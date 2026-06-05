@@ -25,6 +25,29 @@
   --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.3);
 }
 
+/* ─── Light theme ─── */
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --surface2: #f8f9fb;
+  --border: #e2e6ea;
+  --border-hover: #c5cdd8;
+  --text: #111827;
+  --text2: #4b5563;
+  --text3: #9ca3af;
+  --accent: #5b47e0;
+  --accent-light: #7c6af0;
+  --accent-dim: rgba(91, 71, 224, 0.1);
+  --green: #16a34a;
+  --green-dim: rgba(22, 163, 74, 0.1);
+  --red: #dc2626;
+  --red-dim: rgba(220, 38, 38, 0.1);
+  --amber: #d97706;
+  --amber-dim: rgba(217, 119, 6, 0.1);
+  --shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -62,9 +85,18 @@ body::before {
   z-index: 1;
 }
 
+/* Предотвращаем горизонтальный скролл на любых экранах */
+.page-shell,
+body,
+#root {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   overflow-x: hidden;
+  /* Аппаратное ускорение скролла на iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
 button,
@@ -474,11 +506,11 @@ textarea {
   border-radius: var(--radius);
   padding: 18px 20px;
   transition: border-color 0.2s;
-  isolation: isolate;
-
-  /* Включаем Grid-поток по вертикали */
-  display: grid;
-  grid-template-columns: 1fr;
+  /* display: grid; */
+  /* grid-template-columns: 1fr; */
+  display: flex;
+  /* Меняем display: grid на flex-column */
+  flex-direction: column;
   gap: 12px;
   /* Это создаст гарантированный физический зазор между заголовком, описанием и чипами */
 }
@@ -556,7 +588,21 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 3px 9px;
+  padding: 4px 9px;
+  /* Чуть увеличили вертикальный паддинг */
+  line-height: 1.2;
+  white-space: normal;
+  /* Фиксируем межстрочку, чтобы текст не наползал друг на друга */
+  word-break: break-word;
+  /* Защита от длинных дат */
+}
+
+/* Перенос длинных дедлайнов и ID задач */
+.meta-chip,
+.task-id {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 .meta-chip.overdue {
@@ -581,6 +627,21 @@ textarea {
   flex-shrink: 0;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  gap: 6px;
+  /* Отступы снаружи, чтобы не слипались ряды */
+  margin-right: 8px;
+  margin-bottom: 8px;
+  margin-top: 8px;
+}
+
 .badge-done {
   background: var(--green-dim);
   color: var(--green);
@@ -603,13 +664,25 @@ textarea {
 @media (max-width: 480px) {
   .task-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
     gap: 8px;
+  }
+
+  /* Для случая с одной кнопкой (хотя в корзине две) – растягиваем на всю ширину */
+  .task-actions .btn:only-child {
+    grid-column: 1 / -1;
   }
 
   /* Кнопка "удалить" на всю ширину */
   .task-actions .btn-danger:last-child:nth-child(odd) {
     grid-column: 1 / -1;
+  }
+
+  .task-actions .btn {
+    white-space: normal;
+    word-break: break-word;
+    text-align: center;
+    padding: 8px 10px;
   }
 
   .task-list {
@@ -876,6 +949,28 @@ textarea {
     isolation: isolate;
   }
 
+  /* Убираем тени и градиенты, которые вызывают артефакты на мобильных */
+  .card,
+  .task-card,
+  .group-card,
+  .auth-card {
+    box-shadow: none !important;
+    border: 1px solid var(--border);
+  }
+
+  /* Отключаем анимации и сложные фоны */
+  body::before {
+    display: none;
+  }
+
+  /* Упрощаем градиентные бейджи */
+  .badge-active,
+  .badge-done,
+  .role-badge {
+    background: var(--surface2) !important;
+    border: 1px solid var(--border);
+  }
+
   /* Улучшаем тап-зоны для мобильных */
   .btn {
     min-height: 44px;
@@ -1109,7 +1204,6 @@ textarea {
   border-top: 1px solid var(--border);
   display: grid;
   gap: 10px;
-  isolation: isolate;
 }
 
 /* ─── Member list ─── */
@@ -1250,6 +1344,11 @@ textarea {
   letter-spacing: 0.02em;
 }
 
+.task-main-info {
+  width: 100%;
+  display: block;
+}
+
 @media (max-width: 420px) {
   .page-shell {
     padding-inline: 10px;
@@ -1311,6 +1410,21 @@ textarea {
     gap: 12px !important;
   }
 
+  /* Добавляем зазор между заголовком/мета-данными и бейджем "Готово/В работе" */
+  .task-top .badge {
+    margin-top: 10px;
+    display: inline-flex;
+  }
+
+  /* Безопасный контейнер для текста */
+  .task-text-block {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
   .task-actions {
     width: 100% !important;
     justify-content: flex-end !important;
@@ -1342,5 +1456,50 @@ textarea {
   .view-mode-row,
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Жесткий сброс для иконок внутри кнопок и чипов */
+.btn svg,
+.meta-chip svg,
+.btn i,
+.meta-chip i {
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+}
+
+/* Настройка самой кнопки, чтобы текст и иконка не враждовали */
+.btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  text-align: center;
+}
+
+/* Для мобильных экранов: если кнопки все еще накладываются, 
+   мы изолируем их структуру */
+@media (max-width: 420px) {
+
+  .task-card .task-actions,
+  .done-card .task-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    /* Ставим кнопки в столбик, чтобы им хватало места */
+    align-items: stretch !important;
+    gap: 8px !important;
+    margin-top: 12px !important;
+  }
+
+  .task-card .task-actions .btn,
+  .done-card .task-actions .btn {
+    width: 100% !important;
+    min-height: 38px !important;
+    white-space: nowrap !important;
+    /* Текст кнопки не переносится и не пухнет по вертикали */
   }
 }

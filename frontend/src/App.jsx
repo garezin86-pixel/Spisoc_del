@@ -66,8 +66,19 @@ const ROLE_COLORS = {
 // ─── Icons ────────────────────────────────────────────────
 function Icon({ d, size = 14 }) {
     return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+            viewBox="0 0 24 24"
+            style={{
+                width: "14px",
+                height: "14px",
+                minWidth: "14px",
+                minHeight: "14px",
+                flexShrink: 0,
+                display: "inline-block",
+                verticalAlign: "middle",
+                fill: "currentColor"
+            }}
+        >
             <path d={d} />
         </svg>
     );
@@ -122,7 +133,10 @@ function CommentsPanel({ taskId, token }) {
     const [sending, setSending] = useState(false);
     const PAGE_SIZE = 5;
 
+    const inflightRef = React.useRef(false);
     const load = useCallback(async (p = 1) => {
+        if (p === 1 && inflightRef.current) return; // защита от двойного вызова
+        inflightRef.current = true;
         setLoading(true);
         try {
             const data = await apiRequest({
@@ -132,7 +146,7 @@ function CommentsPanel({ taskId, token }) {
             setTotal(data?.total ?? 0);
             setPage(p);
         } catch { /* ignore */ }
-        finally { setLoading(false); }
+        finally { setLoading(false); inflightRef.current = false; }
     }, [taskId, token]);
 
     useEffect(() => { load(1); }, [load]);
@@ -221,40 +235,41 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
 
     return (
         <article className={`task-card${task.is_done ? " done-card" : ""}`}>
-            <div className="task-top">
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="task-title">
-                        <span className="task-id">#{task.id}</span>
-                        {task.title}
+            <div className="task-main-info"> {/* НОВЫЙ ИЗОЛИРУЮЩИЙ КОНТЕЙНЕР ДЛЯ ВЕРХНЕЙ ЧАСТИ */}
+                <div className="task-top">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="task-title">
+                            <span className="task-id">#{task.id}</span>
+                            {task.title}
+                        </div>
+                        {task.description && <div className="task-desc">{task.description}</div>}
+                        <div className="task-meta-row">
+                            {dl && (
+                                <span className={`meta-chip${dl.isOverdue && !task.is_done ? " overdue" : dl.isToday && !task.is_done ? " today" : ""}`}>
+                                    <Icon d={ICONS.clock} />
+                                    {dl.isOverdue && !task.is_done ? "Просрочено: " : dl.isToday && !task.is_done ? "Сегодня: " : ""}
+                                    {dl.fmt}
+                                </span>
+                            )}
+                            {task.author?.username && (
+                                <span className="meta-chip"><Icon d={ICONS.user} /> {task.author.username}</span>
+                            )}
+                            {task.user?.username && task.user.username !== task.author?.username && (
+                                <span className="meta-chip"><Icon d={ICONS.user} /> → {task.user.username}</span>
+                            )}
+                            {task.group?.name && (
+                                <span className="meta-chip"><Icon d={ICONS.group} /> {task.group.name}</span>
+                            )}
+                            {task.comments_count > 0 && (
+                                <span className="meta-chip"><Icon d={ICONS.comment} /> {task.comments_count}</span>
+                            )}
+                        </div>
                     </div>
-                    {task.description && <div className="task-desc">{task.description}</div>}
-                    <div className="task-meta-row">
-                        {dl && (
-                            <span className={`meta-chip${dl.isOverdue && !task.is_done ? " overdue" : dl.isToday && !task.is_done ? " today" : ""}`}>
-                                <Icon d={ICONS.clock} />
-                                {dl.isOverdue && !task.is_done ? "Просрочено: " : dl.isToday && !task.is_done ? "Сегодня: " : ""}
-                                {dl.fmt}
-                            </span>
-                        )}
-                        {task.author?.username && (
-                            <span className="meta-chip"><Icon d={ICONS.user} /> {task.author.username}</span>
-                        )}
-                        {task.user?.username && task.user.username !== task.author?.username && (
-                            <span className="meta-chip"><Icon d={ICONS.user} /> → {task.user.username}</span>
-                        )}
-                        {task.group?.name && (
-                            <span className="meta-chip"><Icon d={ICONS.group} /> {task.group.name}</span>
-                        )}
-                        {task.comments_count > 0 && (
-                            <span className="meta-chip"><Icon d={ICONS.comment} /> {task.comments_count}</span>
-                        )}
-                    </div>
+                    <span className={`badge ${task.is_done ? "badge-done" : "badge-active"}`}>
+                        {task.is_done ? "Готово" : "В работе"}
+                    </span>
                 </div>
-                <span className={`badge ${task.is_done ? "badge-done" : "badge-active"}`}>
-                    {task.is_done ? "Готово" : "В работе"}
-                </span>
-            </div>
-
+            </div> {/* КОНЕЦ НОВОГО КОНТЕЙНЕРА */}
             {editing && (
                 <div className="edit-form">
                     <div className="form-group">
@@ -339,34 +354,49 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
 }
 
 // ─── TrashCard ────────────────────────────────────────────
+// ─── TrashCard ────────────────────────────────────────────
 function TrashCard({ task, onRestore, onHardDelete }) {
     const dl = formatDeadline(task.deadline);
+
     return (
         <article className="task-card done-card">
-            <div className="task-top">
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="task-title">{task.title}</div>
-                    {task.description && <div className="task-desc">{task.description}</div>}
-                    <div className="task-meta-row">
-                        {dl && <span className="meta-chip"><Icon d={ICONS.clock} /> {dl.fmt}</span>}
-                        {task.author?.username && <span className="meta-chip"><Icon d={ICONS.user} /> {task.author.username}</span>}
-                        {task.deleted_at && (
-                            <span className="meta-chip overdue">
-                                Удалено: {new Date(task.deleted_at).toLocaleString("ru-RU", {
-                                    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-                                })}
-                            </span>
-                        )}
+            <div className="task-main-info">
+                <div className="task-top">
+                    {/* Единообразие с TaskCard: внутренний div с flex:1 */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="task-title">
+                            <span className="task-id">#{task.id}</span>
+                            {task.title}
+                        </div>
+                        {task.description && <div className="task-desc">{task.description}</div>}
+                        <div className="task-meta-row">
+                            {dl && (
+                                <span className="meta-chip">
+                                    <Icon d={ICONS.clock} />
+                                    {dl.fmt}
+                                </span>
+                            )}
+                            {task.author?.username && (
+                                <span className="meta-chip">
+                                    <Icon d={ICONS.user} /> {task.author.username}
+                                </span>
+                            )}
+                            {task.group?.name && (
+                                <span className="meta-chip">
+                                    <Icon d={ICONS.group} /> {task.group.name}
+                                </span>
+                            )}
+                        </div>
                     </div>
+                    <span className="badge badge-done">Удалена</span>
                 </div>
-                <span className="badge" style={{ background: "var(--red-dim)", color: "var(--red)" }}>Удалена</span>
             </div>
             <div className="task-actions">
-                <button className="btn btn-success btn-sm" onClick={() => onRestore(task.id)}>
-                    <Icon d={ICONS.restore} /> Восстановить
+                <button className="btn btn-success btn-sm" onClick={() => onRestore(task)}>
+                    <Icon d={ICONS.check} /> Восстановить
                 </button>
-                <button className="btn btn-danger btn-sm" onClick={() => onHardDelete(task.id)}>
-                    <Icon d={ICONS.hardDel} /> Удалить навсегда
+                <button className="btn btn-danger btn-sm" onClick={() => onHardDelete(task)}>
+                    <Icon d={ICONS.trash} /> Удалить навсегда
                 </button>
             </div>
         </article>
@@ -382,7 +412,10 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
     const [expanded, setExpanded] = useState(false);
     const [error, setError] = useState(null);
 
+    const loadingRef = React.useRef(false);
     const load = useCallback(async () => {
+        if (loadingRef.current) return;
+        loadingRef.current = true;
         setLoading(true);
         try {
             const data = await apiRequest({
@@ -390,7 +423,7 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
             });
             setMembers(extractItems(data));
         } catch { setMembers([]); }
-        finally { setLoading(false); }
+        finally { setLoading(false); loadingRef.current = false; }
     }, [group.id, token]);
 
     useEffect(() => { if (expanded) load(); }, [expanded, load]);
@@ -525,6 +558,8 @@ function GroupsTab({ token, currentRole }) {
 
     const tokenRef = React.useRef(token);
     tokenRef.current = token;
+    // loadingRef предотвращает двойной вызов при StrictMode double-mount
+    const loadingRef = React.useRef(false);
 
     const loadGroups = useCallback(async () => {
         setLoading(true);
@@ -533,7 +568,7 @@ function GroupsTab({ token, currentRole }) {
             setGroups(extractItems(data));
         } catch { setGroups([]); }
         finally { setLoading(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadUsers = useCallback(async () => {
@@ -541,11 +576,17 @@ function GroupsTab({ token, currentRole }) {
             const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
             setAllUsers(extractItems(data));
         } catch { setAllUsers([]); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Один useEffect без зависимостей от функций — монтирование = один вызов
-    useEffect(() => { loadGroups(); loadUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        // Защита от двойного вызова (React StrictMode монтирует дважды)
+        if (loadingRef.current) return;
+        loadingRef.current = true;
+        loadGroups();
+        loadUsers();
+        return () => { loadingRef.current = false; };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="content-grid" style={{ gridTemplateColumns: "1fr" }}>
@@ -591,6 +632,7 @@ function GroupsTab({ token, currentRole }) {
 // ─── Main App ─────────────────────────────────────────────
 function App() {
     const [token, setToken] = useState(localStorage.getItem("spisoc_token"));
+    const [theme, setTheme] = useState(() => localStorage.getItem("spisoc_theme") || "dark");
     const [tasks, setTasks] = useState([]);
     const [trashTasks, setTrash] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -622,6 +664,12 @@ function App() {
     const currentUsername = useMemo(() => tokenPayload?.username || tokenPayload?.sub || "Пользователь", [tokenPayload]);
     const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
 
+    // Применяем тему к документу
+    useEffect(() => {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("spisoc_theme", theme);
+    }, [theme]);
+
     // ── loaders ──────────────────────────────────────────
     // Refs позволяют функциям читать актуальные значения без пересоздания,
     // что исключает цепочку useCallback→useEffect→двойной setState
@@ -634,7 +682,16 @@ function App() {
     isDoneRef.current = isDone;
     viewModeRef.current = viewMode;
 
+    // AbortController отменяет предыдущий запрос при новом вызове
+    const tasksAbortRef = React.useRef(null);
+    const trashAbortRef = React.useRef(null);
+
     const loadTasks = useCallback(async (page = 1, filterUserGroup) => {
+        // Отменяем предыдущий запрос если он ещё выполняется
+        if (tasksAbortRef.current) tasksAbortRef.current.abort();
+        const controller = new AbortController();
+        tasksAbortRef.current = controller;
+
         const mode = filterUserGroup ?? viewModeRef.current;
         setLoading(true);
         try {
@@ -645,26 +702,41 @@ function App() {
             if (filterTypeRef.current) q.set("filter_type", filterTypeRef.current);
             if (isDoneRef.current) q.set("is_done", isDoneRef.current);
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
+            // Если запрос был отменён — игнорируем результат
+            if (controller.signal.aborted) return;
             setTasks(extractItems(data));
             setTasksTotal(data?.total ?? 0);
             setTasksPage(page);
-        } catch (err) { handleAuthError(err); }
-        finally { setLoading(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // пустые зависимости — актуальные значения читаются через refs
+        } catch (err) {
+            if (!controller.signal.aborted) handleAuthError(err);
+        }
+        finally {
+            if (!controller.signal.aborted) setLoading(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const loadTrash = useCallback(async (page = 1) => {
+        if (trashAbortRef.current) trashAbortRef.current.abort();
+        const controller = new AbortController();
+        trashAbortRef.current = controller;
+
         setLoading(true);
         try {
             const q = new URLSearchParams();
             q.set("page", page); q.set("size", PAGE_SIZE);
             const data = await apiRequest({ path: `/tasks/trash?${q}`, token: tokenRef.current });
+            if (controller.signal.aborted) return;
             setTrash(extractItems(data));
             setTrashTotal(data?.total ?? 0);
             setTrashPage(page);
-        } catch (err) { handleAuthError(err); }
-        finally { setLoading(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        } catch (err) {
+            if (!controller.signal.aborted) handleAuthError(err);
+        }
+        finally {
+            if (!controller.signal.aborted) setLoading(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadGroups = useCallback(async () => {
@@ -672,7 +744,7 @@ function App() {
             const data = await apiRequest({ path: "/groups?page=1&size=100", token: tokenRef.current });
             setGroups(extractItems(data));
         } catch { setGroups([]); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadUsers = useCallback(async () => {
@@ -680,29 +752,40 @@ function App() {
             const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
             setUsers(extractItems(data));
         } catch { setUsers([]); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Единый эффект — никаких параллельных вызовов
-    useEffect(() => {
-        if (!token) return;
-        // Все загрузки при первом появлении токена
-        loadGroups();
-        loadUsers();
-        if (tab === "tasks") loadTasks(1);
-        if (tab === "trash") loadTrash(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    // Один эффект — все загрузки. Используем ref чтобы отделить
+    // первый запуск (логин) от последующих (смена фильтров/вкладки).
+    // isFirstRender объявлен ВНЕ useEffect и НЕ пересоздаётся при ре-рендере.
+    const didInitRef = React.useRef(false);
+    const prevTokenRef = React.useRef(null);
 
-    // Перезагрузка задач только при смене фильтров/вкладки (не при логине)
-    const isFirstRender = React.useRef(true);
     useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return; }
-        if (!token) return;
-        if (tab === "tasks") loadTasks(1);
-        if (tab === "trash") loadTrash(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, filterType, isDone, viewMode]);
+        if (!token) {
+            // Логаут — сбрасываем флаг чтобы при следующем логине загрузить заново
+            didInitRef.current = false;
+            prevTokenRef.current = null;
+            return;
+        }
+
+        const isNewLogin = token !== prevTokenRef.current;
+        prevTokenRef.current = token;
+
+        if (isNewLogin) {
+            // Первый вход или смена токена — грузим всё
+            didInitRef.current = true;
+            loadGroups();
+            loadUsers();
+            if (tab === "tasks") loadTasks(1);
+            if (tab === "trash") loadTrash(1);
+        } else {
+            // Смена фильтров/вкладки — только задачи
+            if (tab === "tasks") loadTasks(1);
+            if (tab === "trash") loadTrash(1);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, tab, filterType, isDone, viewMode]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
@@ -874,6 +957,14 @@ function App() {
                             {ROLE_LABELS[currentRole] ?? currentRole}
                         </span>
                     </div>
+                    <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+                        title="Переключить тему"
+                        style={{ fontSize: "0.85rem" }}
+                    >
+                        {theme === "dark" ? "☀️" : "🌙"}
+                    </button>
                     <button className="btn btn-ghost btn-sm" onClick={logout}>
                         <Icon d={ICONS.logout} /> Выйти
                     </button>
@@ -882,223 +973,223 @@ function App() {
 
             {/* ── TASKS TAB ── */}
             {tab === "tasks" && (
-            <div>
-                <div className="content-grid">
-                    <aside className="sidebar-col">
-                        <div className="card">
-                            <div className="section-header">
-                                <div>
-                                    <div className="section-title">Статистика</div>
-                                    <div className="section-sub">Текущая страница</div>
+                <div>
+                    <div className="content-grid">
+                        <aside className="sidebar-col">
+                            <div className="card">
+                                <div className="section-header">
+                                    <div>
+                                        <div className="section-title">Статистика</div>
+                                        <div className="section-sub">Текущая страница</div>
+                                    </div>
+                                </div>
+                                <div className="stats-grid">
+                                    <div className="stat-box">
+                                        <div className="stat-value">{tasksTotal}</div>
+                                        <div className="stat-label">Всего</div>
+                                    </div>
+                                    <div className="stat-box">
+                                        <div className="stat-value" style={{ color: "var(--green)" }}>{stats.done}</div>
+                                        <div className="stat-label">Готово</div>
+                                    </div>
+                                    <div className="stat-box">
+                                        <div className="stat-value" style={{ color: "var(--accent-light)" }}>{stats.pending}</div>
+                                        <div className="stat-label">В работе</div>
+                                    </div>
+                                </div>
+                                <div className="progress-wrap">
+                                    <div className="progress-track">
+                                        <div className="progress-fill" style={{ width: `${stats.percent}%` }} />
+                                    </div>
+                                    <div className="progress-caption">{stats.percent}% выполнено</div>
                                 </div>
                             </div>
-                            <div className="stats-grid">
-                                <div className="stat-box">
-                                    <div className="stat-value">{tasksTotal}</div>
-                                    <div className="stat-label">Всего</div>
-                                </div>
-                                <div className="stat-box">
-                                    <div className="stat-value" style={{ color: "var(--green)" }}>{stats.done}</div>
-                                    <div className="stat-label">Готово</div>
-                                </div>
-                                <div className="stat-box">
-                                    <div className="stat-value" style={{ color: "var(--accent-light)" }}>{stats.pending}</div>
-                                    <div className="stat-label">В работе</div>
-                                </div>
-                            </div>
-                            <div className="progress-wrap">
-                                <div className="progress-track">
-                                    <div className="progress-fill" style={{ width: `${stats.percent}%` }} />
-                                </div>
-                                <div className="progress-caption">{stats.percent}% выполнено</div>
-                            </div>
-                        </div>
 
-                        <div className="card">
-                            <div className="section-header">
-                                <div className="section-title"><Icon d={ICONS.filter} size={13} /> Фильтры</div>
-                            </div>
-                            <div className="view-mode-row">
-                                <button
-                                    className={`btn btn-sm ${viewMode === "user" ? "btn-primary" : "btn-ghost"}`}
-                                    onClick={() => setViewMode("user")}>
-                                    Мои задачи
-                                </button>
-                                <button
-                                    className={`btn btn-sm ${viewMode === "author" ? "btn-primary" : "btn-ghost"}`}
-                                    onClick={() => setViewMode("author")}>
-                                    Я автор
-                                </button>
-                            </div>
-                            <div className="divider" />
-                            <div className="filter-row">
-                                <div className="form-group">
-                                    <label className="form-label">Тип задачи</label>
-                                    <select value={filterType} onChange={e => setFilterType(e.target.value)}>
-                                        <option value="">Все</option>
-                                        <option value="today">На сегодня</option>
-                                        <option value="overdue">Просроченные</option>
-                                        <option value="planned">Запланированные</option>
-                                        <option value="deadline_null">Без дедлайна</option>
-                                    </select>
+                            <div className="card">
+                                <div className="section-header">
+                                    <div className="section-title"><Icon d={ICONS.filter} size={13} /> Фильтры</div>
                                 </div>
-                                <div className="form-group">
-                                    <label className="form-label">Статус</label>
-                                    <select value={isDone} onChange={e => setIsDone(e.target.value)}>
-                                        <option value="">Все</option>
-                                        <option value="false">Не выполненные</option>
-                                        <option value="true">Выполненные</option>
-                                    </select>
+                                <div className="view-mode-row">
+                                    <button
+                                        className={`btn btn-sm ${viewMode === "user" ? "btn-primary" : "btn-ghost"}`}
+                                        onClick={() => setViewMode("user")}>
+                                        Мои задачи
+                                    </button>
+                                    <button
+                                        className={`btn btn-sm ${viewMode === "author" ? "btn-primary" : "btn-ghost"}`}
+                                        onClick={() => setViewMode("author")}>
+                                        Я автор
+                                    </button>
                                 </div>
-                            </div>
-                        </div>
-                    </aside>
-
-                    <main className="main-column">
-                        <div className="card">
-                            <div className="section-header">
-                                <div>
-                                    <div className="section-title">Новая задача</div>
-                                    <div className="section-sub">Создайте задачу и назначьте исполнителя</div>
-                                </div>
-                            </div>
-                            <form className="form" onSubmit={handleCreateTask}>
-                                <div className="form-group">
-                                    <label className="form-label">Заголовок *</label>
-                                    <input value={form.title}
-                                        onChange={e => setForm({ ...form, title: e.target.value })}
-                                        placeholder="Например, проверить почту" required />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Описание</label>
-                                    <textarea value={form.description}
-                                        onChange={e => setForm({ ...form, description: e.target.value })}
-                                        placeholder="Дополнительные детали (необязательно)" />
-                                </div>
-                                <div className="form-two-col">
+                                <div className="divider" />
+                                <div className="filter-row">
                                     <div className="form-group">
-                                        <label className="form-label">Дедлайн</label>
-                                        <input type="datetime-local" value={form.deadline}
-                                            onChange={e => setForm({ ...form, deadline: e.target.value })} />
+                                        <label className="form-label">Тип задачи</label>
+                                        <select value={filterType} onChange={e => setFilterType(e.target.value)}>
+                                            <option value="">Все</option>
+                                            <option value="today">На сегодня</option>
+                                            <option value="overdue">Просроченные</option>
+                                            <option value="planned">Запланированные</option>
+                                            <option value="deadline_null">Без дедлайна</option>
+                                        </select>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Статус</label>
-                                        <select value={taskDone ? "done" : "new"}
-                                            onChange={e => setTaskDone(e.target.value === "done")}>
-                                            <option value="new">В работе</option>
-                                            <option value="done">Выполнено</option>
+                                        <select value={isDone} onChange={e => setIsDone(e.target.value)}>
+                                            <option value="">Все</option>
+                                            <option value="false">Не выполненные</option>
+                                            <option value="true">Выполненные</option>
                                         </select>
                                     </div>
                                 </div>
-                                <div className="form-group">
-                                    <label className="form-label">Назначить</label>
-                                    <select value={assignType} onChange={e => setAssignType(e.target.value)}>
-                                        <option value="self">Себе</option>
-                                        <option value="user">Пользователю</option>
-                                        <option value="group">Группе</option>
-                                        <option value="none">Никому</option>
-                                    </select>
-                                </div>
-                                {assignType === "group" && (
-                                    <div className="form-group">
-                                        <label className="form-label">Группа</label>
-                                        <select value={selectedGroupId} onChange={e => setSelectedGroupId(e.target.value)}>
-                                            <option value="">Выберите группу</option>
-                                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                        </select>
-                                    </div>
-                                )}
-                                {assignType === "user" && (
-                                    <div className="form-group">
-                                        <label className="form-label">Пользователь</label>
-                                        <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
-                                            <option value="">Выберите пользователя</option>
-                                            {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
-                                        </select>
-                                    </div>
-                                )}
-                                {error && <div className="alert">{error}</div>}
-                                <button type="submit" className="btn btn-primary">
-                                    <Icon d={ICONS.plus} /> Создать задачу
-                                </button>
-                            </form>
-                        </div>
-
-                        <div className="card">
-                            <div className="section-header">
-                                <div>
-                                    <div className="section-title">Задачи</div>
-                                    <div className="section-sub">
-                                        {tasksTotal > 0
-                                            ? `${tasksTotal} задач · стр. ${tasksPage}/${tasksTotalPages}`
-                                            : "Нет задач"}
-                                    </div>
-                                </div>
-                                <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
-                                    <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
-                                </button>
                             </div>
-                            {loading ? (
-                                <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка задач…</div>
-                            ) : tasks.length === 0 ? (
-                                <div className="empty-state"><div className="empty-icon">📋</div>Задач нет. Создайте первую!</div>
-                            ) : (
-                                <>
-                                    <div className="task-list">
-                                        {tasks.map(task => (
-                                            <TaskCard key={task.id} task={task}
-                                                groups={groups} users={users} token={token}
-                                                onToggle={handleToggleTask}
-                                                onDelete={handleDeleteTask}
-                                                onUpdate={handleUpdateTask}
-                                                onReassign={handleReassignTask} />
-                                        ))}
+                        </aside>
+
+                        <main className="main-column">
+                            <div className="card">
+                                <div className="section-header">
+                                    <div>
+                                        <div className="section-title">Новая задача</div>
+                                        <div className="section-sub">Создайте задачу и назначьте исполнителя</div>
                                     </div>
-                                    <Pagination page={tasksPage} totalPages={tasksTotalPages}
-                                        onPage={p => loadTasks(p, viewMode)} />
-                                </>
-                            )}
-                        </div>
-                    </main>
+                                </div>
+                                <form className="form" onSubmit={handleCreateTask}>
+                                    <div className="form-group">
+                                        <label className="form-label">Заголовок *</label>
+                                        <input value={form.title}
+                                            onChange={e => setForm({ ...form, title: e.target.value })}
+                                            placeholder="Например, проверить почту" required />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Описание</label>
+                                        <textarea value={form.description}
+                                            onChange={e => setForm({ ...form, description: e.target.value })}
+                                            placeholder="Дополнительные детали (необязательно)" />
+                                    </div>
+                                    <div className="form-two-col">
+                                        <div className="form-group">
+                                            <label className="form-label">Дедлайн</label>
+                                            <input type="datetime-local" value={form.deadline}
+                                                onChange={e => setForm({ ...form, deadline: e.target.value })} />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Статус</label>
+                                            <select value={taskDone ? "done" : "new"}
+                                                onChange={e => setTaskDone(e.target.value === "done")}>
+                                                <option value="new">В работе</option>
+                                                <option value="done">Выполнено</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Назначить</label>
+                                        <select value={assignType} onChange={e => setAssignType(e.target.value)}>
+                                            <option value="self">Себе</option>
+                                            <option value="user">Пользователю</option>
+                                            <option value="group">Группе</option>
+                                            <option value="none">Никому</option>
+                                        </select>
+                                    </div>
+                                    {assignType === "group" && (
+                                        <div className="form-group">
+                                            <label className="form-label">Группа</label>
+                                            <select value={selectedGroupId} onChange={e => setSelectedGroupId(e.target.value)}>
+                                                <option value="">Выберите группу</option>
+                                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                    {assignType === "user" && (
+                                        <div className="form-group">
+                                            <label className="form-label">Пользователь</label>
+                                            <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
+                                                <option value="">Выберите пользователя</option>
+                                                {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                    {error && <div className="alert">{error}</div>}
+                                    <button type="submit" className="btn btn-primary">
+                                        <Icon d={ICONS.plus} /> Создать задачу
+                                    </button>
+                                </form>
+                            </div>
+
+                            <div className="card">
+                                <div className="section-header">
+                                    <div>
+                                        <div className="section-title">Задачи</div>
+                                        <div className="section-sub">
+                                            {tasksTotal > 0
+                                                ? `${tasksTotal} задач · стр. ${tasksPage}/${tasksTotalPages}`
+                                                : "Нет задач"}
+                                        </div>
+                                    </div>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
+                                        <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
+                                    </button>
+                                </div>
+                                {loading ? (
+                                    <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка задач…</div>
+                                ) : tasks.length === 0 ? (
+                                    <div className="empty-state"><div className="empty-icon">📋</div>Задач нет. Создайте первую!</div>
+                                ) : (
+                                    <>
+                                        <div className="task-list">
+                                            {tasks.map(task => (
+                                                <TaskCard key={task.id} task={task}
+                                                    groups={groups} users={users} token={token}
+                                                    onToggle={handleToggleTask}
+                                                    onDelete={handleDeleteTask}
+                                                    onUpdate={handleUpdateTask}
+                                                    onReassign={handleReassignTask} />
+                                            ))}
+                                        </div>
+                                        <Pagination page={tasksPage} totalPages={tasksTotalPages}
+                                            onPage={p => loadTasks(p, viewMode)} />
+                                    </>
+                                )}
+                            </div>
+                        </main>
+                    </div>
                 </div>
-            </div>
             )}
             {/* ── GROUPS TAB ── */}
             {tab === "groups" && (
-            <div>
-                <GroupsTab token={token} currentRole={currentRole} />
-            </div>
+                <div>
+                    <GroupsTab token={token} currentRole={currentRole} />
+                </div>
             )}
             {/* ── TRASH TAB ── */}
             {tab === "trash" && (
-            <div>
-                <div className="card" style={{ marginTop: 0 }}>
-                    <div className="section-header">
-                        <div>
-                            <div className="section-title">Корзина</div>
-                            <div className="section-sub">Мягко удалённые задачи — можно восстановить</div>
-                        </div>
-                        <button className="btn btn-ghost btn-sm" onClick={() => loadTrash(1)} disabled={loading}>
-                            <Icon d={ICONS.refresh} /> Обновить
-                        </button>
-                    </div>
-                    {loading ? (
-                        <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
-                    ) : trashTasks.length === 0 ? (
-                        <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
-                    ) : (
-                        <>
-                            <div className="task-list">
-                                {trashTasks.map(task => (
-                                    <TrashCard key={task.id} task={task}
-                                        onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
-                                ))}
+                <div>
+                    <div className="card" style={{ marginTop: 0 }}>
+                        <div className="section-header">
+                            <div>
+                                <div className="section-title">Корзина</div>
+                                <div className="section-sub">Мягко удалённые задачи — можно восстановить</div>
                             </div>
-                            <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
-                        </>
-                    )}
+                            <button className="btn btn-ghost btn-sm" onClick={() => loadTrash(1)} disabled={loading}>
+                                <Icon d={ICONS.refresh} /> Обновить
+                            </button>
+                        </div>
+                        {loading ? (
+                            <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                        ) : trashTasks.length === 0 ? (
+                            <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
+                        ) : (
+                            <>
+                                <div className="task-list">
+                                    {trashTasks.map(task => (
+                                        <TrashCard key={task.id} task={task}
+                                            onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
+                                    ))}
+                                </div>
+                                <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
+                            </>
+                        )}
+                    </div>
                 </div>
-            </div>
             )}
         </div>
     );

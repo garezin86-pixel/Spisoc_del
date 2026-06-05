@@ -19,28 +19,34 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 24px 32px;
+  gap: 12px;
+  padding: 16px;
   background: #1f2937;
   color: white;
+  flex-wrap: wrap;
 }
 
 header h1 {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: clamp(1.2rem, 5vw, 1.6rem);
 }
 
 header p {
   margin: 4px 0 0;
   color: #d1d5db;
+  font-size: 0.875rem;
 }
 
 button {
   border: none;
   cursor: pointer;
   border-radius: 10px;
-  padding: 10px 16px;
+  padding: 12px 16px;
   font-weight: 600;
+  font-size: 1rem;
+  min-height: 44px;
+  min-width: 44px;
+  transition: background-color 0.2s;
 }
 
 button.primary {
@@ -48,39 +54,61 @@ button.primary {
   color: white;
 }
 
+button.primary:active {
+  background: #1d4ed8;
+}
+
 button.secondary {
   background: #e5e7eb;
   color: #111827;
 }
 
+button.secondary:active {
+  background: #d1d5db;
+}
+
 .container {
   max-width: 1100px;
   width: 100%;
-  padding: 32px;
+  padding: 16px;
   margin: 0 auto;
 }
 
 .card {
   background: white;
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-  padding: 24px;
-  margin-bottom: 24px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: clamp(1.2rem, 4vw, 1.5rem);
 }
 
 form {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+}
+
+label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #374151;
+  margin-bottom: 4px;
+  display: block;
 }
 
 input,
 textarea,
 select {
   width: 100%;
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 12px;
+  border-radius: 8px;
   border: 1px solid #d1d5db;
-  font-size: 1rem;
+  font-size: 16px;
+  font-family: Inter, sans-serif;
 }
 
 textarea {
@@ -89,11 +117,10 @@ textarea {
 }
 
 .task-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 16px;
-  align-items: center;
-  padding: 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0;
   border-bottom: 1px solid #e5e7eb;
 }
 
@@ -102,34 +129,49 @@ textarea {
 }
 
 .task-title {
-  font-size: 1.05rem;
+  font-size: clamp(1rem, 3vw, 1.1rem);
   margin: 0;
+  font-weight: 600;
 }
 
 .task-meta {
   color: #6b7280;
-  margin: 6px 0 0;
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .task-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.task-actions button {
+  width: 100%;
 }
 
 .badge {
   display: inline-flex;
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   background: #e2e8f0;
+  width: fit-content;
 }
 
 .alert {
-  padding: 14px 18px;
-  border-radius: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
   background: #fee2e2;
   color: #991b1b;
+  margin: 0 0 16px 0;
+  max-width: 100%;
+  word-wrap: break-word;
+  font-size: 0.9rem;
 }
 
 .hidden {
@@ -138,6 +180,44 @@ textarea {
 
 footer {
   text-align: center;
-  padding: 18px 0 32px;
+  padding: 16px;
   color: #6b7280;
+  font-size: 0.875rem;
+}
+
+@media (min-width: 768px) {
+  header {
+    padding: 24px 32px;
+  }
+
+  .container {
+    padding: 32px;
+  }
+
+  .card {
+    padding: 24px;
+    margin-bottom: 24px;
+    border-radius: 20px;
+  }
+
+  .task-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: start;
+    padding: 18px 0;
+  }
+
+  .task-actions {
+    flex-direction: row;
+    width: auto;
+  }
+
+  .task-actions button {
+    width: auto;
+  }
+
+  form {
+    gap: 16px;
+  }
 }
