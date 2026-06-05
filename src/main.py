@@ -138,6 +138,8 @@ app.add_middleware(
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://192.168.0.147:5173",
+        "http://192.168.0.147:5174",
         *([FRONTEND_URL] if FRONTEND_URL else []),
     ],
     allow_credentials=True,
