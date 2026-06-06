@@ -12,7 +12,42 @@ from src.schemas.pagination import PaginationParams, PaginatedResponse
 router = APIRouter(prefix="/comments", tags=["Comments"])
 
 
-@router.post("/tasks/{task_id}/comment", response_model=CommentResponse)
+@router.post(
+    "/tasks/{task_id}/comment",
+    response_model=CommentResponse,
+    summary="Добавить комментарий к задаче",
+    description="""
+Создаёт комментарий к задаче от имени текущего пользователя.
+
+Доступ разрешён, если пользователь имеет право редактировать задачу:
+является автором, исполнителем, членом группы или имеет роль admin/manager.
+
+Защищён rate-limit: **20 запросов в минуту** с одного IP.
+
+Side-effects:
+- Отправляет Telegram-уведомление автору задачи и исполнителю о новом комментарии
+  (кроме того, кто оставил комментарий).
+""",
+    responses={
+        200: {
+            "description": "Комментарий создан",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": 10,
+                        "content": "Сделано, проверяй",
+                        "task_id": 42,
+                        "user": {"id": 3, "username": "bob"},
+                        "created_at": "05.06.2025 14:30",
+                    }
+                }
+            },
+        },
+        403: {"description": "Нет доступа к задаче"},
+        404: {"description": "Задача не найдена"},
+        429: {"description": "Слишком много запросов"},
+    },
+)
 @limiter.limit("20/minute")
 async def create_comment(
     request: Request,
@@ -29,7 +64,19 @@ async def create_comment(
 
 
 @router.get(
-    "/tasks/{task_id}/comments", response_model=PaginatedResponse[CommentResponse]
+    "/tasks/{task_id}/comments",
+    response_model=PaginatedResponse[CommentResponse],
+    summary="Список комментариев к задаче",
+    description="""
+Возвращает постраничный список комментариев к задаче в порядке убывания даты.
+
+Доступ разрешён тем же правилам, что и при чтении задачи.
+""",
+    responses={
+        200: {"description": "Список комментариев с метаданными пагинации"},
+        403: {"description": "Нет доступа к задаче"},
+        404: {"description": "Задача не найдена"},
+    },
 )
 async def get_comment_task(
     task_id: int,

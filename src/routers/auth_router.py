@@ -9,21 +9,34 @@ from src.core.limiter import limiter
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-@router.post("/login", response_model=TokenSchema)
-@limiter.limit("5/minute")  # ← защита от брутфорса
+@router.post(
+    "/login",
+    response_model=TokenSchema,
+    summary="Авторизация пользователя",
+    description="""
+Выдаёт JWT access-token по логину и паролю.
+
+- Защищён rate-limit: **5 запросов в минуту** с одного IP (защита от брутфорса).
+- Токен кладётся в заголовок `Authorization: Bearer <token>` для всех последующих запросов.
+- Payload токена содержит `sub` (user_id), `role`, `username`.
+""",
+    responses={
+        200: {
+            "description": "Успешная авторизация",
+            "content": {
+                "application/json": {
+                    "example": {"access_token": "eyJhbGci...", "token_type": "bearer"}
+                }
+            },
+        },
+        401: {"description": "Неверный логин или пароль"},
+        429: {"description": "Слишком много запросов — подождите и попробуйте снова"},
+    },
+)
+@limiter.limit("5/minute")
 async def login(
     request: Request,
     user: UserLogin,
     session: SessionDep,
 ):
     return await AuthService(UserRepository(session)).login(user)
-
-
-# @router.post("/register", response_model=UserSchema, status_code=201)
-# @limiter.limit("3/minute")  # ← защита от спама регистраций
-# async def register(
-#     request: Request,
-#     user: UserRegister,
-#     session: SessionDep,
-# ):
-#     return await AuthService(UserRepository(session)).register(user)

@@ -35,7 +35,6 @@ from src.utils.reminders import (
     send_weekly_report,
 )
 
-# import logging
 import structlog
 from src.core.sentry import setup_sentry
 from src.core.logging import setup_logging
@@ -95,27 +94,20 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     await logger.ainfo("scheduler_started")
 
-    # ── Bot ─────────────────────────────
     yield
 
     # ── Shutdown ────────────────────────
     print("🔄 Shutting down application...")
-
-    # 1. Сначала останавливаем бота
     await logger.ainfo("app_shutdown")
 
-    # 2. Затем останавливаем scheduler
     if scheduler:
         try:
-            # shutdown() без параметров
             scheduler.shutdown()
-            # Даём время на завершение (await обязательно!)
             await asyncio.sleep(0.5)
             await logger.ainfo("scheduler_stopped")
         except Exception as e:
             await logger.aerror("scheduler_stop_error", error=str(e))
 
-    # 3. Закрываем Redis
     try:
         await redis.close()
         await logger.ainfo("redis_closed")
@@ -125,7 +117,62 @@ async def lifespan(app: FastAPI):
     await logger.ainfo("app_shutdown_complete")
 
 
-app = FastAPI(lifespan=lifespan, redirect_slashes=True)
+app = FastAPI(
+    lifespan=lifespan,
+    redirect_slashes=True,
+    title="Spisok Del API",
+    description="""
+## Описание
+
+REST API для системы управления задачами **Spisok Del**.
+
+Поддерживает:
+- управление задачами (создание, фильтрация, soft/hard delete, корзина)
+- управление пользователями и группами
+- комментарии к задачам
+- Telegram-уведомления (назначение, дедлайны, комментарии, выполнение)
+- JWT-авторизацию
+- кэширование через Redis
+- аудит-лог изменений
+
+## Аутентификация
+
+Все эндпоинты (кроме `/api/auth/login`) требуют заголовок:
+
+```
+Authorization: Bearer <access_token>
+```
+
+Токен получается через `POST /api/auth/login`.
+
+## Роли
+
+| Роль      | Возможности |
+|-----------|-------------|
+| `user`    | Свои задачи, просмотр групп, комментарии |
+| `manager` | Управление участниками групп, просмотр всех пользователей |
+| `admin`   | Полный доступ: создание пользователей/групп, удаление |
+
+## Пагинация
+
+Все списочные эндпоинты поддерживают параметры:
+- `page` — номер страницы (по умолчанию 1)
+- `size` — размер страницы (по умолчанию 20, максимум 100)
+
+Ответ всегда содержит `total`, `page`, `size`, `pages`.
+""",
+    version="1.0.0",
+    contact={
+        "name": "Spisok Del",
+    },
+    openapi_tags=[
+        {"name": "Auth", "description": "Авторизация и получение JWT-токена"},
+        {"name": "Tasks", "description": "CRUD задач, фильтрация, корзина, восстановление"},
+        {"name": "Users", "description": "Управление пользователями"},
+        {"name": "Groups", "description": "Управление группами и их участниками"},
+        {"name": "Comments", "description": "Комментарии к задачам"},
+    ],
+)
 
 # После создания app — автоматические метрики HTTP запросов
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
@@ -152,7 +199,6 @@ app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
 
-# Красивый ответ при превышении лимита
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
