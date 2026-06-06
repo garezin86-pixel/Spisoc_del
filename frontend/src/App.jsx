@@ -69,14 +69,14 @@ function Icon({ d, size = 14 }) {
         <svg
             viewBox="0 0 24 24"
             style={{
-                width: "14px",
-                height: "14px",
-                minWidth: "14px",
-                minHeight: "14px",
+                width: size,
+                height: size,
+                minWidth: size,
+                minHeight: size,
                 flexShrink: 0,
                 display: "inline-block",
                 verticalAlign: "middle",
-                fill: "currentColor"
+                fill: "currentColor",
             }}
         >
             <path d={d} />
@@ -84,27 +84,27 @@ function Icon({ d, size = 14 }) {
     );
 }
 const ICONS = {
-    check: "M20 6L9 17l-5-5",
-    x: "M18 6L6 18M6 6l12 12",
-    edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
-    trash: "M3 6h18M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2",
-    restore: "M3 12a9 9 0 109-9 9 9 0 00-9 9M3 3v6h6",
-    hardDel: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
-    refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
-    plus: "M12 5v14M5 12h14",
-    clock: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 6v6l4 2",
-    user: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
-    group: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
-    save: "M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8",
-    logout: "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9",
-    filter: "M22 3H2l8 9.46V19l4 2v-8.54L22 3z",
-    comment: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
-    reassign: "M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5",
-    chevronL: "M15 18l-6-6 6-6",
-    chevronR: "M9 18l6-6-6-6",
-    userPlus: "M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 100-8 4 4 0 000 8zM20 8v6M23 11h-6",
-    userMinus: "M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M12.5 7a4 4 0 100-8 4 4 0 000 8zM23 11h-6",
-    shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+    check: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+    x: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+    edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
+    trash: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    restore: "M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z",
+    refresh: "M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
+    plus: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+    clock: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z",
+    user: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+    group: "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
+    save: "M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z",
+    logout: "M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z",
+    filter: "M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z",
+    comment: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z",
+    reassign: "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
+    chevronL: "M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z",
+    chevronR: "M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
+    userPlus: "M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+    userMinus: "M14 14.252V16h-4v2H2v-2c0-2.21 3.582-4 8-4 1.506 0 2.919.281 4 .752zM12 13c-3.315 0-6-2.685-6-6s2.685-6 6-6 6 2.685 6 6-2.685 6-6 6zm7 3v-3h2v3h3v2h-3v3h-2v-3h-3v-2h3z",
+    shield: "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z",
+    hardDel: "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z",
 };
 
 // ─── Pagination ───────────────────────────────────────────
@@ -430,29 +430,37 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
 
     async function handleAdd() {
         if (!addUserId) return;
+        const newUser = allUsers.find(u => u.id === Number(addUserId));
+        if (!newUser) return;
+        setMembers(prev => [...prev, newUser]);
+        setAddUserId("");
         setAdding(true); setError(null);
         try {
             await apiRequest({
                 path: `/groups/${group.id}/users/${addUserId}`,
                 method: "POST", token,
             });
-            setAddUserId("");
-            await load();
-            onRefresh();
-        } catch (err) { setError(err.message); }
+        } catch (err) {
+            setMembers(prev => prev.filter(m => m.id !== newUser.id));
+            setAddUserId(String(newUser.id));
+            setError(err.message);
+        }
         finally { setAdding(false); }
     }
 
     async function handleRemove(userId) {
+        const removed = members.find(m => m.id === userId);
+        setMembers(prev => prev.filter(m => m.id !== userId));
         setError(null);
         try {
             await apiRequest({
                 path: `/groups/${group.id}/users/${userId}`,
                 method: "DELETE", token,
             });
-            await load();
-            onRefresh();
-        } catch (err) { setError(err.message); }
+        } catch (err) {
+            setMembers(prev => [...prev, removed]);
+            setError(err.message);
+        }
     }
 
     // пользователи не в группе — для селекта добавления
@@ -837,49 +845,79 @@ function App() {
     }
 
     async function handleToggleTask(task) {
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_done: !task.is_done } : t));
         try {
             await apiRequest({ path: `/tasks/${task.id}`, method: "PATCH", token, body: { is_done: !task.is_done } });
-            await loadTasks(tasksPage);
-        } catch (err) { handleAuthError(err); }
+        } catch (err) {
+            setTasks(prev => prev.map(t => t.id === task.id ? task : t));
+            handleAuthError(err);
+        }
     }
 
     async function handleUpdateTask(task, updates) {
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...updates } : t));
         try {
             await apiRequest({ path: `/tasks/${task.id}`, method: "PATCH", token, body: updates });
-            await loadTasks(tasksPage);
-        } catch (err) { handleAuthError(err); }
+        } catch (err) {
+            setTasks(prev => prev.map(t => t.id === task.id ? task : t));
+            handleAuthError(err);
+        }
     }
 
     async function handleDeleteTask(task) {
+        setTasks(prev => prev.filter(t => t.id !== task.id));
+        setTasksTotal(prev => prev - 1);
         try {
             await apiRequest({ path: `/tasks/${task.id}`, method: "DELETE", token });
-            await loadTasks(tasksPage);
-        } catch (err) { handleAuthError(err); }
+        } catch (err) {
+            setTasks(prev => [...prev, task].sort((a, b) => a.id - b.id));
+            setTasksTotal(prev => prev + 1);
+            handleAuthError(err);
+        }
     }
 
     async function handleReassignTask(taskId, userId, groupId) {
+        const userObj = userId ? users.find(u => u.id === Number(userId)) : null;
+        const groupObj = groupId ? groups.find(g => g.id === Number(groupId)) : null;
+        setTasks(prev => prev.map(t => t.id === taskId ? {
+            ...t,
+            ...(userObj ? { user: { id: userObj.id, username: userObj.username } } : {}),
+            ...(groupObj ? { group: { id: groupObj.id, name: groupObj.name } } : {}),
+        } : t));
         try {
             const q = new URLSearchParams();
             if (userId) q.set("user_id", userId);
             if (groupId) q.set("group_id", groupId);
             await apiRequest({ path: `/tasks/${taskId}/reassign?${q}`, method: "PATCH", token });
+        } catch (err) {
             await loadTasks(tasksPage);
-        } catch (err) { handleAuthError(err); }
+            handleAuthError(err);
+        }
     }
 
-    async function handleRestoreTask(taskId) {
+    async function handleRestoreTask(task) {
+        setTrash(prev => prev.filter(t => t.id !== task.id));
+        setTrashTotal(prev => prev - 1);
         try {
-            await apiRequest({ path: `/tasks/${taskId}/restore`, method: "PATCH", token });
-            await loadTrash(trashPage);
-        } catch (err) { handleAuthError(err); }
+            await apiRequest({ path: `/tasks/${task.id}/restore`, method: "PATCH", token });
+        } catch (err) {
+            setTrash(prev => [...prev, task].sort((a, b) => a.id - b.id));
+            setTrashTotal(prev => prev + 1);
+            handleAuthError(err);
+        }
     }
 
-    async function handleHardDelete(taskId) {
+    async function handleHardDelete(task) {
         if (!window.confirm("Удалить задачу навсегда? Это действие нельзя отменить.")) return;
+        setTrash(prev => prev.filter(t => t.id !== task.id));
+        setTrashTotal(prev => prev - 1);
         try {
-            await apiRequest({ path: `/tasks/${taskId}/hard`, method: "DELETE", token });
-            await loadTrash(trashPage);
-        } catch (err) { handleAuthError(err); }
+            await apiRequest({ path: `/tasks/${task.id}/hard`, method: "DELETE", token });
+        } catch (err) {
+            setTrash(prev => [...prev, task].sort((a, b) => a.id - b.id));
+            setTrashTotal(prev => prev + 1);
+            handleAuthError(err);
+        }
     }
 
     const stats = useMemo(() => {
@@ -965,6 +1003,16 @@ function App() {
                     >
                         {theme === "dark" ? "☀️" : "🌙"}
                     </button>
+                    {currentRole === "admin" && (
+                        <a
+                            href={import.meta.env.DEV ? "http://127.0.0.1:8000/admin/" : "https://spisoc-del.onrender.com/admin/"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-ghost btn-sm"
+                        >
+                            <Icon d={ICONS.shield} /> Админка
+                        </a>
+                    )}
                     <button className="btn btn-ghost btn-sm" onClick={logout}>
                         <Icon d={ICONS.logout} /> Выйти
                     </button>
