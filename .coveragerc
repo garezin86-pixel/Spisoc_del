@@ -1,0 +1,12 @@
+[run]
+omit =
+    src/bot/*
+    src/admin/*
+    src/main.py
+    src/core/sentry.py
+    src/core/logging.py
+    src/core/config_snippet.py
+    src/dependencies.py
+    src/services/task_admin_service.py
+    src/services/reminders/sender.py
+    src/services/reminders/messages.py
