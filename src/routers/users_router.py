@@ -34,7 +34,27 @@ def get_user_service(session: SessionDep):
     return UserService(UserRepository(session))
 
 
-@router.post("", response_model=UserSchema, status_code=201)
+@router.post(
+    "",
+    response_model=UserSchema,
+    status_code=201,
+    summary="Создать пользователя",
+    description="""
+Создаёт нового пользователя в системе.
+
+**Требует роль admin** (проверяется внутри сервиса).
+
+Side-effects:
+- Инвалидирует кэш пользователей и групп в Redis.
+
+Пароль хранится в виде bcrypt-хэша — в ответе не возвращается.
+""",
+    responses={
+        201: {"description": "Пользователь создан"},
+        400: {"description": "Пользователь с таким именем уже существует"},
+        403: {"description": "Недостаточно прав — требуется роль admin"},
+    },
+)
 async def create_user(
     data: UserRegister,
     session: SessionDep,
@@ -48,7 +68,43 @@ async def create_user(
     return user
 
 
-@router.get("", response_model=PaginatedResponse[UserSchema])
+@router.get(
+    "",
+    response_model=PaginatedResponse[UserSchema],
+    summary="Список пользователей",
+    description="""
+Возвращает постранично всех пользователей системы.
+
+**Требует роль admin или manager.**
+
+Ответ кэшируется в Redis на 300 секунд (ключ привязан к пользователю и странице).
+""",
+    responses={
+        200: {
+            "description": "Список пользователей с метаданными пагинации",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "items": [
+                            {
+                                "id": 1,
+                                "username": "alice",
+                                "role": "admin",
+                                "is_active": True,
+                                "telegram_id": 123456789,
+                            }
+                        ],
+                        "total": 1,
+                        "page": 1,
+                        "size": 20,
+                        "pages": 1,
+                    }
+                }
+            },
+        },
+        403: {"description": "Недостаточно прав"},
+    },
+)
 @cache(expire=300, namespace="users", key_builder=user_scoped_key_builder)
 async def get_users(
     session: SessionDep,
@@ -69,7 +125,22 @@ async def get_users(
     )
 
 
-@router.get("/{user_id}", response_model=UserSchema)
+@router.get(
+    "/{user_id}",
+    response_model=UserSchema,
+    summary="Получить пользователя",
+    description="""
+Возвращает данные конкретного пользователя по ID.
+
+Обычный пользователь может смотреть **только свой** профиль.
+Admin видит любого пользователя.
+""",
+    responses={
+        200: {"description": "Данные пользователя"},
+        403: {"description": "Нет доступа к чужому профилю"},
+        404: {"description": "Пользователь не найден"},
+    },
+)
 async def get_user(
     user_id: int,
     session: SessionDep,
@@ -78,7 +149,25 @@ async def get_user(
     return await get_user_service(session).get_user(user_id, current_user)
 
 
-@router.patch("/{user_id}", response_model=UserSchema)
+@router.patch(
+    "/{user_id}",
+    response_model=UserSchema,
+    summary="Обновить пользователя",
+    description="""
+Обновляет имя пользователя и/или пароль.
+
+Обычный пользователь может менять **только свои** данные.
+Admin может менять данные любого пользователя.
+
+Side-effects:
+- Инвалидирует кэш пользователей и групп в Redis.
+""",
+    responses={
+        200: {"description": "Обновлённые данные пользователя"},
+        403: {"description": "Нет доступа к чужому профилю"},
+        404: {"description": "Пользователь не найден"},
+    },
+)
 async def update_user(
     user_id: int,
     data: UserUpdate,
@@ -93,7 +182,24 @@ async def update_user(
     return user
 
 
-@router.delete("/{user_id}", response_model=dict)
+@router.delete(
+    "/{user_id}",
+    response_model=dict,
+    summary="Удалить пользователя",
+    description="""
+Удаляет пользователя из системы.
+
+**Требует роль admin** (проверяется внутри сервиса).
+
+Side-effects:
+- Инвалидирует кэш пользователей и групп в Redis.
+""",
+    responses={
+        200: {"description": "Пользователь удален"},
+        403: {"description": "Недостаточно прав — требуется роль admin"},
+        404: {"description": "Пользователь не найден"},
+    },
+)
 async def delete_user(
     user_id: int,
     session: SessionDep,

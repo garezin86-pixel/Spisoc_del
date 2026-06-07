@@ -9,6 +9,7 @@ from src.schemas.task import (
     SpisokSchema,
     SpisokUpdate,
     TaskFilter,
+    TaskPriorityFilter,
 )
 from src.core.dependencies import get_current_user
 from src.services.notifications import notify_task_assigned
@@ -128,6 +129,9 @@ async def filter_tasks(
     group_id: int | None = Query(None),
     filter_type: TaskFilter | None = Query(None),
     is_done: bool | None = Query(None),
+    priority: TaskPriorityFilter | None = Query(
+        None, description="Фильтр по приоритету: low, medium, high, critical"
+    ),
     limit: int | None = Query(None, ge=1, le=100),
 ):
     final_limit = limit or pagination.size
@@ -139,6 +143,7 @@ async def filter_tasks(
         group_id=group_id,
         filter_type=filter_type,
         is_done=is_done,
+        priority=priority,
     )
     return PaginatedResponse.create(
         items=[SpisokSchema.model_validate(task) for task in tasks],
@@ -146,6 +151,10 @@ async def filter_tasks(
         page=pagination.page,
         size=pagination.size,
     )
+
+
+# ── Корзина ───────────────────────────────────────────────────────────────────
+# ВАЖНО: /trash должен быть ДО /{task_id}, иначе FastAPI примет "trash" как task_id
 
 
 @router.get(
@@ -172,6 +181,7 @@ async def list_deleted_tasks(
     current_user: UserModel = Depends(get_current_user),
     search: str | None = Query(None),
 ):
+    """Показать все мягко удалённые задачи, доступные пользователю."""
     tasks, total = await get_task_service(session).get_deleted_tasks(
         user=current_user,
         offset=pagination.offset,
@@ -181,6 +191,9 @@ async def list_deleted_tasks(
     return PaginatedResponse.create(
         items=tasks, total=total, page=pagination.page, size=pagination.size
     )
+
+
+# ── Обычные CRUD ──────────────────────────────────────────────────────────────
 
 
 @router.get(
@@ -316,6 +329,7 @@ async def delete_task(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
+    """Мягкое удаление. Задача помечается deleted_at, физически не удаляется."""
     session.info["audit_user_id"] = current_user.id
     result = await get_task_service(session).delete_task(task_id, current_user)
     await cache_manager.invalidate_tasks()
@@ -346,6 +360,7 @@ async def restore_task(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
+    """Восстановить задачу из корзины."""
     session.info["audit_user_id"] = current_user.id
     task = await get_task_service(session).restore_task(task_id, current_user)
     await cache_manager.invalidate_tasks()
@@ -386,6 +401,7 @@ async def hard_delete_task(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
+    """Полностью удалить задачу из БД без возможности восстановления."""
     session.info["audit_user_id"] = current_user.id
     await get_task_service(session).hard_delete_task(task_id, current_user)
     await cache_manager.invalidate_tasks()

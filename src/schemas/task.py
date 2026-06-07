@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import zoneinfo
 
 from src.schemas.group import GroupSchema
+from src.models.task import TaskPriority
 from src.schemas.user import UserSchemaForTask
 
 USER_TZ = zoneinfo.ZoneInfo("Europe/Kiev")
@@ -21,6 +22,7 @@ class SpisokAddSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     is_done: bool = False
+    priority: TaskPriority = TaskPriority.medium
     deadline: Optional[datetime] = None
 
     user_id: Optional[int] = Field(default=None, ge=1)
@@ -56,6 +58,7 @@ class SpisokSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     is_done: bool = False
+    priority: TaskPriority = TaskPriority.medium
     deadline: Optional[datetime] = None
     user_id: Optional[int] = Field(None, ge=1)
     group_id: Optional[int] = Field(None, ge=1)
@@ -84,6 +87,7 @@ class SpisokUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, max_length=2000)
     is_done: Optional[bool] = None
+    priority: Optional[TaskPriority] = None
     deadline: Optional[datetime] = None
 
     @field_validator("deadline")
@@ -117,6 +121,7 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     is_done: bool
+    priority: TaskPriority = TaskPriority.medium
     deadline: datetime | None
     author: UserSchemaForTask | None
     user: UserSchemaForTask | None
@@ -125,3 +130,10 @@ class TaskResponse(BaseModel):
     updated_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TaskPriorityFilter(str, Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
