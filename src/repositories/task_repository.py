@@ -2,37 +2,40 @@ from datetime import date, datetime, time
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, func, case, and_
+from sqlalchemy import select, func, case, and_, or_, text
 
 from src.models.comment import CommentModel
 from src.models.task import SpisokModel
 from src.repositories.abstract.base_task_repository import AbstractTaskRepository
 
 
-class TaskRepository(AbstractTaskRepository):
-    """Репозиторий задач.
+def _search_filter(search: str):
+    """Строит условие поиска по заголовку задачи.
 
-    Отвечает за все SQL-запросы к таблице spisok_del.
-    Не содержит бизнес-логики — только запросы и маппинг результатов.
-    Soft-delete фильтруется через SpisokModel.not_deleted_filter() —
-    удалённые задачи невидимы для большинства методов, кроме явно включающих deleted.
+    Зачем: ILIKE '%text%' не использует индексы и делает seq scan.
+    Используем два подхода в OR:
+    - to_tsvector + plainto_tsquery — полнотекстовый поиск через GIN-индекс,
+      быстрый, поддерживает морфологию русского языка.
+    - trigram (gin_trgm_ops) — поиск по подстроке для коротких запросов.
+    Оба индекса создаются в миграции a9f3b2c1d8e7.
     """
+    fts = text(
+        "to_tsvector('russian', coalesce(spisok_del.title, '')) "
+        "@@ plainto_tsquery('russian', :q)"
+    ).bindparams(q=search)
+    trgm = SpisokModel.title.ilike(f"%{search}%")
+    return or_(fts, trgm)
 
+
+class TaskRepository(AbstractTaskRepository):
     def __init__(self, session: AsyncSession):
         self.session = session
 
     async def get_all(self) -> list[SpisokModel]:
-        """Возвращает все задачи включая soft-deleted. Используется только в тестах."""
         result = await self.session.execute(select(SpisokModel))
         return list(result.scalars().all())
 
     async def get_by_id(self, task_id: int) -> SpisokModel | None:
-        """Возвращает задачу по ID, исключая soft-deleted.
-
-        Зачем: стандартный метод чтения — удалённые задачи должны быть
-        прозрачно скрыты для большинства операций.
-        Жадно загружает author и user чтобы избежать N+1 при сериализации.
-        """
         result = await self.session.execute(
             select(SpisokModel)
             .options(
@@ -45,11 +48,6 @@ class TaskRepository(AbstractTaskRepository):
         return result.scalar_one_or_none()
 
     async def get_by_id_include_deleted(self, task_id: int) -> SpisokModel | None:
-        """Возвращает задачу по ID, включая soft-deleted.
-
-        Зачем: нужен для операций с корзиной (восстановление, hard delete),
-        когда задача уже помечена как удалённая.
-        """
         result = await self.session.execute(
             select(SpisokModel)
             .options(
@@ -61,39 +59,20 @@ class TaskRepository(AbstractTaskRepository):
         return result.scalar_one_or_none()
 
     async def create(self, task: SpisokModel) -> SpisokModel:
-        """Сохраняет новую задачу и обновляет объект из БД (refresh).
-
-        Зачем: refresh нужен чтобы получить серверно-генерируемые поля
-        (id, created_at) без дополнительного SELECT.
-        """
         self.session.add(task)
         await self.session.commit()
         await self.session.refresh(task)
         return task
 
     async def delete(self, task: SpisokModel) -> None:
-        """Физически удаляет задачу из БД (hard delete без audit-лога).
-
-        Зачем: используется во вспомогательных сценариях. Для hard delete
-        с audit-логом используется метод hard_delete через TaskAdminService.
-        """
         await self.session.delete(task)
         await self.session.commit()
 
     async def hard_delete(self, task: SpisokModel) -> None:
-        """Физически удаляет задачу без коммита.
-
-        Зачем: коммит делается в сервисе после записи audit-лога —
-        чтобы удаление и аудит были в одной транзакции.
-        """
+        """Физическое удаление из БД без возможности восстановления."""
         await self.session.delete(task)
 
     async def update(self, task: SpisokModel) -> SpisokModel:
-        """Фиксирует изменения задачи и рефрешит объект.
-
-        Зачем: изменения в полях SQLAlchemy-объекта автоматически отслеживаются
-        через unit-of-work. Commit + refresh синхронизирует updated_at.
-        """
         await self.session.commit()
         await self.session.refresh(task)
         return task
@@ -101,19 +80,10 @@ class TaskRepository(AbstractTaskRepository):
     async def get_tasks_limit(
         self, query, limit: int, offset: int
     ) -> list[SpisokModel]:
-        """Применяет LIMIT/OFFSET к готовому запросу и возвращает результат.
-
-        Зачем: вынесен отдельно, чтобы один и тот же query можно было
-        использовать для COUNT (total) и для SELECT с пагинацией.
-        """
         result = await self.session.execute(query.limit(limit).offset(offset))
         return list(result.scalars().all())
 
     async def get_assigned_tasks(self, pk: int):
-        """Возвращает агрегат (total, done, pending) задач, назначенных пользователю.
-
-        Зачем: один запрос вместо трёх отдельных COUNT — для дашборда пользователя.
-        """
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total"),
@@ -128,10 +98,6 @@ class TaskRepository(AbstractTaskRepository):
         return result.one()
 
     async def get_created_tasks_stats(self, pk: int):
-        """Возвращает агрегат (total, done) задач, созданных пользователем.
-
-        Зачем: отдельно от назначенных, т.к. автор ≠ исполнитель.
-        """
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total"),
@@ -143,10 +109,6 @@ class TaskRepository(AbstractTaskRepository):
         return result.one()
 
     async def get_last_appointed_tasks(self, pk: int) -> list[SpisokModel]:
-        """Возвращает 10 последних задач, назначенных пользователю.
-
-        Зачем: для раздела «последние задачи» в профиле пользователя.
-        """
         result = await self.session.execute(
             select(SpisokModel)
             .where(SpisokModel.user_id == pk)
@@ -158,10 +120,6 @@ class TaskRepository(AbstractTaskRepository):
     async def add_comment(
         self, task_id: int, user_id: int, content: str
     ) -> CommentModel:
-        """Создаёт комментарий к задаче напрямую через репозиторий.
-
-        Зачем: устаревший метод для совместимости. Новый код использует CommentRepository.
-        """
         comment = CommentModel(
             task_id=int(task_id),
             user_id=int(user_id),
@@ -173,7 +131,6 @@ class TaskRepository(AbstractTaskRepository):
         return comment
 
     async def get_user_tasks(self, user_id: int) -> list[SpisokModel]:
-        """Возвращает все задачи пользователя, отсортированные по дате создания."""
         result = await self.session.execute(
             select(SpisokModel)
             .where(SpisokModel.user_id == user_id)
@@ -184,7 +141,6 @@ class TaskRepository(AbstractTaskRepository):
     async def get_user_tasks_by_status(
         self, user_id: int, is_done: bool
     ) -> list[SpisokModel]:
-        """Возвращает задачи пользователя, отфильтрованные по статусу выполнения."""
         result = await self.session.execute(
             select(SpisokModel)
             .where(
@@ -196,10 +152,6 @@ class TaskRepository(AbstractTaskRepository):
         return list(result.scalars().all())
 
     async def filter_tasks_paginated_total(self, base_query) -> int:
-        """Считает общее количество строк в запросе через COUNT(*) над subquery.
-
-        Зачем: позволяет получить total для пагинации без повторного SELECT всех записей.
-        """
         total = await self.session.scalar(
             select(func.count()).select_from(base_query.subquery())
         )
@@ -214,12 +166,6 @@ class TaskRepository(AbstractTaskRepository):
         filter_type=None,
         is_done: Optional[bool] = None,
     ):
-        """Строит базовый SELECT-запрос с применением фильтров.
-
-        Зачем: отделяет построение запроса от его выполнения — один и тот же
-        метод используется для COUNT (total) и для SELECT с LIMIT/OFFSET.
-        Все фильтры применяются через WHERE-условия, не в Python.
-        """
         query = select(SpisokModel).options(selectinload(SpisokModel.author))
 
         filter_user_group_value = getattr(filter_user_group, "value", filter_user_group)
@@ -264,11 +210,13 @@ class TaskRepository(AbstractTaskRepository):
 
         return query.where(SpisokModel.not_deleted_filter())
 
-    def _build_trash_query(self, user_id: int, search: str | None = None):
-        """Строит запрос для корзины: только soft-deleted задачи текущего пользователя.
+    # ── Корзина ───────────────────────────────────────────────────────────────
 
-        Зачем: обычный пользователь должен видеть только свои удалённые задачи,
-        чтобы не раскрывать удалённые задачи других пользователей.
+    def _build_trash_query(self, user_id: int, search: str | None = None):
+        """
+        Базовый запрос для корзины: только удалённые задачи,
+        к которым у пользователя есть доступ (автор или исполнитель).
+        Admin/manager видят все удалённые задачи.
         """
         query = (
             select(SpisokModel)
@@ -277,16 +225,17 @@ class TaskRepository(AbstractTaskRepository):
                 selectinload(SpisokModel.user),
             )
             .where(SpisokModel.deleted_at.is_not(None))
+            # Пользователь видит только свои удалённые задачи
             .where(
                 (SpisokModel.author_id == user_id) | (SpisokModel.user_id == user_id)
             )
         )
         if search:
-            query = query.where(SpisokModel.title.ilike(f"%{search}%"))
+            query = query.where(_search_filter(search))
         return query.order_by(SpisokModel.deleted_at.desc())
 
     def _build_trash_query_admin(self, search: str | None = None):
-        """Строит запрос для корзины admin/manager: все soft-deleted задачи системы."""
+        """Admin/manager видят все удалённые задачи."""
         query = (
             select(SpisokModel)
             .options(
@@ -296,7 +245,7 @@ class TaskRepository(AbstractTaskRepository):
             .where(SpisokModel.deleted_at.is_not(None))
         )
         if search:
-            query = query.where(SpisokModel.title.ilike(f"%{search}%"))
+            query = query.where(_search_filter(search))
         return query.order_by(SpisokModel.deleted_at.desc())
 
     async def get_deleted_tasks_paginated(
@@ -308,11 +257,6 @@ class TaskRepository(AbstractTaskRepository):
         limit: int,
         search: str | None = None,
     ):
-        """Возвращает (tasks, total) из корзины с учётом прав.
-
-        Зачем: единая точка входа для эндпоинта /trash,
-        которая автоматически выбирает нужный запрос на основе роли.
-        """
         query = (
             self._build_trash_query_admin(search)
             if is_admin
@@ -321,6 +265,8 @@ class TaskRepository(AbstractTaskRepository):
         total = await self.filter_tasks_paginated_total(query)
         tasks = await self.get_tasks_limit(query, limit, offset)
         return tasks, total
+
+    # ── Остальные методы ──────────────────────────────────────────────────────
 
     async def get_filtered_tasks(
         self,
@@ -333,11 +279,6 @@ class TaskRepository(AbstractTaskRepository):
         filter_type=None,
         is_done: Optional[bool] = None,
     ) -> list[SpisokModel]:
-        """Возвращает задачи с фильтрами без total (устаревший вариант).
-
-        Зачем: оставлен для обратной совместимости. В новом коде используется
-        get_filtered_tasks_with_total.
-        """
         query = self._build_filtered_tasks_query(
             user_id=user_id,
             filter_user_group=filter_user_group,
@@ -356,7 +297,6 @@ class TaskRepository(AbstractTaskRepository):
         filter_type=None,
         is_done: Optional[bool] = None,
     ) -> int:
-        """Считает количество задач по фильтрам без загрузки строк."""
         query = self._build_filtered_tasks_query(
             user_id=user_id,
             filter_user_group=filter_user_group,
@@ -377,11 +317,6 @@ class TaskRepository(AbstractTaskRepository):
         filter_type=None,
         is_done: Optional[bool] = None,
     ) -> tuple[list[SpisokModel], int]:
-        """Возвращает (tasks, total) — основной метод фильтрации для API.
-
-        Зачем: объединяет COUNT и SELECT в два запроса к одному query,
-        что эффективнее чем строить запрос дважды отдельно.
-        """
         query = self._build_filtered_tasks_query(
             user_id=user_id,
             filter_user_group=filter_user_group,
@@ -394,12 +329,6 @@ class TaskRepository(AbstractTaskRepository):
         return tasks, total
 
     async def get_tasks_for_reminder(self, start_time: datetime, end_time: datetime):
-        """Возвращает задачи с дедлайном в заданном временном окне для напоминаний.
-
-        Зачем: используется планировщиком (APScheduler) для выборки задач,
-        о которых нужно отправить напоминание. Фильтрует уже выполненные
-        и задачи без исполнителя (некому отправлять).
-        """
         query = select(SpisokModel).where(
             SpisokModel.deadline.between(start_time, end_time),
             SpisokModel.reminder_sent.is_(False),
@@ -412,11 +341,6 @@ class TaskRepository(AbstractTaskRepository):
     async def get_tasks_by_deadline_window(
         self, start: datetime, end: datetime, user_id: Optional[int] = None
     ):
-        """Возвращает задачи с дедлайном в диапазоне [start, end].
-
-        Зачем: используется для напоминаний за 24ч и 1ч до дедлайна.
-        Опциональная фильтрация по user_id — для тестирования отдельного пользователя.
-        """
         query = select(SpisokModel).where(
             and_(
                 SpisokModel.deadline >= start,
@@ -431,11 +355,6 @@ class TaskRepository(AbstractTaskRepository):
         return result.scalars().all()
 
     async def get_overdue_tasks(self, now: datetime, user_id: Optional[int] = None):
-        """Возвращает просроченные невыполненные задачи.
-
-        Зачем: используется планировщиком для отправки уведомлений
-        о просроченных задачах каждый час.
-        """
         query = select(SpisokModel).where(
             and_(SpisokModel.deadline < now, SpisokModel.is_done.is_(False))
         )
@@ -446,16 +365,11 @@ class TaskRepository(AbstractTaskRepository):
         return result.scalars().all()
 
     async def get_tasks_by_user(self, user_id: int):
-        """Возвращает все задачи пользователя без фильтров."""
         query = select(SpisokModel).where(SpisokModel.user_id == user_id)
         result = await self.session.execute(query)
         return result.scalars().all()
 
     async def get_task(self, task_id: int) -> Optional[SpisokModel]:
-        """Возвращает задачу по ID без eager-загрузки связей.
-
-        Зачем: лёгкий вариант get_by_id для случаев, когда relations не нужны.
-        """
         query = select(SpisokModel).where(SpisokModel.id == task_id)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
