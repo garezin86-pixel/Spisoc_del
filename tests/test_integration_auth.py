@@ -52,7 +52,7 @@ class TestAuthLogin:
 
     @pytest.mark.asyncio
     async def test_login_token_is_valid_jwt(self, client, engine):
-        from jose import jwt
+        import jwt
         from src.core.config import SECRET_KEY, ALGORITHM
 
         async_session = async_sessionmaker(

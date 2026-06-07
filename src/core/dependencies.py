@@ -1,6 +1,6 @@
+import jwt
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
 
 from src.core.config import ALGORITHM, SECRET_KEY
 from src.core.constants import (
@@ -27,26 +27,26 @@ async def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         sub = payload.get("sub")
-        if sub is None:  # 👈 явная проверка — убирает None из типа
-            raise JWTError("No sub")
+        if sub is None:
+            raise jwt.InvalidTokenError("No sub")
         user_id = int(sub)
-    except JWTError:
+    except jwt.ExpiredSignatureError:
+        unauthorized("Токен истёк")
+        raise
+    except jwt.PyJWTError:
         unauthorized(INVALID_EXPIRED_TOKEN)
-        raise  # 👈 линтер понимает что дальше не идём
+        raise
 
     user = await session.get(UserModel, user_id)
     if not user:
         user_not_found(USER_NOT_FOUND)
-        raise  # 👈 аналогично
+        raise
 
     if not user.is_active:
         unauthorized(ACCOUNT_DISABLED)
         raise
 
     return user
-
-
-# ── Роли ────────────────────────────────────────────────────────────────────
 
 
 def get_current_admin(
@@ -65,9 +65,6 @@ def get_current_manager(
     if current_user.role not in (UserRole.admin, UserRole.manager):
         current_admin(FOR_ADMIN_ONLY)
     return current_user
-
-
-# ── RBAC хелперы (используются в сервисах/пермишенах) ───────────────────────
 
 
 def is_admin(user: UserModel) -> bool:

@@ -242,3 +242,19 @@ async def notification_session(engine):
     )
     async with async_session() as sess:
         yield sess
+
+
+# добавить новую фикстуру
+@pytest.fixture(autouse=True)
+def mock_redis_for_tests():
+    """Мокает Redis для всех тестов — set_redis вызывается автоматически."""
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.set = AsyncMock(return_value=True)
+    mock_redis.delete = AsyncMock(return_value=1)
+
+    from src.core.redis import set_redis
+
+    set_redis(mock_redis)
+    yield mock_redis
+    set_redis(None)  # сбрасываем после каждого теста

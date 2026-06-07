@@ -65,6 +65,9 @@ async def lifespan(app: FastAPI):
     )
     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
     cache_manager.redis = redis
+    from src.core.redis import set_redis
+
+    set_redis(redis)
     cache_manager.testing = False
     await logger.ainfo("redis_initialized")
 
@@ -167,7 +170,10 @@ Authorization: Bearer <access_token>
     },
     openapi_tags=[
         {"name": "Auth", "description": "Авторизация и получение JWT-токена"},
-        {"name": "Tasks", "description": "CRUD задач, фильтрация, корзина, восстановление"},
+        {
+            "name": "Tasks",
+            "description": "CRUD задач, фильтрация, корзина, восстановление",
+        },
         {"name": "Users", "description": "Управление пользователями"},
         {"name": "Groups", "description": "Управление группами и их участниками"},
         {"name": "Comments", "description": "Комментарии к задачам"},
@@ -204,6 +210,20 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
         content={"detail": "Слишком много запросов. Попробуйте позже."},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    await logger.aerror(
+        "unhandled_exception",
+        error=str(exc),
+        path=request.url.path,
+        method=request.method,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Внутренняя ошибка сервера"},
     )
 
 

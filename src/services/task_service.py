@@ -252,6 +252,8 @@ class TaskService:
 
         if "title" in update_data:
             task.title = update_data["title"]
+        if "description" in update_data:
+            task.description = update_data["description"]
         if "is_done" in update_data:
             task.is_done = update_data["is_done"]
         if "deadline" in update_data:

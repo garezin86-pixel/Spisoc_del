@@ -70,7 +70,9 @@ Side-effects:
                 }
             },
         },
-        400: {"description": "Нельзя указывать user_id и group_id одновременно, или один из них не существует"},
+        400: {
+            "description": "Нельзя указывать user_id и group_id одновременно, или один из них не существует"
+        },
         401: {"description": "Не аутентифицирован"},
     },
 )
@@ -112,7 +114,9 @@ async def add_task(
 """,
     responses={
         200: {"description": "Постраничный список задач"},
-        400: {"description": "filter_user_group=group требует group_id; группа не найдена"},
+        400: {
+            "description": "filter_user_group=group требует group_id; группа не найдена"
+        },
     },
 )
 @cache(expire=120, namespace="tasks", key_builder=user_scoped_key_builder)
@@ -225,7 +229,9 @@ Side-effects:
 """,
     responses={
         200: {"description": "Задача переназначена"},
-        400: {"description": "Нужно передать ровно один из параметров: user_id или group_id"},
+        400: {
+            "description": "Нужно передать ровно один из параметров: user_id или group_id"
+        },
         403: {"description": "Нет прав на переназначение"},
         404: {"description": "Задача, пользователь или группа не найдены"},
     },
@@ -295,7 +301,12 @@ Side-effects:
 - Инвалидирует кэш задач.
 """,
     responses={
-        200: {"description": "Задача перемещена в корзину", "content": {"application/json": {"example": {"message": "Task 42 deleted"}}}},
+        200: {
+            "description": "Задача перемещена в корзину",
+            "content": {
+                "application/json": {"example": {"message": "Task 42 deleted"}}
+            },
+        },
         403: {"description": "Нет прав на удаление"},
         404: {"description": "Задача не найдена"},
     },
@@ -358,7 +369,14 @@ Side-effects:
 - Инвалидирует кэш задач.
 """,
     responses={
-        200: {"description": "Задача удалена навсегда", "content": {"application/json": {"example": {"message": "Task 42 permanently deleted"}}}},
+        200: {
+            "description": "Задача удалена навсегда",
+            "content": {
+                "application/json": {
+                    "example": {"message": "Task 42 permanently deleted"}
+                }
+            },
+        },
         403: {"description": "Нет прав на удаление"},
         404: {"description": "Задача не найдена"},
     },

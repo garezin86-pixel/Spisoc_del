@@ -54,32 +54,38 @@ def make_task_model(**kwargs) -> SpisokModel:
 
 
 class TestAuthService:
+    def _make_redis(self):
+        r = AsyncMock()
+        r.set = AsyncMock(return_value=True)
+        r.get = AsyncMock(return_value=None)
+        r.delete = AsyncMock(return_value=1)
+        return r
 
     @pytest.mark.asyncio
     async def test_login_success(self):
         user = make_user_model(password_hash=hash_password("pass123"))
-        service = AuthService(MockUserRepository(users=[user]))
+        service = AuthService(MockUserRepository(users=[user]), self._make_redis())
         result = await service.login(UserLogin(username="user1", password="pass123"))
-        assert "access_token" in result
+        assert result.access_token is not None
 
     @pytest.mark.asyncio
     async def test_login_wrong_password_raises_401(self):
         user = make_user_model(password_hash=hash_password("correct123"))
-        service = AuthService(MockUserRepository(users=[user]))
+        service = AuthService(MockUserRepository(users=[user]), self._make_redis())
         with pytest.raises(HTTPException) as exc:
             await service.login(UserLogin(username="user1", password="wronggg"))
         assert exc.value.status_code == 401
 
     @pytest.mark.asyncio
     async def test_login_user_not_found_raises_401(self):
-        service = AuthService(MockUserRepository())
+        service = AuthService(MockUserRepository(), self._make_redis())
         with pytest.raises(HTTPException) as exc:
             await service.login(UserLogin(username="nobody", password="pass123"))
         assert exc.value.status_code == 401
 
     @pytest.mark.asyncio
     async def test_register_success(self):
-        service = AuthService(MockUserRepository())
+        service = AuthService(MockUserRepository(), self._make_redis())
         result = await service.register(
             UserRegister(username="newuser", password="pass123")
         )
@@ -88,7 +94,7 @@ class TestAuthService:
     @pytest.mark.asyncio
     async def test_register_duplicate_raises_400(self):
         user = make_user_model(username="existing")
-        service = AuthService(MockUserRepository(users=[user]))
+        service = AuthService(MockUserRepository(users=[user]), self._make_redis())
         with pytest.raises(HTTPException) as exc:
             await service.register(
                 UserRegister(username="existing", password="pass123")

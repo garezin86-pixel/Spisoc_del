@@ -5,7 +5,7 @@ Unit-тесты: модуль безопасности (хеши паролей,
 
 import pytest
 from datetime import datetime, timezone
-from jose import jwt
+import jwt
 
 from src.core.security import hash_password, verify_password, create_access_token
 from src.core.config import SECRET_KEY, ALGORITHM
@@ -68,14 +68,14 @@ class TestJWT:
         assert exp > datetime.now(timezone.utc)
 
     def test_invalid_token_raises(self):
-        from jose import JWTError
+        import jwt
 
-        with pytest.raises(JWTError):
+        with pytest.raises(jwt.PyJWTError):
             jwt.decode("invalid.token.here", SECRET_KEY, algorithms=[ALGORITHM])
 
     def test_token_with_wrong_secret_raises(self):
-        from jose import JWTError
+        import jwt
 
         token = create_access_token({"sub": "1"})
-        with pytest.raises(JWTError):
+        with pytest.raises(jwt.PyJWTError):
             jwt.decode(token, "wrong_secret", algorithms=[ALGORITHM])

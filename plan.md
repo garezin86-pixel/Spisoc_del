@@ -208,3 +208,127 @@ async def remind_deadlines():
 | 🟢 Низкий | Redis кэш |               Средняя |
 | 🟢 Низкий | Prometheus + Grafana |    Высокая |
 | 🟢 Низкий | CI/CD GitHub Actions |    Средняя |
+
+# Spisok Del — оставшиеся улучшения
+
+## 🔴 Критично — безопасность
+
+- [ ] **Access token blocklist** — после logout access token живёт до истечения.
+  Если нужна мгновенная блокировка — добавить Redis-set `blocklist:{jti}` с TTL = время жизни токена,
+  проверять в `get_current_user`.
+
+---
+
+## 🟡 Важно — надёжность
+
+- [ ] **Поле `description` в `update_task`** — не сохраняется при обновлении.
+  В `TaskService.update_task` добавить блок:
+  ```python
+  if "description" in update_data:
+      task.description = update_data["description"]
+  ```
+
+- [ ] **Health check `/health`** — Render не знает жив ли сервис.
+  ```python
+  @router.get("/health")
+  async def health(session: SessionDep):
+      await session.execute(text("SELECT 1"))
+      return {"status": "ok", "db": "ok"}
+  ```
+
+- [ ] **Глобальный exception handler** — 500 ошибки возвращают traceback клиенту.
+  ```python
+  @app.exception_handler(Exception)
+  async def unhandled_exception_handler(request, exc):
+      logger.error("unhandled_exception", error=str(exc))
+      return JSONResponse(status_code=500, content={"detail": "Внутренняя ошибка сервера"})
+  ```
+На Render после деплоя укажи Health Check Path в настройках сервиса: /health — тогда Render будет пинговать его каждые 30 секунд и перезапускать сервис если он не отвечает.
+
+---
+
+## 🔵 Улучшение — тесты
+
+- [ ] **Интеграционные тесты роутеров** — unit-тесты есть, HTTP-тесты отсутствуют.
+  Использовать `httpx.AsyncClient` + `pytest-asyncio` + тестовая БД в памяти (SQLite).
+
+- [ ] **Coverage report** — добавить в `pytest.ini` / `pyproject.toml`:
+  ```ini
+  [tool.pytest.ini_options]
+  addopts = "--cov=src --cov-report=term-missing"
+  ```
+  Установить: `pip install pytest-cov`
+
+- [ ] **CI pipeline (GitHub Actions)** — тесты не запускаются автоматически.
+  Файл `.github/workflows/ci.yml` с запуском `pytest` на каждый push/PR.
+
+---
+
+
+## 🟢 Оптимизация — база данных
+
+- [ ] **N+1 в уведомлениях** — `notify_task_assigned` грузит связи в цикле.
+  Заменить на `selectinload` / один запрос с `joinedload` для всех получателей.
+
+- [ ] **Connection pool config** — нет явных настроек `pool_size`.
+  В `create_async_engine` добавить:
+  ```python
+  pool_size=10, max_overflow=20, pool_pre_ping=True
+  ```
+
+- [ ] **Полнотекстовый поиск** — `ILIKE '%text%'` не использует индексы.
+  Добавить через Alembic:
+  ```python
+  op.execute("CREATE INDEX ix_tasks_title_gin ON spisok_del USING gin(to_tsvector('russian', title))")
+  ```
+  Заменить `ILIKE` на `to_tsvector` + `to_tsquery`.
+
+---
+
+## 🟣 Качество кода — архитектура
+
+- [ ] **Рефакторинг `update_task`** — поля обновляются вручную по одному.
+  Заменить на универсальный цикл:
+  ```python
+  for field, value in update_data.items():
+      if field != "deadline":
+          setattr(task, field, value)
+  ```
+
+- [ ] **Уведомления в фон в `add_task`** — `await notify_task_assigned(task.id)`
+  блокирует ответ. Передать `BackgroundTasks` из роутера в сервис или
+  использовать `asyncio.create_task`.
+
+- [ ] **Типизация сервисов** — часть методов без `return type`.
+  Добавить аннотации для `TaskService`, `GroupService`.
+
+---
+
+## ⚪ Developer experience
+
+- [ ] **`pre-commit` hooks** — ruff есть, но запускается вручную.
+  ```yaml
+  # .pre-commit-config.yaml
+  repos:
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.4.0
+      hooks:
+        - id: ruff
+          args: [--fix]
+        - id: ruff-format
+  ```
+
+- [ ] **`Makefile`** — нет единого способа запустить команды.
+  ```makefile
+  run:       uvicorn src.main:app --reload
+  test:      pytest -v
+  lint:      ruff check src
+  migrate:   alembic upgrade head
+  ```
+
+- [ ] **`GET /users/me`** — нет удобного способа получить данные текущего пользователя.
+  ```python
+  @router.get("/me", response_model=UserSchema)
+  async def get_me(current_user: UserModel = Depends(get_current_user)):
+      return current_user
+  ```
