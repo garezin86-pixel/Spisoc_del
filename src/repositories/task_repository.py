@@ -386,6 +386,7 @@ class TaskRepository(AbstractTaskRepository):
         group_id: Optional[int] = None,
         filter_type=None,
         is_done: Optional[bool] = None,
+        priority: str | None = None,
     ) -> tuple[list[SpisokModel], int]:
         """Возвращает (tasks, total) — основной метод фильтрации для API.
 
@@ -398,6 +399,7 @@ class TaskRepository(AbstractTaskRepository):
             group_id=group_id,
             filter_type=filter_type,
             is_done=is_done,
+            priority=priority,
         )
         total = await self.filter_tasks_paginated_total(query)
         tasks = await self.get_tasks_limit(query, limit, offset)
