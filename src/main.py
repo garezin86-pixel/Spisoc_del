@@ -8,6 +8,7 @@ from pathlib import Path
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 
+from src.routers.health_router import router as health_router
 from src.db import get_engine
 from src.admin.setup import setup_admin
 from src.routers import api_router
@@ -228,6 +229,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(api_router)
+app.include_router(health_router)
 setup_admin(app, get_engine())
 
 # ── Статика фронтенда (только на проде) ──────────────────────────────────────
