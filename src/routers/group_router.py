@@ -45,7 +45,9 @@ Side-effects:
     responses={
         200: {
             "description": "Группа создана",
-            "content": {"application/json": {"example": {"id": 1, "name": "Backend Team"}}},
+            "content": {
+                "application/json": {"example": {"id": 1, "name": "Backend Team"}}
+            },
         },
         403: {"description": "Требуется роль admin"},
         409: {"description": "Группа с таким именем уже существует"},
@@ -127,7 +129,10 @@ Side-effects:
             "description": "Пользователь добавлен (или уже состоял в группе)",
             "content": {
                 "application/json": {
-                    "example": {"message": "User 3 added to group 1", "user": {"id": 3, "username": "bob"}}
+                    "example": {
+                        "message": "User 3 added to group 1",
+                        "user": {"id": 3, "username": "bob"},
+                    }
                 }
             },
         },
@@ -201,7 +206,11 @@ Side-effects:
     responses={
         200: {
             "description": "Пользователь удалён из группы",
-            "content": {"application/json": {"example": {"message": "User 3 removed from group 1"}}},
+            "content": {
+                "application/json": {
+                    "example": {"message": "User 3 removed from group 1"}
+                }
+            },
         },
         403: {"description": "Требуется роль admin или manager"},
         404: {"description": "Пользователь или группа не найдены"},
@@ -241,7 +250,11 @@ Side-effects:
                 "application/json": {
                     "examples": {
                         "deleted": {"value": {"message": "Group 1 deleted"}},
-                        "mismatch": {"value": {"message": "Введите точное имя группы для удаления"}},
+                        "mismatch": {
+                            "value": {
+                                "message": "Введите точное имя группы для удаления"
+                            }
+                        },
                     }
                 }
             },

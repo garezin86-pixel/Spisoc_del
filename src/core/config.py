@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     # Monitoring
     grafana_admin_password: str = Field(default="admin", alias="GRAFANA_ADMIN_PASSWORD")
 
+    refresh_secret_key: str = Field(default="", alias="REFRESH_SECRET_KEY")
+    refresh_token_expire_days: int = Field(
+        default=30, alias="REFRESH_TOKEN_EXPIRE_DAYS"
+    )
+
 
 settings = Settings()
 
@@ -70,3 +75,6 @@ BOT_TOKEN = settings.bot_token
 SUPER_ADMIN_TG_ID = settings.super_admin_tg_id
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
+REFRESH_SECRET_KEY = settings.refresh_secret_key
+REFRESH_TOKEN_EXPIRE_DAYS = settings.refresh_token_expire_days

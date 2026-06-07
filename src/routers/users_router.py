@@ -177,7 +177,10 @@ Side-effects:
 - Все задачи, привязанные к пользователю, остаются в БД, но `user_id` обнуляется (CASCADE зависит от настроек БД).
 """,
     responses={
-        200: {"description": "Пользователь удалён", "content": {"application/json": {"example": {"message": "User 5 deleted"}}}},
+        200: {
+            "description": "Пользователь удалён",
+            "content": {"application/json": {"example": {"message": "User 5 deleted"}}},
+        },
         403: {"description": "Требуется роль admin"},
         404: {"description": "Пользователь не найден"},
     },

@@ -14,7 +14,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import get_session
-
+from src.core.redis import get_redis
 from src.repositories.users_repository import UserRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.groups_repository import GroupRepository
@@ -65,7 +65,8 @@ def get_stats_repo(session: AsyncSession = Depends(get_session)) -> StatsReposit
 def get_auth_service(
     user_repo: UserRepository = Depends(get_user_repo),
 ) -> AuthService:
-    return AuthService(user_repo)
+    redis = get_redis()
+    return AuthService(user_repo, redis)
 
 
 def get_user_service(

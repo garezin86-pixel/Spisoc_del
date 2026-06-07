@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from src.db import SessionDep
-from src.schemas.token import TokenSchema
+from src.schemas.token import TokenSchema, RefreshRequest
 from src.schemas.user import UserLogin
 from src.services.auth_service import AuthService
 from src.repositories.users_repository import UserRepository
 from src.core.limiter import limiter
+from src.core.dependencies import get_current_user
+from src.models.user import UserModel
+
+# Redis берём из FastAPICache (он уже инициализирован в lifespan)
+from src.core.redis import get_redis
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -12,31 +17,60 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @router.post(
     "/login",
     response_model=TokenSchema,
-    summary="Авторизация пользователя",
-    description="""
-Выдаёт JWT access-token по логину и паролю.
-
-- Защищён rate-limit: **5 запросов в минуту** с одного IP (защита от брутфорса).
-- Токен кладётся в заголовок `Authorization: Bearer <token>` для всех последующих запросов.
-- Payload токена содержит `sub` (user_id), `role`, `username`.
-""",
+    summary="Авторизация",
+    description="Возвращает пару access + refresh токенов.",
     responses={
         200: {
-            "description": "Успешная авторизация",
             "content": {
                 "application/json": {
-                    "example": {"access_token": "eyJhbGci...", "token_type": "bearer"}
+                    "example": {
+                        "access_token": "eyJhbGci...",
+                        "refresh_token": "eyJhbGci...",
+                        "token_type": "bearer",
+                    }
                 }
-            },
+            }
         },
         401: {"description": "Неверный логин или пароль"},
-        429: {"description": "Слишком много запросов — подождите и попробуйте снова"},
+        429: {"description": "Слишком много попыток"},
     },
 )
 @limiter.limit("5/minute")
-async def login(
-    request: Request,
-    user: UserLogin,
+async def login(request: Request, user: UserLogin, session: SessionDep):
+    redis = get_redis()
+    return await AuthService(UserRepository(session), redis).login(user)
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenSchema,
+    summary="Обновить токены",
+    description="""
+Принимает refresh token, возвращает новую пару access + refresh.
+
+Старый refresh token после этого инвалидируется (token rotation).
+Если токен уже был использован — это признак кражи, сессия блокируется.
+""",
+    responses={
+        200: {"description": "Новая пара токенов"},
+        401: {"description": "Токен истёк, отозван или невалидный"},
+    },
+)
+async def refresh(data: RefreshRequest, session: SessionDep):
+    redis = get_redis()
+    return await AuthService(UserRepository(session), redis).refresh(data.refresh_token)
+
+
+@router.post(
+    "/logout",
+    status_code=204,
+    summary="Выход",
+    description="Отзывает refresh token. Access token истечёт сам через 15-30 мин.",
+)
+async def logout(
+    data: RefreshRequest,
     session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
 ):
-    return await AuthService(UserRepository(session)).login(user)
+    redis = get_redis()
+    await AuthService(UserRepository(session), redis).logout(data.refresh_token)

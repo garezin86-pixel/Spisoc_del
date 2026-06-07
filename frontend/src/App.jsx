@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { apiRequest } from "./api";
+import { apiRequest, saveTokens, clearTokens, getRefreshToken } from "./api";
 
 // ─── Helpers ──────────────────────────────────────────────
 const initialForm = { title: "", description: "", deadline: "" };
@@ -801,8 +801,17 @@ function App() {
         else setError(err.message);
     }
 
-    function logout() {
-        localStorage.removeItem("spisoc_token");
+    async function logout() {
+        try {
+            const refreshToken = getRefreshToken();
+            if (refreshToken) {
+                await apiRequest({
+                    path: "/auth/logout", method: "POST",
+                    token, body: { refresh_token: refreshToken },
+                });
+            }
+        } catch { /* игнорируем ошибки при logout */ }
+        clearTokens();
         setToken(null); setTasks([]);
     }
 
@@ -815,7 +824,7 @@ function App() {
                 path: "/auth/login", method: "POST",
                 body: { username: fd.get("username"), password: fd.get("password") },
             });
-            localStorage.setItem("spisoc_token", resp.access_token);
+            saveTokens(resp.access_token, resp.refresh_token);
             setToken(resp.access_token);
         } catch (err) { setError(err.message); }
     }
