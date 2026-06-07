@@ -47,7 +47,6 @@ def make_task_service(uow: UnitOfWork) -> TaskService:
 
 
 def make_comment_service(uow: UnitOfWork) -> CommentService:
-
     return CommentService(
         task_repo=TaskRepository(uow.session),
         comment_repo=CommentRepository(uow.session),
@@ -569,7 +568,11 @@ async def edit_task_menu(message: Message, state: FSMContext):
                 await state.clear()
                 return
             try:
-                assert task_id is not None
+                if not task_id:
+                    await message.answer("❌ Задача не найдена.")
+                    await state.clear()
+                    return
+                task_id = int(task_id)
                 # ← get_by_task(task_id, user) — без session
                 comments = await make_comment_service(uow).get_by_task(task_id, user)
                 if not comments:
@@ -606,6 +609,11 @@ async def edit_task_menu(message: Message, state: FSMContext):
                 return
             uow.set_audit_user(user.id)
             try:
+                if not task_id:
+                    await message.answer("❌ Задача не найдена.")
+                    await state.clear()
+                    return
+                task_id = int(task_id)
                 # ← update_task(task_id, data, user) — без session
                 await make_task_service(uow).update_task(
                     task_id, SpisokUpdate(is_done=True), user
@@ -634,6 +642,11 @@ async def edit_task_menu(message: Message, state: FSMContext):
                 return
             uow.set_audit_user(user.id)
             try:
+                if not task_id:
+                    await message.answer("❌ Задача не найдена.")
+                    await state.clear()
+                    return
+                task_id = int(task_id)
                 await make_task_service(uow).update_task(
                     task_id, SpisokUpdate(is_done=False), user
                 )
@@ -657,6 +670,11 @@ async def edit_task_menu(message: Message, state: FSMContext):
                 return
             uow.set_audit_user(user.id)
             try:
+                if not task_id:
+                    await message.answer("❌ Задача не найдена.")
+                    await state.clear()
+                    return
+                task_id = int(task_id)
                 await make_task_service(uow).delete_task(task_id, user)
                 # keyboard = (main_menu_admin() if user.role == "admin" else main_menu_user())
                 keyboard = get_main_menu(user)
@@ -750,7 +768,11 @@ async def _do_reassign(
         uow.set_audit_user(user.id)
 
         try:
-            assert task_id is not None
+            if not task_id:
+                await message.answer("❌ Задача не найдена.")
+                await state.clear()
+                return
+            task_id = int(task_id)
             task_repo = TaskRepository(uow.session)
             task = await task_repo.get_by_id(task_id)
             if not task:
@@ -799,6 +821,11 @@ async def edit_task_new_value(message: Message, state: FSMContext):
 
         try:
             if edit_type == "title":
+                if not task_id:
+                    await message.answer("❌ Задача не найдена.")
+                    await state.clear()
+                    return
+                task_id = int(task_id)
                 await make_task_service(uow).update_task(
                     task_id, SpisokUpdate(title=message.text), user
                 )
@@ -811,6 +838,11 @@ async def edit_task_new_value(message: Message, state: FSMContext):
             elif edit_type == "deadline":
                 assert message.text is not None
                 if message.text.lower() == "нет":
+                    if not task_id:
+                        await message.answer("❌ Задача не найдена.")
+                        await state.clear()
+                        return
+                    task_id = int(task_id)
                     await make_task_service(uow).update_task(
                         task_id, SpisokUpdate(deadline=None), user
                     )
@@ -822,6 +854,11 @@ async def edit_task_new_value(message: Message, state: FSMContext):
                         new_deadline = datetime.strptime(
                             message.text, "%d.%m.%Y %H:%M"
                         ).replace(tzinfo=LOCAL_TZ)
+                        if not task_id:
+                            await message.answer("❌ Задача не найдена.")
+                            await state.clear()
+                            return
+                        task_id = int(task_id)
                         await make_task_service(uow).update_task(
                             task_id, SpisokUpdate(deadline=new_deadline), user
                         )

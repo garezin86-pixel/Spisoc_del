@@ -46,12 +46,6 @@ logger = structlog.get_logger()
 
 
 class TaskService:
-    """Сервис управления задачами.
-
-    Центральная точка бизнес-логики задач: создание, обновление, удаление,
-    фильтрация, корзина. Все проверки прав доступа делегируются в модуль permissions.
-    """
-
     def __init__(
         self,
         task_repo: AbstractTaskRepository,
@@ -67,22 +61,6 @@ class TaskService:
     async def add_task(
         self, data: SpisokAddSchema, current_user: UserModel
     ) -> SpisokModel:
-        """Создаёт задачу и запускает уведомление исполнителю.
-
-        Зачем: при создании задачи нужно проверить, что пользователь/группа
-        существуют, и сразу отправить уведомление — чтобы исполнитель узнал
-        о новой задаче не из интерфейса, а мгновенно через Telegram.
-
-        Side-effects:
-            - Вызывает notify_task_assigned (await, не фоново) — доставляет
-              Telegram-уведомление до возврата ответа.
-            - Инкрементирует Prometheus-счётчик tasks_created.
-            - Пишет audit-лог (через session.info["audit_user_id"]).
-
-        Raises:
-            HTTPException 400: user_id и group_id переданы одновременно.
-            HTTPException 404: пользователь или группа не найдены.
-        """
         if data.user_id is not None and data.group_id is not None:
             incorrect_request(USER_ID_OR_GROUP_ID)
 
@@ -119,16 +97,13 @@ class TaskService:
         )
 
         if self.session is not None:
-            await notify_task_assigned(task.id)
+            import asyncio
+
+            asyncio.create_task(notify_task_assigned(task.id))
         tasks_created.inc()
         return task
 
     async def _validate_task_filters(self, filter_user_group, group_id) -> None:
-        """Валидирует комбинацию фильтров перед запросом к БД.
-
-        Зачем: filter_user_group=group без group_id привёл бы к некорректному
-        SQL-запросу (WHERE group_id = NULL вместо конкретного ID).
-        """
         if filter_user_group == FilterUserGroup.group:
             if not group_id:
                 incorrect_request(ENTER_GROUP_ID)
@@ -138,7 +113,7 @@ class TaskService:
 
     async def filter_tasks(
         self,
-        current_user,
+        current_user: UserModel,
         filter_user_group,
         group_id,
         filter_type,
@@ -146,11 +121,6 @@ class TaskService:
         limit,
         offset,
     ):
-        """Возвращает задачи без подсчёта total (устаревший метод).
-
-        Зачем: оставлен для обратной совместимости. В API используется
-        filter_tasks_paginated, который возвращает (tasks, total).
-        """
         await self._validate_task_filters(filter_user_group, group_id)
         return await self.task_repo.get_filtered_tasks(
             user_id=current_user.id,
@@ -162,16 +132,7 @@ class TaskService:
             is_done=is_done,
         )
 
-    async def get_task(self, task_id, current_user):
-        """Возвращает задачу с проверкой прав доступа.
-
-        Зачем: пользователь не должен видеть чужие задачи — только те,
-        к которым у него есть отношение (автор, исполнитель, группа, роль).
-
-        Raises:
-            HTTPException 404: задача не найдена (или soft-deleted).
-            HTTPException 403: нет доступа.
-        """
+    async def get_task(self, task_id: int, current_user: UserModel) -> SpisokModel:
         task = await self.task_repo.get_by_id(task_id)
         if task is None:
             task_not_found(TASK_NOT_FOUND)
@@ -180,22 +141,13 @@ class TaskService:
             no_access(NO_ACCESS)
         return task
 
-    async def reassign_task(self, task_id, current_user, user_id, group_id):
-        """Переназначает задачу другому пользователю или группе.
-
-        Зачем: при переназначении нужно обнулить предыдущего исполнителя/группу,
-        чтобы задача не висела сразу на двух.
-
-        Side-effects:
-            - Обнуляет противоположное поле (user_id или group_id).
-            - Пишет audit-лог.
-            - Роутер вешает в фон notify_task_assigned после возврата.
-
-        Raises:
-            HTTPException 400: переданы оба или ни одного из параметров.
-            HTTPException 403: нет прав на переназначение.
-            HTTPException 404: задача, пользователь или группа не найдены.
-        """
+    async def reassign_task(
+        self,
+        task_id: int,
+        current_user: UserModel,
+        user_id: int | None,
+        group_id: int | None,
+    ) -> SpisokModel:
         task = await self.task_repo.get_by_id(task_id)
         if not task:
             task_not_found()
@@ -224,22 +176,9 @@ class TaskService:
         )
         return updated_task
 
-    async def update_task(self, task_id, data, current_user):
-        """Обновляет поля задачи с разграничением прав на дедлайн.
-
-        Зачем: изменять дедлайн могут только автор, admin или manager —
-        исполнитель не должен произвольно сдвигать срок.
-
-        Side-effects:
-            - При переводе is_done=True (если было False) отправляет Telegram-уведомление
-              автору задачи через _notify_task_done.
-            - Инкрементирует Prometheus-счётчик tasks_completed при выполнении.
-            - Пишет audit-лог.
-
-        Raises:
-            HTTPException 403: нет доступа к задаче или нет прав менять дедлайн.
-            HTTPException 404: задача не найдена.
-        """
+    async def update_task(
+        self, task_id: int, data, current_user: UserModel
+    ) -> SpisokModel:
         task = await self.task_repo.get_by_id(task_id)
         if not task:
             task_not_found(TASK_NOT_FOUND)
@@ -250,12 +189,13 @@ class TaskService:
         update_data = data.model_dump(exclude_unset=True)
         was_done = task.is_done
 
-        if "title" in update_data:
-            task.title = update_data["title"]
-        if "description" in update_data:
-            task.description = update_data["description"]
-        if "is_done" in update_data:
-            task.is_done = update_data["is_done"]
+        # Простые поля — обновляем через setattr (легко расширять)
+        simple_fields = {"title", "description", "is_done"}
+        for field in simple_fields:
+            if field in update_data:
+                setattr(task, field, update_data[field])
+
+        # Дедлайн — требует проверки прав и нормализации секунд
         if "deadline" in update_data:
             if update_data["deadline"] is None:
                 task.deadline = None
@@ -280,21 +220,7 @@ class TaskService:
             await self._notify_task_done(updated_task, current_user)
         return updated_task
 
-    async def delete_task(self, task_id, current_user):
-        """Мягко удаляет задачу (soft delete): выставляет deleted_at.
-
-        Зачем: задача не удаляется физически — она переходит в корзину,
-        откуда её можно восстановить или удалить окончательно.
-
-        Side-effects:
-            - Вызывает task.soft_delete(session), который выставляет deleted_at = now().
-            - Пишет audit-лог через session.info["audit_user_id"].
-            - Инкрементирует Prometheus-счётчик tasks_deleted.
-
-        Raises:
-            HTTPException 403: не автор, не admin и не manager.
-            HTTPException 404: задача не найдена.
-        """
+    async def delete_task(self, task_id: int, current_user: UserModel) -> dict:
         task = await self.task_repo.get_by_id(task_id)
         if task is None:
             task_not_found(TASK_NOT_FOUND)
@@ -310,19 +236,6 @@ class TaskService:
         return {"message": f"Task {task_id} deleted"}
 
     async def restore_task(self, task_id: int, current_user: UserModel) -> SpisokModel:
-        """Восстанавливает задачу из корзины: обнуляет deleted_at.
-
-        Зачем: позволяет отменить случайное удаление без потери данных.
-
-        Side-effects:
-            - Вызывает task.restore(session), который сбрасывает deleted_at = NULL.
-            - Пишет audit-лог.
-            - Инкрементирует Prometheus-счётчик tasks_restored.
-
-        Raises:
-            HTTPException 403: нет прав на восстановление.
-            HTTPException 404: задача не найдена (в том числе не в корзине).
-        """
         task = await self.task_repo.get_by_id_include_deleted(task_id)
         if task is None:
             task_not_found(TASK_NOT_FOUND)
@@ -337,6 +250,8 @@ class TaskService:
         await logger.ainfo("task_restored", task_id=task_id, user_id=current_user.id)
         return task
 
+    # ── Корзина ───────────────────────────────────────────────────────────────
+
     async def get_deleted_tasks(
         self,
         user: UserModel,
@@ -344,11 +259,7 @@ class TaskService:
         limit: int,
         search: str | None = None,
     ) -> tuple[list[SpisokModel], int]:
-        """Возвращает удалённые задачи с учётом прав доступа.
-
-        Зачем: admin/manager видят корзину всех пользователей,
-        обычный пользователь — только свои задачи (автор или исполнитель).
-        """
+        """Возвращает удалённые задачи с учётом прав доступа."""
         is_admin = user.role in (UserRole.admin, UserRole.manager)
         return await self.task_repo.get_deleted_tasks_paginated(
             user_id=user.id,
@@ -359,20 +270,7 @@ class TaskService:
         )
 
     async def hard_delete_task(self, task_id: int, current_user: UserModel) -> None:
-        """Физически удаляет задачу из БД без возможности восстановления.
-
-        Зачем: нужен когда данные должны быть полностью удалены
-        (GDPR, cleanup устаревших записей).
-
-        Side-effects:
-            - Каскадно удаляет все комментарии к задаче (ON DELETE CASCADE в БД).
-            - Пишет audit-лог с пометкой hard_delete=True.
-            - Инкрементирует Prometheus-счётчик tasks_hard_deleted.
-
-        Raises:
-            HTTPException 403: нет прав.
-            HTTPException 404: задача не найдена (включая уже удалённые).
-        """
+        """Физическое удаление задачи из БД. Только admin/manager или автор."""
         task = await self.task_repo.get_by_id_include_deleted(task_id)
         if task is None:
             task_not_found(TASK_NOT_FOUND)
@@ -385,12 +283,9 @@ class TaskService:
         tasks_hard_deleted.inc()
         await self.session.commit()
 
-    async def get_user_stats(self, pk):
-        """Возвращает агрегированную статистику задач пользователя.
+    # ── Вспомогательные ───────────────────────────────────────────────────────
 
-        Зачем: используется в Telegram-боте и admin-панели для отображения
-        дашборда пользователя без отдельного API-эндпоинта.
-        """
+    async def get_user_stats(self, pk: int) -> dict:
         stats = await self.task_repo.get_assigned_tasks(pk)
         authored = await self.task_repo.get_created_tasks_stats(pk)
         recent_tasks = await self.task_repo.get_last_appointed_tasks(pk)
@@ -408,15 +303,6 @@ class TaskService:
 
     @staticmethod
     async def _notify_task_done(task, executor):
-        """Уведомляет автора задачи о её выполнении.
-
-        Зачем: автор должен знать, что исполнитель завершил работу.
-        Не уведомляем, если автор и исполнитель — один человек.
-
-        Side-effects:
-            - Отправляет Telegram-сообщение. Ошибки отправки подавляются
-              (pass в except), чтобы не ломать основной поток обновления задачи.
-        """
         try:
             if (
                 not task.author
@@ -434,13 +320,9 @@ class TaskService:
         except Exception:
             pass
 
-    async def filter_tasks_paginated(self, user, offset, limit, **filters):
-        """Возвращает (tasks, total) с применением фильтров.
-
-        Зачем: единый метод пагинации задач для роутера.
-        Делегирует валидацию фильтров в _validate_task_filters,
-        а сам запрос — в репозиторий.
-        """
+    async def filter_tasks_paginated(
+        self, user: UserModel, offset: int, limit: int, **filters
+    ) -> tuple[list[SpisokModel], int]:
         await self._validate_task_filters(
             filters.get("filter_user_group"),
             filters.get("group_id"),
