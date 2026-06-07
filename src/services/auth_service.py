@@ -29,13 +29,28 @@ def _redis_key(jti: str) -> str:
 
 
 class AuthService:
-    """Сервис аутентификации с поддержкой refresh token."""
+    """Сервис аутентификации и регистрации пользователей.
+
+    Отвечает за проверку учётных данных и выдачу JWT-токенов.
+    Не хранит состояния — каждый метод работает через переданный репозиторий.
+    """
 
     def __init__(self, user_repo: AbstractUserRepository, redis: Redis):
         self.user_repo = user_repo
         self.redis = redis
 
     async def register(self, user: UserRegister):
+        """Регистрирует нового пользователя.
+
+        Зачем: создаёт учётную запись с хэшированным паролем и ролью «user».
+
+        Side-effects:
+            - Записывает событие user_registered в structlog.
+            - Инкрементирует Prometheus-счётчик users_registered.
+
+        Raises:
+            HTTPException 400: если пользователь с таким именем уже существует.
+        """
         existing = await self.user_repo.get_by_username(user.username)
         if existing:
             user_already_exists(USER_ALREADY_EXISTS)

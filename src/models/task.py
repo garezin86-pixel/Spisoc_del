@@ -1,13 +1,24 @@
 # src/models/task.py
 from typing import Optional
+from enum import Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, String, Index, DateTime
 from datetime import datetime, timezone
 import sqlalchemy as sa
+from sqlalchemy import Enum as SAEnum
 from src.db import Base
-
 from src.models.audit import AuditMixin, SoftDeleteMixin
 from typing import TYPE_CHECKING
+
+
+class TaskPriority(str, Enum):
+    """Приоритет задачи. Используется для сортировки и фильтрации."""
+
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
 
 if TYPE_CHECKING:
     from src.models.user import (
@@ -17,7 +28,6 @@ if TYPE_CHECKING:
 
 
 class TimestampMixin:
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -50,6 +60,12 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
     )
     reminder_sent: Mapped[bool] = mapped_column(
         default=False, server_default=sa.false(), nullable=False
+    )
+    priority: Mapped[TaskPriority] = mapped_column(
+        SAEnum(TaskPriority, name="taskpriority"),
+        default=TaskPriority.medium,
+        server_default="medium",
+        nullable=False,
     )
 
     user: Mapped["UserModel"] = relationship(
