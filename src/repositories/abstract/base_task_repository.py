@@ -5,7 +5,6 @@ from src.models.comment import CommentModel
 
 
 class AbstractTaskRepository(ABC):
-
     @abstractmethod
     async def get_all(self) -> list[SpisokModel]:
         raise NotImplementedError

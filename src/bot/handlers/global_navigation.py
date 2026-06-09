@@ -12,7 +12,6 @@ router = Router()
 
 
 async def set_main_menu(bot):
-
     commands = [
         BotCommand(command="start", description="🏠 Главное меню"),
     ]

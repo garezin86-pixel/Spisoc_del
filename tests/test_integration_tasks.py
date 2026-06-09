@@ -19,7 +19,6 @@ def mock_background_notifications():
 
 
 class TestTasksCreate:
-
     @pytest.mark.asyncio
     async def test_create_task_success(self, auth_client):
         client, user = auth_client
@@ -80,7 +79,6 @@ class TestTasksCreate:
 
 
 class TestTasksGet:
-
     @pytest.mark.asyncio
     async def test_get_task_by_id_author(self, auth_client):
         client, user = auth_client
@@ -139,7 +137,6 @@ class TestTasksGet:
 
 
 class TestTasksUpdate:
-
     @pytest.mark.asyncio
     async def test_author_can_update_task(self, auth_client):
         client, _ = auth_client
@@ -202,7 +199,6 @@ class TestTasksUpdate:
 
 
 class TestTasksDelete:
-
     @pytest.mark.asyncio
     async def test_author_can_delete_own_task(self, auth_client):
         client, _ = auth_client
@@ -255,7 +251,6 @@ class TestTasksDelete:
 
 
 class TestTasksReassign:
-
     @pytest.mark.asyncio
     async def test_author_can_reassign_to_user(self, auth_client, engine):
         client, user = auth_client

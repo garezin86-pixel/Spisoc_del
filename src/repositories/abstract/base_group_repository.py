@@ -6,7 +6,6 @@ from src.models.user import UserModel
 
 
 class AbstractGroupRepository(ABC):
-
     @abstractmethod
     async def get_all(self) -> list[GroupModel]:
         raise NotImplementedError

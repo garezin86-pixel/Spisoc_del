@@ -32,7 +32,6 @@ def _admin_login_attempts(ip: str) -> deque[datetime]:
 
 
 class AdminAuth(AuthenticationBackend):
-
     def __init__(self, secret_key: str, session_maker: async_sessionmaker):
         super().__init__(secret_key)
         self._session_maker = session_maker

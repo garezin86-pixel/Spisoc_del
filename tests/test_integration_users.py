@@ -8,7 +8,6 @@ from tests.conftest import make_user
 
 
 class TestUsersCreate:
-
     @pytest.mark.asyncio
     async def test_admin_can_create_user(self, admin_client):
         client, admin = admin_client
@@ -47,7 +46,6 @@ class TestUsersCreate:
 
 
 class TestUsersGet:
-
     @pytest.mark.asyncio
     async def test_user_can_get_self(self, auth_client):
         client, user = auth_client
@@ -101,7 +99,6 @@ class TestUsersGet:
 
 
 class TestUsersUpdate:
-
     @pytest.mark.asyncio
     async def test_user_can_update_own_username(self, auth_client):
         client, user = auth_client
@@ -134,7 +131,6 @@ class TestUsersUpdate:
 
 
 class TestUsersDelete:
-
     @pytest.mark.asyncio
     async def test_admin_can_delete_user(self, admin_client, engine):
         client, _ = admin_client

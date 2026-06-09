@@ -147,7 +147,6 @@ async def create_comment(session, task, commenter_tg=None):
 
 
 class TestNotifyTaskAssigned:
-
     @pytest.mark.asyncio
     async def test_sends_to_executor(self, session, mock_bot):
         task, author, user = await create_task_with_users(session)
@@ -203,7 +202,6 @@ class TestNotifyTaskAssigned:
 
 
 class TestNotifyTaskUpdated:
-
     @pytest.mark.asyncio
     async def test_sends_on_title_change(self, session, mock_bot):
         task, _, user = await create_task_with_users(session)
@@ -260,7 +258,6 @@ class TestNotifyTaskUpdated:
 
 
 class TestNotifyCommentAdded:
-
     @pytest.mark.asyncio
     async def test_sends_to_author(self, session, mock_bot):
         task, author, user = await create_task_with_users(session)

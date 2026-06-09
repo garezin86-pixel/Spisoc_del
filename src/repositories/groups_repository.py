@@ -10,7 +10,6 @@ from src.repositories.abstract.base_group_repository import AbstractGroupReposit
 
 
 class GroupRepository(AbstractGroupRepository):
-
     def __init__(self, session: AsyncSession):
         self.session = session
 

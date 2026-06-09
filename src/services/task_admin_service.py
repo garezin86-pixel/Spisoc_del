@@ -8,7 +8,6 @@ logger = structlog.get_logger()
 
 
 class TaskAdminService:
-
     async def fetch_audit_entries(self, task_id: int) -> list:
         async with UnitOfWork(get_session_maker()) as uow:
             return await uow.audit.get_task_audit_entries(task_id)

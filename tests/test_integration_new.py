@@ -30,7 +30,6 @@ def mock_background_notifications():
 
 
 class TestTaskNotifications:
-
     @pytest.mark.asyncio
     async def test_notify_called_on_task_create(self, auth_client):
         """notify_task_assigned вызывается при создании задачи с исполнителем."""
@@ -89,7 +88,6 @@ class TestTaskNotifications:
 
 
 class TestDeadlineValidation:
-
     @pytest.mark.asyncio
     async def test_deadline_in_past_returns_422(self, auth_client):
         client, _ = auth_client
@@ -146,7 +144,6 @@ class TestDeadlineValidation:
 
 
 class TestComments:
-
     @pytest.mark.asyncio
     async def test_author_can_add_comment(self, auth_client):
         client, user = auth_client
@@ -263,7 +260,6 @@ class TestComments:
 
 
 class TestGroups:
-
     @pytest.mark.asyncio
     async def test_admin_can_create_group(self, admin_client):
         client, _ = admin_client
@@ -341,7 +337,6 @@ class TestGroups:
 
 
 class TestRBAC:
-
     @pytest.mark.asyncio
     async def test_manager_can_edit_any_task(self, client, engine):
         async_session = async_sessionmaker(

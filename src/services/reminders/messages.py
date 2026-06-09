@@ -1,4 +1,4 @@
-﻿from src.utils.datetime_utils import to_local
+from src.utils.datetime_utils import to_local
 
 
 def format_deadline(task, fmt: str = "%d.%m.%Y %H:%M") -> str:
