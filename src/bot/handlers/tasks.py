@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from aiogram.utils.keyboard import ReplyKeyboardBuilder as _RKB
 
 from src.bot.utils.user_utils import get_main_menu, get_task_edit_keyboard
 from src.db import get_session_maker
@@ -61,6 +62,7 @@ class CreateTask(StatesGroup):
     assign_to = State()
     select_user = State()
     select_group = State()
+    priority = State()
     deadline = State()
 
 
@@ -107,6 +109,7 @@ async def my_tasks(message: Message):
             deadline = to_local(task.deadline)
             await message.answer(
                 f"{status} <b>{task.title}</b>\n"
+                f"🎯 {'🔴' if hasattr(task, 'priority') and task.priority and task.priority.value == 'critical' else '🟠' if hasattr(task, 'priority') and task.priority and task.priority.value == 'high' else '🔵' if hasattr(task, 'priority') and task.priority and task.priority.value == 'medium' else '⚫'} Приоритет\n"
                 f"📅 Дедлайн: {deadline}\n"
                 f"🆔 ID: {task.id}",
                 parse_mode="HTML",
@@ -271,6 +274,43 @@ async def create_task_select_group(message: Message, state: FSMContext):
     )
 
 
+def priority_keyboard():
+    """Клавиатура выбора приоритета задачи."""
+    kb = _RKB()
+    kb.button(text="🔴 Критический")
+    kb.button(text="🟠 Высокий")
+    kb.button(text="🔵 Средний")
+    kb.button(text="⚫ Низкий")
+    kb.button(text="❌ Отмена")
+    kb.adjust(2, 2, 1)
+    return kb.as_markup(resize_keyboard=True)
+
+
+@router.message(CreateTask.priority)
+async def create_task_priority(message: Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await state.clear()
+        await message.answer("❌ Отменено.")
+        return
+    priority_map = {
+        "🔴 Критический": "critical",
+        "🟠 Высокий": "high",
+        "🔵 Средний": "medium",
+        "⚫ Низкий": "low",
+    }
+    priority = priority_map.get(message.text, "medium")
+    await state.update_data(priority=priority)
+    await state.set_state(CreateTask.deadline)
+    skip_kb = _RKB()
+    skip_kb.button(text="⏭ Пропустить")
+    skip_kb.button(text="❌ Отмена")
+    skip_kb.adjust(2)
+    await message.answer(
+        "📅 Введите дедлайн (ДД.ММ.ГГГГ ЧЧ:ММ) или пропустите:",
+        reply_markup=skip_kb.as_markup(resize_keyboard=True),
+    )
+
+
 @router.message(CreateTask.deadline)
 async def create_task_deadline(message: Message, state: FSMContext):
     if message.text == "❌ Отмена":
@@ -298,6 +338,9 @@ async def create_task_deadline(message: Message, state: FSMContext):
 
         uow.set_audit_user(user.id)
 
+        from src.models.task import TaskPriority
+
+        priority_value = data.get("priority", "medium")
         task = SpisokModel(
             title=data["title"],
             description=data.get("description"),
@@ -306,6 +349,7 @@ async def create_task_deadline(message: Message, state: FSMContext):
             group_id=data.get("group_id"),
             deadline=deadline,
             author_id=user.id,
+            priority=TaskPriority(priority_value),
         )
         created_task = await uow.tasks.create(task)
         await uow.session.flush()
@@ -498,6 +542,7 @@ async def get_task_by_id(message: Message, state: FSMContext):
                 f"<b>{task.title}</b>\n"
                 f"📝 Описание: {task.description or 'Нет'}\n"
                 f"📊 Статус: {status}\n"
+                f"🎯 Приоритет: {'🔴 Критический' if task.priority and task.priority.value == 'critical' else '🟠 Высокий' if task.priority and task.priority.value == 'high' else '🔵 Средний' if task.priority and task.priority.value == 'medium' else '⚫ Низкий'}\n"
                 f"📅 Дедлайн: {to_local(task.deadline)}\n"
                 f"👤 Автор: {author}",
                 parse_mode="HTML",

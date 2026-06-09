@@ -121,6 +121,18 @@ def build_services() -> list[ManagedProcess]:
 
 # ── Точка входа ───────────────────────────────────────────────────────────────
 def main() -> None:
+    # ── Миграции ─────────────────────────────────────────────
+    if IS_PROD:
+        print("[run] Running alembic upgrade head...", flush=True)
+        result = subprocess.run(
+            [str(VENV_PYTHON), "-m", "alembic", "upgrade", "head"],
+            cwd=BASE_DIR,
+        )
+        if result.returncode != 0:
+            print("[run] ERROR: alembic upgrade failed, aborting.", flush=True)
+            sys.exit(1)
+        print("[run] Migrations applied.", flush=True)
+
     services = build_services()
 
     # Запуск всех сервисов
