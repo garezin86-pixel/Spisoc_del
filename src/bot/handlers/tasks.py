@@ -298,7 +298,8 @@ async def create_task_priority(message: Message, state: FSMContext):
         "🔵 Средний": "medium",
         "⚫ Низкий": "low",
     }
-    priority = priority_map.get(message.text, "medium")
+    text = message.text or ""
+    priority = priority_map.get(text, "medium")
     await state.update_data(priority=priority)
     await state.set_state(CreateTask.deadline)
     skip_kb = _RKB()
