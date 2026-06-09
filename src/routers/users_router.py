@@ -14,6 +14,9 @@ from fastapi_cache.decorator import cache
 from src.utils.cache_keys import user_scoped_key_builder
 from src.utils.cache_manager import cache_manager
 from src.schemas.pagination import PaginationParams, PaginatedResponse
+from src.services.task_service import TaskService
+from src.repositories.task_repository import TaskRepository
+from src.repositories.groups_repository import GroupRepository
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -32,6 +35,30 @@ async def get_me(
 
 def get_user_service(session: SessionDep):
     return UserService(UserRepository(session))
+
+
+@router.get(
+    "/{user_id}/stats",
+    summary="Статистика задач пользователя",
+    description="Возвращает агрегированную статистику задач: всего, выполнено, в работе, последние задачи.",
+)
+async def get_user_stats(
+    user_id: int,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    # Обычный пользователь может смотреть только свою статистику
+    if current_user.role not in ("admin", "manager") and current_user.id != user_id:
+        from src.core.exceptions import no_access
+
+        no_access("Нет доступа к статистике другого пользователя")
+
+    return await TaskService(
+        task_repo=TaskRepository(session),
+        user_repo=UserRepository(session),
+        group_repo=GroupRepository(session),
+        session=session,
+    ).get_user_stats(user_id)
 
 
 @router.post(

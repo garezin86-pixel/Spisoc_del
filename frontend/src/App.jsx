@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest, saveTokens, clearTokens, getRefreshToken } from "./api";
 
 // ─── Helpers ──────────────────────────────────────────────
-const initialForm = { title: "", description: "", deadline: "" };
+const initialForm = { title: "", description: "", deadline: "", priority: "medium" };
+
+const PRIORITY_COLORS = { critical: "#ef4444", high: "#f97316", medium: "#3b82f6", low: "#6b7280" };
+const PRIORITY_LABELS = { critical: "Критический", high: "Высокий", medium: "Средний", low: "Низкий" };
+const PRIORITY_ICONS  = { critical: "🔴", high: "🟠", medium: "🔵", low: "⚫" };
 
 function decodeToken(token) {
     try {
@@ -89,6 +93,7 @@ const ICONS = {
     edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
     trash: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
     restore: "M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z",
+    chart: "M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z",
     refresh: "M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
     plus: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
     clock: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z",
@@ -244,6 +249,11 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                         </div>
                         {task.description && <div className="task-desc">{task.description}</div>}
                         <div className="task-meta-row">
+                            {task.priority && task.priority !== "medium" && (
+                                <span className="meta-chip" style={{ color: PRIORITY_COLORS[task.priority], fontWeight: 600, background: PRIORITY_COLORS[task.priority] + "18" }}>
+                                    {PRIORITY_ICONS[task.priority]} {PRIORITY_LABELS[task.priority]}
+                                </span>
+                            )}
                             {dl && (
                                 <span className={`meta-chip${dl.isOverdue && !task.is_done ? " overdue" : dl.isToday && !task.is_done ? " today" : ""}`}>
                                     <Icon d={ICONS.clock} />
@@ -370,6 +380,11 @@ function TrashCard({ task, onRestore, onHardDelete }) {
                         </div>
                         {task.description && <div className="task-desc">{task.description}</div>}
                         <div className="task-meta-row">
+                            {task.priority && task.priority !== "medium" && (
+                                <span className="meta-chip" style={{ color: PRIORITY_COLORS[task.priority], fontWeight: 600, background: PRIORITY_COLORS[task.priority] + "18" }}>
+                                    {PRIORITY_ICONS[task.priority]} {PRIORITY_LABELS[task.priority]}
+                                </span>
+                            )}
                             {dl && (
                                 <span className="meta-chip">
                                     <Icon d={ICONS.clock} />
@@ -579,6 +594,21 @@ function GroupsTab({ token, currentRole }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+
+    const loadDashboard = useCallback(async () => {
+        if (!tokenRef.current) return;
+        setDashLoading(true);
+        try {
+            const [meData, statsData] = await Promise.all([
+                apiRequest({ path: "/users/me", token: tokenRef.current }),
+                apiRequest({ path: `/users/${currentUserId}/stats`, token: tokenRef.current }),
+            ]);
+            setDashStats({ ...statsData, username: meData?.username });
+        } catch { setDashStats(null); }
+        finally { setDashLoading(false); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUserId]);
+
     const loadUsers = useCallback(async () => {
         try {
             const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
@@ -637,6 +667,116 @@ function GroupsTab({ token, currentRole }) {
     );
 }
 
+
+// ─── Dashboard Tab ────────────────────────────────────────
+function DashboardTab({ stats, loading, username, role }) {
+    if (loading) return <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка дашборда…</div>;
+    if (!stats) return <div className="empty-state"><div className="empty-icon">📊</div>Нет данных</div>;
+
+    const completionPercent = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
+    const authorPercent = stats.a_total > 0 ? Math.round((stats.a_done / stats.a_total) * 100) : 0;
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 0 32px" }}>
+            {/* Приветствие */}
+            <div className="card" style={{ background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%)", border: "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, color: "#fff" }}>
+                        {(username || "U")[0].toUpperCase()}
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>Привет, {username}!</div>
+                        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>Роль: {role}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Мои задачи (исполнитель) */}
+            <div className="card">
+                <div className="section-header">
+                    <div className="section-title">Назначено мне</div>
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{completionPercent}% выполнено</div>
+                </div>
+                <div className="stats-grid" style={{ marginBottom: 12 }}>
+                    <div className="stat-box">
+                        <div className="stat-value">{stats.total ?? 0}</div>
+                        <div className="stat-label">Всего</div>
+                    </div>
+                    <div className="stat-box">
+                        <div className="stat-value" style={{ color: "var(--green)" }}>{stats.done ?? 0}</div>
+                        <div className="stat-label">Готово</div>
+                    </div>
+                    <div className="stat-box">
+                        <div className="stat-value" style={{ color: "var(--accent-light)" }}>{stats.pending ?? 0}</div>
+                        <div className="stat-label">В работе</div>
+                    </div>
+                </div>
+                <div className="progress-wrap">
+                    <div className="progress-track">
+                        <div className="progress-fill" style={{ width: `${completionPercent}%` }} />
+                    </div>
+                    <div className="progress-caption">{completionPercent}%</div>
+                </div>
+            </div>
+
+            {/* Созданные мной */}
+            <div className="card">
+                <div className="section-header">
+                    <div className="section-title">Создано мной</div>
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{authorPercent}% выполнено</div>
+                </div>
+                <div className="stats-grid" style={{ marginBottom: 12 }}>
+                    <div className="stat-box">
+                        <div className="stat-value">{stats.a_total ?? 0}</div>
+                        <div className="stat-label">Всего</div>
+                    </div>
+                    <div className="stat-box">
+                        <div className="stat-value" style={{ color: "var(--green)" }}>{stats.a_done ?? 0}</div>
+                        <div className="stat-label">Закрыто</div>
+                    </div>
+                    <div className="stat-box">
+                        <div className="stat-value" style={{ color: "var(--accent-light)" }}>{(stats.a_total ?? 0) - (stats.a_done ?? 0)}</div>
+                        <div className="stat-label">Открыто</div>
+                    </div>
+                </div>
+                <div className="progress-wrap">
+                    <div className="progress-track">
+                        <div className="progress-fill" style={{ width: `${authorPercent}%` }} />
+                    </div>
+                    <div className="progress-caption">{authorPercent}%</div>
+                </div>
+            </div>
+
+            {/* Последние задачи */}
+            {stats.tasks && stats.tasks.length > 0 && (
+                <div className="card">
+                    <div className="section-header">
+                        <div className="section-title">Последние задачи</div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {stats.tasks.map(t => (
+                            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                                <span style={{ fontSize: 16 }}>{t.is_done ? "✅" : "⏳"}</span>
+                                <span style={{ flex: 1, fontSize: 14, color: t.is_done ? "var(--text-muted)" : "var(--text)", textDecoration: t.is_done ? "line-through" : "none" }}>
+                                    {t.title}
+                                </span>
+                                {t.priority && (
+                                    <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: PRIORITY_COLORS[t.priority] + "22", color: PRIORITY_COLORS[t.priority], fontWeight: 600 }}>
+                                        {PRIORITY_LABELS[t.priority] ?? t.priority}
+                                    </span>
+                                )}
+                                {t.deadline && (
+                                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t.deadline}</span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Main App ─────────────────────────────────────────────
 function App() {
     const [token, setToken] = useState(localStorage.getItem("spisoc_token"));
@@ -645,9 +785,12 @@ function App() {
     const [trashTasks, setTrash] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [tab, setTab] = useState("tasks"); // "tasks" | "groups" | "trash"
+    const [tab, setTab] = useState("tasks"); // "tasks" | "groups" | "trash" | "dashboard"
+    const [dashStats, setDashStats] = useState(null);
+    const [dashLoading, setDashLoading] = useState(false);
 
     const [filterType, setFilterType] = useState("");
+    const [filterPriority, setFilterPriority] = useState("");
     const [isDone, setIsDone] = useState("");
     const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
@@ -683,10 +826,12 @@ function App() {
     // что исключает цепочку useCallback→useEffect→двойной setState
     const tokenRef = React.useRef(token);
     const filterTypeRef = React.useRef(filterType);
+    const filterPriorityRef = React.useRef(filterPriority);
     const isDoneRef = React.useRef(isDone);
     const viewModeRef = React.useRef(viewMode);
     tokenRef.current = token;
     filterTypeRef.current = filterType;
+    filterPriorityRef.current = filterPriority;
     isDoneRef.current = isDone;
     viewModeRef.current = viewMode;
 
@@ -709,6 +854,7 @@ function App() {
             q.set("size", PAGE_SIZE);
             if (filterTypeRef.current) q.set("filter_type", filterTypeRef.current);
             if (isDoneRef.current) q.set("is_done", isDoneRef.current);
+            if (filterPriorityRef.current) q.set("priority", filterPriorityRef.current);
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
             // Если запрос был отменён — игнорируем результат
             if (controller.signal.aborted) return;
@@ -755,6 +901,21 @@ function App() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+
+    const loadDashboard = useCallback(async () => {
+        if (!tokenRef.current) return;
+        setDashLoading(true);
+        try {
+            const [meData, statsData] = await Promise.all([
+                apiRequest({ path: "/users/me", token: tokenRef.current }),
+                apiRequest({ path: `/users/${currentUserId}/stats`, token: tokenRef.current }),
+            ]);
+            setDashStats({ ...statsData, username: meData?.username });
+        } catch { setDashStats(null); }
+        finally { setDashLoading(false); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUserId]);
+
     const loadUsers = useCallback(async () => {
         try {
             const data = await apiRequest({ path: "/users?page=1&size=100", token: tokenRef.current });
@@ -787,13 +948,17 @@ function App() {
             loadUsers();
             if (tab === "tasks") loadTasks(1);
             if (tab === "trash") loadTrash(1);
+            if (tab === "dashboard") loadDashboard();
+            if (tab === "dashboard") loadDashboard();
         } else {
             // Смена фильтров/вкладки — только задачи
             if (tab === "tasks") loadTasks(1);
             if (tab === "trash") loadTrash(1);
+            if (tab === "dashboard") loadDashboard();
+            if (tab === "dashboard") loadDashboard();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, tab, filterType, isDone, viewMode]);
+    }, [token, tab, filterType, isDone, viewMode, filterPriority]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
@@ -839,6 +1004,7 @@ function App() {
                 title: form.title.trim(),
                 description: form.description.trim() || null,
                 is_done: taskDone,
+                priority: form.priority || "medium",
                 deadline: form.deadline ? `${form.deadline}:00` : null,
             };
             if (assignType === "self") { payload.user_id = currentUserId; payload.group_id = null; }
@@ -987,6 +1153,9 @@ function App() {
                 </div>
                 <div className="header-right">
                     <div className="tab-bar">
+                        <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => { setTab("dashboard"); loadDashboard(); }}>
+                            <Icon d={ICONS.chart} /> Дашборд
+                        </button>
                         <button className={`tab-btn${tab === "tasks" ? " active" : ""}`} onClick={() => setTab("tasks")}>
                             Задачи {tasksTotal > 0 && <span className="count-badge">{tasksTotal}</span>}
                         </button>
@@ -1139,6 +1308,16 @@ function App() {
                                         </div>
                                     </div>
                                     <div className="form-group">
+                                        <label className="form-label">Приоритет</label>
+                                        <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}
+                                            style={{ borderLeft: `3px solid ${PRIORITY_COLORS[form.priority] || "#3b82f6"}` }}>
+                                            <option value="low">⚫ Низкий</option>
+                                            <option value="medium">🔵 Средний</option>
+                                            <option value="high">🟠 Высокий</option>
+                                            <option value="critical">🔴 Критический</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
                                         <label className="form-label">Назначить</label>
                                         <select value={assignType} onChange={e => setAssignType(e.target.value)}>
                                             <option value="self">Себе</option>
@@ -1209,6 +1388,17 @@ function App() {
                             </div>
                         </main>
                     </div>
+                </div>
+            )}
+            {/* ── DASHBOARD TAB ── */}
+            {tab === "dashboard" && (
+                <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                    <DashboardTab
+                        stats={dashStats}
+                        loading={dashLoading}
+                        username={currentUsername}
+                        role={currentRole}
+                    />
                 </div>
             )}
             {/* ── GROUPS TAB ── */}

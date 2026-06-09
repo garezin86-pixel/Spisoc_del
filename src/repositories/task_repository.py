@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select, func, case, and_
 
+from src.models.task import TaskPriority
 from src.models.comment import CommentModel
 from src.models.task import SpisokModel
 from src.repositories.abstract.base_task_repository import AbstractTaskRepository
@@ -386,7 +387,7 @@ class TaskRepository(AbstractTaskRepository):
         group_id: Optional[int] = None,
         filter_type=None,
         is_done: Optional[bool] = None,
-        priority: str | None = None,
+        priority: TaskPriority | None = None,
     ) -> tuple[list[SpisokModel], int]:
         """Возвращает (tasks, total) — основной метод фильтрации для API.
 
