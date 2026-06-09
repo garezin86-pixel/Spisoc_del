@@ -8,7 +8,6 @@ from tests.conftest import make_user
 
 
 class TestAuthLogin:
-
     @pytest.mark.asyncio
     async def test_login_success_returns_token(self, client, engine):
         async_session = async_sessionmaker(

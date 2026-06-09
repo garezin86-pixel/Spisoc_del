@@ -19,7 +19,6 @@ from src.schemas.stats import UsersStats
 
 
 class CommentRepository(AbstractCommentRepository):
-
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -64,7 +63,6 @@ class CommentRepository(AbstractCommentRepository):
 
 
 class NotificationRepository(AbstractNotificationRepository):
-
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -479,7 +477,6 @@ class NotificationSettingsRepository:
 
 
 class StatsRepository(AbstractStatsRepository):
-
     def __init__(self, session: AsyncSession):
         self.session = session
 

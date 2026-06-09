@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import structlog
 from datetime import datetime, timedelta, timezone
 

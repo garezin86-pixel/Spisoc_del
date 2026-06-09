@@ -415,7 +415,6 @@ async def create_group(message: Message, state: FSMContext):
 
 @router.message(F.text == "➕ Добавить в группу")
 async def add_to_group_start(message: Message, state: FSMContext):
-
     async with UnitOfWork(get_session_maker()) as uow:
         groups = await uow.groups.get_all()
         assert message.from_user is not None

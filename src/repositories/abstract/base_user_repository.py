@@ -5,7 +5,6 @@ from src.models.user import UserModel
 
 
 class AbstractUserRepository(ABC):
-
     @abstractmethod
     async def get_all(self) -> list[UserModel]:
         raise NotImplementedError

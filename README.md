@@ -137,8 +137,8 @@ python run.py
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API доступен на `http://localhost:8000`  
-Swagger UI: `http://localhost:8000/docs`  
+API доступен на `http://localhost:8000`
+Swagger UI: `http://localhost:8000/docs`
 Admin-панель: `http://localhost:8000/admin`
 
 ### 7. Запуск фронтенда
@@ -173,7 +173,7 @@ python -m src.bot.runner
 4. Добавь все переменные из `.env.prod.example` в Environment Variables.
 5. Redis — отдельный Render Redis instance, укажи `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`.
 
-> ⚠️ На free-tier Render сервисы засыпают через 15 минут бездействия.  
+> ⚠️ На free-tier Render сервисы засыпают через 15 минут бездействия.
 > Первый запрос после сна может занять ~30 секунд (cold start).
 
 ## Запуск тестов

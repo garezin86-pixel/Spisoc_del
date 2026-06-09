@@ -103,7 +103,6 @@ class TestAuthService:
 
 
 class TestUserService:
-
     @pytest.mark.asyncio
     async def test_create_user_as_admin_success(self):
         admin = make_user_model(role="admin")
@@ -167,9 +166,7 @@ class TestUserService:
 
 
 class TestTaskService:
-
     def _make_service(self, tasks=None, users=None, groups=None):
-
         session = MagicMock()
         session.info = {"audit_user_id": 1}
         session.commit = AsyncMock()
@@ -253,7 +250,6 @@ class TestTaskService:
 
 
 class TestPermissions:
-
     @pytest.mark.asyncio
     async def test_admin_can_edit(self):
         from src.services.permissions import can_edit_task

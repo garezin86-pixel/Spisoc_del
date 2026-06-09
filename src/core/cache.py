@@ -10,7 +10,6 @@ from src.core.config import REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     redis = Redis(
         host=REDIS_HOST,
         port=REDIS_PORT,

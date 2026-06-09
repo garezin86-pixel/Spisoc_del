@@ -85,7 +85,6 @@ async def trash_restore_start(message: Message, state: FSMContext):
 
 @router.message(TrashMenu.restore_id)
 async def trash_restore_confirm(message: Message, state: FSMContext):
-
     if message.text == "❌ Отмена":
         await state.set_state(TrashMenu.browsing)
         await message.answer("Отменено.")

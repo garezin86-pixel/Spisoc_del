@@ -12,7 +12,6 @@ from src.core.config import SECRET_KEY, ALGORITHM
 
 
 class TestPasswordHashing:
-
     def test_hash_returns_string(self):
         result = hash_password("mypassword")
         assert isinstance(result, str)
@@ -46,7 +45,6 @@ class TestPasswordHashing:
 
 
 class TestJWT:
-
     def test_create_token_returns_string(self):
         token = create_access_token({"sub": "1"})
         assert isinstance(token, str)

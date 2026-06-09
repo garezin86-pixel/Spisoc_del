@@ -26,7 +26,6 @@ from src.schemas.stats import TasksStats as _TasksStats
 
 
 class MockUserRepository(AbstractUserRepository):
-
     def __init__(self, users: list[UserModel] | None = None):
         self._users: list[UserModel] = users or []
         self._next_id = max((u.id for u in self._users), default=0) + 1
@@ -99,7 +98,6 @@ _CreatedStats = namedtuple("CreatedStats", ["total", "done"])
 
 
 class MockTaskRepository(AbstractTaskRepository):
-
     def __init__(self, tasks: list[SpisokModel] | None = None):
         self._tasks: list[SpisokModel] = tasks or []
         self._comments: list[CommentModel] = []
@@ -266,7 +264,6 @@ class MockTaskRepository(AbstractTaskRepository):
 
 
 class MockGroupRepository(AbstractGroupRepository):
-
     def __init__(self, groups: list[GroupModel] | None = None):
         self._groups: list[GroupModel] = groups or []
         self._next_id = max((g.id for g in self._groups), default=0) + 1
@@ -370,7 +367,6 @@ class MockGroupRepository(AbstractGroupRepository):
 
 
 class MockCommentRepository(AbstractCommentRepository):
-
     def __init__(self, comments: list[CommentModel] | None = None):
         self._comments: list[CommentModel] = comments or []
         self._next_id = max((c.id for c in self._comments), default=0) + 1
@@ -401,7 +397,6 @@ class MockCommentRepository(AbstractCommentRepository):
 
 
 class MockNotificationRepository(AbstractNotificationRepository):
-
     def __init__(
         self,
         comments: list[CommentModel] | None = None,
@@ -459,7 +454,6 @@ class MockNotificationRepository(AbstractNotificationRepository):
 
 
 class MockStatsRepository(AbstractStatsRepository):
-
     def __init__(
         self,
         users: list[UserModel] | None = None,

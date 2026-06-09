@@ -7,7 +7,6 @@ from src.schemas.stats import UsersStats
 
 
 class AbstractCommentRepository(ABC):
-
     @abstractmethod
     async def create(self, comment: CommentModel) -> CommentModel:
         raise NotImplementedError
@@ -30,7 +29,6 @@ class AbstractCommentRepository(ABC):
 
 
 class AbstractNotificationRepository(ABC):
-
     @abstractmethod
     async def get_comment_with_relations(self, comment_id: int) -> CommentModel | None:
         raise NotImplementedError
@@ -71,7 +69,6 @@ class AbstractNotificationRepository(ABC):
 
 
 class AbstractStatsRepository(ABC):
-
     @abstractmethod
     async def get_users_stats(self) -> UsersStats:
         raise NotImplementedError

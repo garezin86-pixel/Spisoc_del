@@ -1,4 +1,4 @@
-﻿from src.services.reminders.service import (
+from src.services.reminders.service import (
     notify_group_assigned,
     notify_overdue,
     remind_deadline_1h,
