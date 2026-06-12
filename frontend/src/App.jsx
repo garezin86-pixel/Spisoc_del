@@ -125,6 +125,76 @@ function Pagination({ page, totalPages, onPage }) {
 }
 
 // ─── Comments panel ───────────────────────────────────────
+// ─── AuditPanel ──────────────────────────────────────────
+const AUDIT_ACTION_ICONS = { create: "✅", update: "✏️", delete: "🗑", restore: "♻️" };
+const AUDIT_ACTION_LABELS = { create: "Создана", update: "Изменена", delete: "Удалена", restore: "Восстановлена" };
+const AUDIT_FIELD_LABELS = {
+    title: "Заголовок", description: "Описание", is_done: "Статус",
+    deadline: "Дедлайн", user_id: "Исполнитель", group_id: "Группа",
+    priority: "Приоритет", project_id: "Проект", deleted_at: "Удалена",
+};
+
+function AuditPanel({ taskId, token }) {
+    const [entries, setEntries] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        setLoading(true);
+        apiRequest({ path: `/tasks/${taskId}/audit`, token })
+            .then(data => setEntries(Array.isArray(data) ? data : []))
+            .catch(() => setEntries([]))
+            .finally(() => setLoading(false));
+    }, [taskId, token]);
+
+    return (
+        <div className="comments-panel">
+            <div className="comments-title">
+                📋 История изменений
+                {entries.length > 0 && <span className="count-badge">{entries.length}</span>}
+            </div>
+            {loading ? (
+                <div className="comments-empty">Загрузка…</div>
+            ) : entries.length === 0 ? (
+                <div className="comments-empty">История пуста</div>
+            ) : (
+                <div className="comment-list">
+                    {entries.map(e => (
+                        <div key={e.id} className="comment-item">
+                            <div className="comment-meta">
+                                <span className="comment-author">
+                                    {AUDIT_ACTION_ICONS[e.action] || "📝"} {AUDIT_ACTION_LABELS[e.action] || e.action}
+                                    {e.user?.username && <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>· {e.user.username}</span>}
+                                </span>
+                                <span className="comment-date">{e.changed_at}</span>
+                            </div>
+                            {e.action === "update" && e.new_values && (
+                                <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+                                    {Object.entries(e.new_values).map(([field, newVal]) => (
+                                        <div key={field} style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                            <span style={{ color: "var(--text-dim)" }}>
+                                                {AUDIT_FIELD_LABELS[field] || field}:
+                                            </span>{" "}
+                                            {e.old_values?.[field] !== undefined && (
+                                                <span style={{ textDecoration: "line-through", marginRight: 4 }}>
+                                                    {String(e.old_values[field] ?? "—")}
+                                                </span>
+                                            )}
+                                            <span style={{ color: "var(--accent-light)" }}>
+                                                {String(newVal ?? "—")}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+
 function CommentsPanel({ taskId, token }) {
     const [comments, setComments] = useState([]);
     const [total, setTotal] = useState(0);
@@ -216,6 +286,7 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
     const [expanded, setExpanded] = useState(!collapsible);
     const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
+    const [showAudit, setShowAudit] = useState(false);
     const [showReassign, setShowReassign] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editForm, setEditForm] = useState({
@@ -420,8 +491,11 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                         <Icon d={ICONS.reassign} /> Переназначить
                     </button>
                 )}
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowComments(v => !v)}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setShowComments(v => !v); setShowAudit(false); }}>
                     <Icon d={ICONS.comment} /> {showComments ? "Скрыть" : "Комментарии"}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setShowAudit(v => !v); setShowComments(false); }}>
+                    📋 {showAudit ? "Скрыть" : "История"}
                 </button>
                 <button className="btn btn-danger btn-sm" onClick={() => onDelete(task)}>
                     <Icon d={ICONS.trash} /> Удалить
@@ -429,6 +503,7 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
             </div>
 
             {showComments && <CommentsPanel taskId={task.id} token={token} />}
+            {showAudit && <AuditPanel taskId={task.id} token={token} />}
         </article>
     );
 }
@@ -1298,6 +1373,8 @@ function App() {
     const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
     const canManage = currentRole === "admin" || currentRole === "manager";
     const [showTooltip, setShowTooltip] = useState(false);
+    const chipRef = React.useRef(null);
+    const [tooltipPos, setTooltipPos] = useState({ top: 0, right: 0 });
     const loadAppProjects = React.useCallback(async () => {
         if (!token) return;
         try {
@@ -1665,7 +1742,15 @@ function App() {
                         </button>
                     </div>
                     <div className="user-chip"
-                        onMouseEnter={() => setShowTooltip(true)}
+                        ref={chipRef}
+                        onMouseEnter={() => {
+                            const rect = chipRef.current?.getBoundingClientRect();
+                            if (rect) setTooltipPos({
+                                top: rect.bottom + 8,
+                                right: window.innerWidth - rect.right,
+                            });
+                            setShowTooltip(true);
+                        }}
                         onMouseLeave={() => setShowTooltip(false)}>
                         <span className="user-chip-name">{currentUsername}</span>
                         <span className="role-badge" style={{ color: roleColor.color, background: roleColor.bg, marginLeft: 4 }}>
@@ -1674,8 +1759,8 @@ function App() {
                         {showTooltip && (
                             <span style={{
                                 position: "fixed",
-                                top: 20,
-                                right: 295,
+                                top: tooltipPos.top,
+                                right: tooltipPos.right,
                                 background: "var(--surface2)",
                                 border: "1px solid var(--border)",
                                 color: "var(--text)",

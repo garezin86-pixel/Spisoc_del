@@ -21,6 +21,8 @@ from src.schemas.pagination import PaginationParams, PaginatedResponse
 from fastapi_cache.decorator import cache
 from src.utils.cache_keys import user_scoped_key_builder
 from src.utils.cache_manager import cache_manager
+from src.repositories.audit_repository import AuditRepository
+from src.schemas.schemas_audit import AuditLogSchema
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -184,3 +186,18 @@ async def hard_delete_task(
     await get_task_service(session).hard_delete_task(task_id, current_user)
     await cache_manager.invalidate_tasks()
     return {"message": f"Task {task_id} permanently deleted"}
+
+
+@router.get(
+    "/{task_id}/audit",
+    response_model=list[AuditLogSchema],
+    summary="История изменений задачи",
+    description="Возвращает последние 50 записей audit_log для задачи. Доступно всем авторизованным пользователям.",
+)
+async def get_task_audit(
+    task_id: int,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    entries = await AuditRepository(session).get_task_audit_entries(task_id)
+    return [AuditLogSchema.from_model(e) for e in entries]

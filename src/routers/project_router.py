@@ -8,12 +8,15 @@ from src.core.dependencies import get_current_user
 from src.services.project_service import ProjectService
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.users_repository import UserRepository
+from src.repositories.groups_repository import GroupRepository
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
 def get_project_service(session: SessionDep) -> ProjectService:
-    return ProjectService(ProjectRepository(session), UserRepository(session))
+    return ProjectService(
+        ProjectRepository(session), UserRepository(session), GroupRepository(session)
+    )
 
 
 @router.post(
@@ -172,3 +175,26 @@ async def remove_member(
     return await get_project_service(session).remove_member(
         project_id, user_id, current_user
     )
+
+
+@router.patch(
+    "/{project_id}/group",
+    response_model=ProjectSchema,
+    summary="Привязать группу к проекту",
+    description="Назначает или снимает группу с проекта. Передай `group_id: null` чтобы отвязать. **Требует быть владельцем или admin.**",
+    responses={
+        200: {"description": "Проект обновлён"},
+        403: {"description": "Нет прав"},
+        404: {"description": "Проект или группа не найдена"},
+    },
+)
+async def set_project_group(
+    project_id: int,
+    data: ProjectUpdate,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    project = await get_project_service(session).set_project_group(
+        project_id, data.group_id, current_user
+    )
+    return ProjectSchema.from_model(project)

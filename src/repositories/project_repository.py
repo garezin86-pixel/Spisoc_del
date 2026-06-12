@@ -24,6 +24,7 @@ class ProjectRepository:
             selectinload(ProjectModel.owner),
             selectinload(ProjectModel.members),
             selectinload(ProjectModel.tasks),
+            selectinload(ProjectModel.group),
         )
 
     def _visible_for_user(self, query, user_id: int):

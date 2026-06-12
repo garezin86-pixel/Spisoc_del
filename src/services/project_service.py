@@ -2,6 +2,7 @@
 import structlog
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.users_repository import UserRepository
+from src.repositories.groups_repository import GroupRepository
 from src.models.project import ProjectModel
 from src.models.user import UserModel, UserRole
 from src.schemas.schemas_project import ProjectCreate, ProjectUpdate
@@ -20,9 +21,15 @@ class ProjectService:
     - Управлять участниками: owner, admin, manager.
     """
 
-    def __init__(self, project_repo: ProjectRepository, user_repo: UserRepository):
+    def __init__(
+        self,
+        project_repo: ProjectRepository,
+        user_repo: UserRepository,
+        group_repo: GroupRepository | None = None,
+    ):
         self.project_repo = project_repo
         self.user_repo = user_repo
+        self.group_repo = group_repo
 
     def _require_manager(self, user: UserModel) -> None:
         if user.role not in (UserRole.admin, UserRole.manager):
@@ -45,6 +52,7 @@ class ProjectService:
             name=data.name,
             description=data.description,
             owner_id=current_user.id,
+            group_id=data.group_id,
         )
         created = await self.project_repo.create(project)
         await logger.ainfo(
@@ -96,6 +104,8 @@ class ProjectService:
             project.name = data.name
         if data.description is not None:
             project.description = data.description
+        if data.group_id is not None:
+            project.group_id = data.group_id
 
         updated = await self.project_repo.update(project)
         await logger.ainfo("project_updated", project_id=project_id)
@@ -148,6 +158,27 @@ class ProjectService:
             "project_member_added", project_id=project_id, user_id=user_id
         )
         return {"message": f"User {user_id} added to project {project_id}"}
+
+    async def set_project_group(
+        self, project_id: int, group_id: int | None, current_user: UserModel
+    ) -> ProjectModel:
+        """Привязывает или отвязывает группу от проекта."""
+        project = await self.project_repo.get_by_id(project_id)
+        if not project:
+            raise HTTPException(404, "Проект не найден")
+        self._require_owner_or_admin(project, current_user)
+
+        if group_id is not None and self.group_repo:
+            group = await self.group_repo.get_by_id(group_id)
+            if not group:
+                raise HTTPException(404, "Группа не найдена")
+
+        project.group_id = group_id
+        updated = await self.project_repo.update(project)
+        await logger.ainfo(
+            "project_group_set", project_id=project_id, group_id=group_id
+        )
+        return updated
 
     async def remove_member(
         self, project_id: int, user_id: int, current_user: UserModel
