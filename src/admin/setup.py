@@ -9,6 +9,7 @@ from src.admin.views.notification_view import NotificationLogAdmin
 from src.admin.views.task_admin import TaskAdmin
 from src.admin.views.trash_admin import TrashTaskAdmin
 from src.admin.views.user_admin import UserAdmin
+from src.admin.views.project_admin import ProjectAdmin
 from src.core.config import ADMIN_SECRET_KEY
 from src.admin.views.stats_view import StatsView
 from src.admin.views.status_view import StatusView
@@ -41,6 +42,7 @@ def setup_admin(app, engine):
     UserAdmin._session_maker = session_maker  # ← до регистрации
     admin.add_view(UserAdmin)
     admin.add_view(TaskAdmin)
+    admin.add_view(ProjectAdmin)
     admin.add_view(GroupAdmin)
     admin.add_view(CommentAdmin)
     admin.add_view(NotificationLogAdmin)

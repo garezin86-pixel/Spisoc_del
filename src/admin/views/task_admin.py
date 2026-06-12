@@ -48,6 +48,7 @@ _FIELD_LABELS = {
     "group_id": "Группа (ID)",
     "deadline": "Дедлайн",
     "deleted_at": "Удалено",
+    "priority": "Приоритет",
 }
 
 
@@ -194,6 +195,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.author_id,
         SpisokModel.user_id,
         SpisokModel.group_id,
+        SpisokModel.priority,
         SpisokModel.deadline,
     ]
     column_searchable_list = [SpisokModel.title, SpisokModel.is_done]
@@ -215,6 +217,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.author_id,
         SpisokModel.user_id,
         SpisokModel.group_id,
+        SpisokModel.priority,
         SpisokModel.deadline,
     ]
     column_default_sort = [(SpisokModel.created_at, True)]
@@ -237,7 +240,9 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.is_done,
         SpisokModel.user,
         SpisokModel.group,
+        SpisokModel.project,
         SpisokModel.author,
+        SpisokModel.priority,
         SpisokModel.deadline,
         SpisokModel.created_at,
         SpisokModel.updated_at,
@@ -253,8 +258,10 @@ class TaskAdmin(ModelView, model=SpisokModel):
         "is_done": "Выполнено",
         "user": "Пользователь",
         "group": "Группа",
+        "project": "Проект",
         "author": "Автор",
         "deadline": "Дедлайн",
+        "priority": "Приоритет",
         "created_at": "Добавлено",
         "updated_at": "Изменено",
         "comments": "Комментарии",
@@ -262,7 +269,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         "users": "Пользователи",
         "tasks": "Задачи",
         "comment": " ",
-        "audit_history": "История изменений",  # ← метка
+        "audit_history": "История изменений",
     }
 
     column_formatters = {
@@ -293,6 +300,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
             "description": "Выберите пользователя, если задача для конкретного человека"
         },
         "group": {"description": "Выберите группу, если задача для группы"},
+        "priority": {"description": "Выберите приоритет задачи"},
     }
 
     form_widget_args = {

@@ -11,8 +11,8 @@ from enum import Enum
 from datetime import datetime, timezone
 import zoneinfo
 
-from src.schemas.group import GroupSchema
 from src.models.task import TaskPriority
+from src.schemas.group import GroupSchema
 from src.schemas.user import UserSchemaForTask
 
 USER_TZ = zoneinfo.ZoneInfo("Europe/Kiev")
@@ -22,11 +22,12 @@ class SpisokAddSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     is_done: bool = False
-    priority: TaskPriority = TaskPriority.medium
     deadline: Optional[datetime] = None
 
     user_id: Optional[int] = Field(default=None, ge=1)
     group_id: Optional[int] = Field(default=None, ge=1)
+    project_id: Optional[int] = Field(default=None, ge=1)
+    priority: TaskPriority = TaskPriority.medium
 
     @field_validator("user_id", "group_id")
     def validate_ids(cls, v):
@@ -58,7 +59,6 @@ class SpisokSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     is_done: bool = False
-    priority: TaskPriority = TaskPriority.medium
     deadline: Optional[datetime] = None
     user_id: Optional[int] = Field(None, ge=1)
     group_id: Optional[int] = Field(None, ge=1)
@@ -66,6 +66,8 @@ class SpisokSchema(BaseModel):
     author: UserSchemaForTask | None
     user: UserSchemaForTask | None
     group: GroupSchema | None
+    project_id: Optional[int] = None
+    priority: TaskPriority = TaskPriority.medium
 
     created_at: datetime
     updated_at: datetime | None
@@ -87,8 +89,8 @@ class SpisokUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, max_length=2000)
     is_done: Optional[bool] = None
-    priority: Optional[TaskPriority] = None
     deadline: Optional[datetime] = None
+    priority: Optional[TaskPriority] = None
 
     @field_validator("deadline")
     @classmethod
@@ -121,11 +123,11 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     is_done: bool
-    priority: TaskPriority = TaskPriority.medium
     deadline: datetime | None
     author: UserSchemaForTask | None
     user: UserSchemaForTask | None
     group: GroupSchema | None
+    project_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime | None
 
