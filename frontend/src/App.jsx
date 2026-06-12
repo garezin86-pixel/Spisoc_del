@@ -289,9 +289,25 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
     const [showAudit, setShowAudit] = useState(false);
     const [showReassign, setShowReassign] = useState(false);
     const [saving, setSaving] = useState(false);
+    const formatForInput = (value) => {
+        if (!value) return "";
+
+        // если уже ISO
+        if (value.includes("T")) {
+            return value.slice(0, 16);
+        }
+
+        // если формат "14.06.2026 22:15"
+        const [date, time] = value.split(" ");
+        if (!date || !time) return "";
+
+        const [day, month, year] = date.split(".");
+        return `${year}-${month}-${day}T${time.slice(0, 5)}`;
+    };
     const [editForm, setEditForm] = useState({
         title: task.title, description: task.description || "",
-        deadline: task.deadline ? task.deadline.slice(0, 16) : "",
+        deadline: formatForInput(task.deadline),
+        priority: task.priority || "medium",
     });
     const [reassignUserId, setReassignUserId] = useState("");
     const [reassignGroupId, setReassignGroupId] = useState("");
@@ -302,7 +318,10 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
         await onUpdate(task, {
             title: editForm.title.trim(),
             description: editForm.description.trim() || null,
-            deadline: editForm.deadline ? `${editForm.deadline}:00` : null,
+            deadline: editForm.deadline
+                ? new Date(editForm.deadline).toISOString()
+                : null,
+            priority: editForm.priority,
         });
         setSaving(false); setEditing(false);
     }
@@ -436,6 +455,18 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                         <input type="datetime-local" value={editForm.deadline}
                             onChange={e => setEditForm({ ...editForm, deadline: e.target.value })} />
                     </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Приоритет</label>
+                        <select value={editForm.priority}
+                            onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))}>
+                            <option value="low">⚪ Низкий</option>
+                            <option value="medium">🔵 Средний</option>
+                            <option value="high">🟠 Высокий</option>
+                            <option value="critical">🔴 Критический</option>
+                        </select>
+                    </div>
+
                     <div className="edit-actions">
                         <button className="btn btn-primary btn-sm" onClick={handleSave}
                             disabled={saving || !editForm.title.trim()}>
@@ -722,8 +753,12 @@ function ProjectsTab({ token, canManage }) {
     const [projectTasks, setProjectTasks] = useState([]);
     const [tasksLoading, setTasksLoading] = useState(false);
     const [showCreate, setShowCreate] = useState(false);
-    const [createForm, setCreateForm] = useState({ name: "", description: "" });
+    const [createForm, setCreateForm] = useState({ name: "", description: "", group_id: "" });
     const [creating, setCreating] = useState(false);
+    const [groups, setGroups] = useState([]);
+    const [showGroupPicker, setShowGroupPicker] = useState(false);
+    const [settingGroup, setSettingGroup] = useState(false);
+
 
     // Форма создания задачи внутри проекта
     const [showTaskForm, setShowTaskForm] = useState(false);
@@ -750,7 +785,14 @@ function ProjectsTab({ token, canManage }) {
         } catch { setUsers([]); }
     }
 
-    useEffect(() => { loadProjects(); loadUsers(); }, []); // eslint-disable-line
+    async function loadGroups() {
+        try {
+            const data = await apiRequest({ path: "/groups?page=1&size=100", token });
+            setGroups(extractItems(data));
+        } catch { setGroups([]); }
+    }
+
+    useEffect(() => { loadProjects(); loadUsers(); loadGroups(); }, []); // eslint-disable-line
 
     async function handleCreate(e) {
         e.preventDefault();
@@ -762,9 +804,10 @@ function ProjectsTab({ token, canManage }) {
                 path: "/projects", method: "POST", token, body: {
                     name: createForm.name.trim(),
                     description: createForm.description.trim() || null,
+                    group_id: createForm.group_id ? Number(createForm.group_id) : null,
                 }
             });
-            setCreateForm({ name: "", description: "" });
+            setCreateForm({ name: "", description: "", group_id: "" });
             setShowCreate(false);
             await loadProjects();
         } catch (err) { setError(err.message); }
@@ -828,6 +871,23 @@ function ProjectsTab({ token, canManage }) {
         finally { setCreatingTask(false); }
     }
 
+    async function handleSetGroup(groupId) {
+        if (!selectedProject) return;
+        setSettingGroup(true);
+        try {
+            await apiRequest({
+                path: `/projects/${selectedProject.id}/group`,
+                method: "PATCH",
+                token,
+                body: { group_id: groupId || null },
+            });
+            const data = await apiRequest({ path: `/projects/${selectedProject.id}`, token });
+            setSelectedProject(data);
+            setShowGroupPicker(false);
+        } catch (err) { setError(err.message); }
+        finally { setSettingGroup(false); }
+    }
+
     const pct = (p) => p.task_count > 0 ? Math.round((p.done_count / p.task_count) * 100) : 0;
 
     // ── Детальный вид проекта ──────────────────────────────
@@ -846,12 +906,25 @@ function ProjectsTab({ token, canManage }) {
                             {selectedProject.description && (
                                 <div className="section-sub">{selectedProject.description}</div>
                             )}
+                            {selectedProject.group?.name && (
+                                <div style={{ marginTop: 4 }}>
+                                    <span className="meta-chip" style={{ fontSize: 12 }}>
+                                        🏷 {selectedProject.group.name}
+                                    </span>
+                                </div>
+                            )}
                         </div>
-                        <div style={{ display: "flex", gap: 8 }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                             <button className="btn btn-primary btn-sm"
                                 onClick={() => { setShowTaskForm(v => !v); setTaskError(null); }}>
                                 <Icon d={ICONS.plus} /> Создать задачу
                             </button>
+                            {canManage && (
+                                <button className="btn btn-ghost btn-sm"
+                                    onClick={() => setShowGroupPicker(v => !v)}>
+                                    🏷 {selectedProject.group ? "Сменить группу" : "Привязать группу"}
+                                </button>
+                            )}
                             {canManage && (
                                 <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)" }}
                                     onClick={() => handleDelete(selectedProject.id)}>
@@ -860,6 +933,28 @@ function ProjectsTab({ token, canManage }) {
                             )}
                         </div>
                     </div>
+
+                    {/* Привязка группы */}
+                    {showGroupPicker && canManage && (
+                        <div style={{
+                            display: "flex", alignItems: "center", gap: 8,
+                            padding: 12, marginBottom: 8,
+                            background: "var(--surface2)", borderRadius: 8,
+                            border: "1px solid var(--border)"
+                        }}>
+                            <select defaultValue={selectedProject.group_id || ""}
+                                onChange={e => handleSetGroup(e.target.value ? Number(e.target.value) : null)}
+                                disabled={settingGroup}
+                                style={{ flex: 1 }}>
+                                <option value="">— Без группы —</option>
+                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                            </select>
+                            <button className="btn btn-ghost btn-sm"
+                                onClick={() => setShowGroupPicker(false)}>
+                                Отмена
+                            </button>
+                        </div>
+                    )}
 
                     {/* Форма создания задачи */}
                     {showTaskForm && (
@@ -1081,6 +1176,14 @@ function ProjectsTab({ token, canManage }) {
                                 value={createForm.description}
                                 onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} />
                         </div>
+                        <div className="form-group">
+                            <label className="form-label">Группа</label>
+                            <select value={createForm.group_id}
+                                onChange={e => setCreateForm(f => ({ ...f, group_id: e.target.value }))}>
+                                <option value="">— Без группы —</option>
+                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                            </select>
+                        </div>
                         <div style={{ display: "flex", gap: 8 }}>
                             <button type="submit" className="btn btn-primary btn-sm"
                                 disabled={creating || !createForm.name.trim()}>
@@ -1117,6 +1220,7 @@ function ProjectsTab({ token, canManage }) {
                                         <span>📋 {p.task_count}</span>
                                         <span style={{ color: "var(--green)" }}>✅ {p.done_count}</span>
                                         {p.members?.length > 0 && <span>👥 {p.members.length}</span>}
+                                        {p.group?.name && <span>🏷 {p.group.name}</span>}
                                     </div>
                                     <div className="progress-wrap">
                                         <div className="progress-track">

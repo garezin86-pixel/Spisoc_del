@@ -262,7 +262,7 @@ class TaskService:
         was_done = task.is_done
 
         # Простые поля — обновляем через setattr (легко расширять)
-        simple_fields = {"title", "description", "is_done"}
+        simple_fields = {"title", "description", "is_done", "priority"}
         for field in simple_fields:
             if field in update_data:
                 setattr(task, field, update_data[field])
