@@ -128,6 +128,7 @@ class TaskResponse(BaseModel):
     user: UserSchemaForTask | None
     group: GroupSchema | None
     project_id: Optional[int] = None
+    priority: TaskPriority = TaskPriority.medium
     created_at: datetime
     updated_at: datetime | None
 

@@ -12,10 +12,11 @@ from sqlalchemy.orm import selectinload
 from sqladmin.filters import BooleanFilter
 from sqladmin.filters import ForeignKeyFilter
 from sqlalchemy.orm import object_session
-
+from wtforms import SelectField
 from src.admin.utils.url_helpers import URLS
 from src.core.exceptions import incorrect_valueerror
 from src.models import UserModel, SpisokModel, GroupModel
+from src.models.task import TaskPriority
 from src.services.notifications import (
     notify_comment_added,
     notify_task_assigned,
@@ -49,6 +50,13 @@ _FIELD_LABELS = {
     "deadline": "Дедлайн",
     "deleted_at": "Удалено",
     "priority": "Приоритет",
+}
+
+PRIORITY_LABELS = {
+    "low": "⚪ Низкий",
+    "medium": "🔵 Средний",
+    "high": "🟠 Высокий",
+    "critical": "🔴 Критический",
 }
 
 
@@ -276,6 +284,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.deadline: lambda m, a: to_local(m.deadline),
         SpisokModel.created_at: lambda m, a: to_local(m.created_at),
         SpisokModel.updated_at: lambda m, a: to_local(m.updated_at),
+        "priority": lambda m, a: PRIORITY_LABELS.get(m.priority, m.priority),
     }
 
     column_formatters_detail = {
@@ -293,6 +302,11 @@ class TaskAdmin(ModelView, model=SpisokModel):
         # Форматтер получает объект задачи (m) и синхронно возвращает Markup.
         # Записи audit_log подгружаются отдельным синхронным запросом через
         # run_sync, чтобы не ломать синхронный интерфейс sqladmin formatters.
+        "priority": column_formatters["priority"],
+    }
+
+    form_overrides = {
+        "priority": SelectField,
     }
 
     form_args = {
@@ -300,7 +314,11 @@ class TaskAdmin(ModelView, model=SpisokModel):
             "description": "Выберите пользователя, если задача для конкретного человека"
         },
         "group": {"description": "Выберите группу, если задача для группы"},
-        "priority": {"description": "Выберите приоритет задачи"},
+        "priority": {
+            "description": "Выберите приоритет задачи",
+            "choices": list(PRIORITY_LABELS.items()),
+            "coerce": lambda x: TaskPriority(x),
+        },
     }
 
     form_widget_args = {
