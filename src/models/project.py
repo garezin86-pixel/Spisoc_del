@@ -8,6 +8,7 @@ from src.db import Base
 if TYPE_CHECKING:
     from src.models.user import UserModel
     from src.models.task import SpisokModel
+    from src.models.group import GroupModel
 
 
 # M2M таблица участников проекта
@@ -32,6 +33,11 @@ class ProjectModel(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
 
+    # Привязка к группе (необязательно)
+    group_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("groups.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -52,6 +58,13 @@ class ProjectModel(Base):
         lazy="selectin",
     )
 
+    # Группа проекта
+    group: Mapped[Optional["GroupModel"]] = relationship(
+        "GroupModel",
+        foreign_keys=[group_id],
+        lazy="selectin",
+    )
+
     # Участники (M2M)
     members: Mapped[list["UserModel"]] = relationship(
         secondary=project_member,
@@ -67,7 +80,10 @@ class ProjectModel(Base):
         lazy="selectin",
     )
 
-    __table_args__ = (Index("ix_projects_owner_id", "owner_id"),)
+    __table_args__ = (
+        Index("ix_projects_owner_id", "owner_id"),
+        Index("ix_projects_group_id", "group_id"),
+    )
 
     def __str__(self):
         return f"{self.name} (id={self.id})"
