@@ -15,7 +15,7 @@ from src.repositories.users_repository import UserRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.other_repositories import CommentRepository
-
+from src.models.task import TaskPriority
 from src.services.notifications import notify_task_assigned, notify_task_updated
 from src.services.task_service import TaskService
 from src.services.comments_service import CommentService
@@ -338,8 +338,6 @@ async def create_task_deadline(message: Message, state: FSMContext):
             return
 
         uow.set_audit_user(user.id)
-
-        from src.models.task import TaskPriority
 
         priority_value = data.get("priority", "medium")
         task = SpisokModel(

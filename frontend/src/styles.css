@@ -216,11 +216,13 @@ h4 {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
+  overflow: hidden;
 }
 
 .user-chip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -230,7 +232,17 @@ h4 {
   border-radius: 999px;
   font-size: 0.85rem;
   color: var(--text-dim);
+  max-width: 160px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: max-width 0.3s ease;
 }
+
+/* .user-chip:hover {
+  max-width: 400px;
+} */
 
 .user-chip::before {
   content: '';
@@ -239,6 +251,29 @@ h4 {
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 6px var(--green);
+}
+
+.user-chip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 100;
+}
+
+.user-chip:hover::after {
+    opacity: 1;
 }
 
 /* ─── Cards / Panels ─── */
@@ -831,8 +866,10 @@ textarea {
 
   .user-chip {
     order: 2;
-    flex: 1 1 180px;
+    flex: 0 0 auto;
     justify-content: center;
+    max-width: 160px;
+    /* убрать transition и :hover { max-width: 400px } */
   }
 
   .header-right>.btn {
@@ -1005,10 +1042,19 @@ textarea {
   display: flex;
   gap: 4px;
   min-width: 0;
+  flex-shrink: 1;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 3px;
+}
+
+/* Текст имени пользователя в чипе — обрезаем с многоточием */
+.user-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .tab-btn {
@@ -1501,5 +1547,11 @@ textarea {
     min-height: 38px !important;
     white-space: nowrap !important;
     /* Текст кнопки не переносится и не пухнет по вертикали */
+  }
+}
+/* Скрываем имя исполнителя в свёрнутой строке задачи на мобильных */
+@media (max-width: 600px) {
+  .task-row-user {
+    display: none !important;
   }
 }

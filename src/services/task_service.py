@@ -108,6 +108,7 @@ class TaskService:
             group_id=data.group_id,
             deadline=deadline,
             author_id=current_user.id,
+            project_id=data.project_id,
         )
         task = await self.task_repo.create(task)
         await logger.ainfo(
@@ -407,6 +408,7 @@ class TaskService:
         дашборда пользователя без отдельного API-эндпоинта.
         """
         stats = await self.task_repo.get_assigned_tasks(pk)
+
         authored = await self.task_repo.get_created_tasks_stats(pk)
         recent_tasks = await self.task_repo.get_last_appointed_tasks(pk)
         total = stats.total or 0
@@ -416,7 +418,17 @@ class TaskService:
             "done": done,
             "pending": stats.pending or 0,
             "percent": round((done / total * 100) if total > 0 else 0),
-            "tasks": recent_tasks,
+            "tasks": [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "is_done": t.is_done,
+                    "priority": t.priority,
+                    "deadline": str(t.deadline) if t.deadline else None,
+                    "created_at": str(t.created_at) if t.created_at else None,
+                }
+                for t in recent_tasks
+            ],
             "a_total": authored.total or 0,
             "a_done": authored.done or 0,
         }

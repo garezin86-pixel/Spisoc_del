@@ -1,12 +1,12 @@
 # src/models/task.py
 from typing import Optional
-from enum import Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, String, Index, DateTime
 from datetime import datetime, timezone
 import sqlalchemy as sa
-from sqlalchemy import Enum as SAEnum
 from src.db import Base
+from sqlalchemy import Enum as SAEnum
+from enum import Enum
 from src.models.audit import AuditMixin, SoftDeleteMixin
 from typing import TYPE_CHECKING
 
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         UserModel,
     )  # 👈 только для линтера, не создаёт циклического импорта
     from src.models.group import GroupModel
+    from src.models.project import ProjectModel
 
 
 class TimestampMixin:
@@ -68,6 +69,10 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         nullable=False,
     )
 
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+
     user: Mapped["UserModel"] = relationship(
         "UserModel",
         foreign_keys=[user_id],
@@ -82,6 +87,11 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
     )
     group: Mapped["GroupModel"] = relationship(
         "GroupModel", back_populates="tasks", lazy="selectin"
+    )
+    project: Mapped[Optional["ProjectModel"]] = relationship(
+        "ProjectModel",
+        back_populates="tasks",
+        lazy="selectin",
     )
     comments = relationship(
         "CommentModel",

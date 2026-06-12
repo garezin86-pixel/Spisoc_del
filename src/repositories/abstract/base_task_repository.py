@@ -98,6 +98,7 @@ class AbstractTaskRepository(ABC):
         limit: int,
         filter_user_group=None,
         group_id: int | None = None,
+        project_id: int | None = None,
         filter_type=None,
         is_done: bool | None = None,
     ):

@@ -34,49 +34,7 @@ def get_task_service(session: SessionDep) -> TaskService:
     )
 
 
-@router.post(
-    "",
-    response_model=SpisokSchema,
-    status_code=201,
-    summary="Создать задачу",
-    description="""
-Создаёт новую задачу. Автором становится текущий пользователь.
-
-Можно назначить либо конкретному пользователю (`user_id`), либо группе (`group_id`) — но **не одновременно**.
-
-Side-effects:
-- Запускает фоновую отправку Telegram-уведомления исполнителю/группе.
-- Инвалидирует кэш задач в Redis.
-- Пишет запись в audit-лог.
-""",
-    responses={
-        201: {
-            "description": "Задача создана",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "id": 42,
-                        "title": "Подготовить отчёт",
-                        "description": "За Q3 2025",
-                        "is_done": False,
-                        "deadline": "31.12.2025 18:00",
-                        "user_id": 3,
-                        "group_id": None,
-                        "author": {"id": 1, "username": "alice"},
-                        "user": {"id": 3, "username": "bob"},
-                        "group": None,
-                        "created_at": "01.06.2025 10:00",
-                        "updated_at": None,
-                    }
-                }
-            },
-        },
-        400: {
-            "description": "Нельзя указывать user_id и group_id одновременно, или один из них не существует"
-        },
-        401: {"description": "Не аутентифицирован"},
-    },
-)
+@router.post("", response_model=SpisokSchema, status_code=201)
 async def add_task(
     data: SpisokAddSchema,
     session: SessionDep,
@@ -88,38 +46,7 @@ async def add_task(
     return task
 
 
-@router.get(
-    "/filter",
-    response_model=PaginatedResponse[SpisokSchema],
-    summary="Фильтрация задач",
-    description="""
-Возвращает задачи с фильтрацией и пагинацией.
-
-**Параметры фильтрации:**
-
-- `filter_user_group`:
-  - `user` — задачи, назначенные текущему пользователю
-  - `group` — задачи группы (требует `group_id`)
-  - `free` — задачи без исполнителя и группы
-  - `author` — задачи, созданные текущим пользователем
-
-- `filter_type`:
-  - `today` — дедлайн сегодня
-  - `overdue` — дедлайн просрочен
-  - `planned` — дедлайн в будущем
-  - `deadline_null` — без дедлайна
-
-- `is_done` — фильтр по статусу выполнения
-
-Ответ кэшируется в Redis на 120 секунд.
-""",
-    responses={
-        200: {"description": "Постраничный список задач"},
-        400: {
-            "description": "filter_user_group=group требует group_id; группа не найдена"
-        },
-    },
-)
+@router.get("/filter", response_model=PaginatedResponse[SpisokSchema])
 @cache(expire=120, namespace="tasks", key_builder=user_scoped_key_builder)
 async def filter_tasks(
     session: SessionDep,
@@ -127,11 +54,10 @@ async def filter_tasks(
     current_user: UserModel = Depends(get_current_user),
     filter_user_group: FilterUserGroup | None = Query(None),
     group_id: int | None = Query(None),
+    project_id: int | None = Query(None),  # ← добавить
     filter_type: TaskFilter | None = Query(None),
     is_done: bool | None = Query(None),
-    priority: TaskPriorityFilter | None = Query(
-        None, description="Фильтр по приоритету: low, medium, high, critical"
-    ),
+    priority: TaskPriorityFilter | None = Query(None),
     limit: int | None = Query(None, ge=1, le=100),
 ):
     final_limit = limit or pagination.size
@@ -141,10 +67,12 @@ async def filter_tasks(
         limit=final_limit,
         filter_user_group=filter_user_group,
         group_id=group_id,
+        project_id=project_id,
         filter_type=filter_type,
         is_done=is_done,
         priority=priority,
     )
+
     return PaginatedResponse.create(
         items=[SpisokSchema.model_validate(task) for task in tasks],
         total=total,
@@ -157,24 +85,7 @@ async def filter_tasks(
 # ВАЖНО: /trash должен быть ДО /{task_id}, иначе FastAPI примет "trash" как task_id
 
 
-@router.get(
-    "/trash",
-    response_model=PaginatedResponse[SpisokSchema],
-    summary="Корзина задач",
-    description="""
-Возвращает мягко удалённые задачи (soft-deleted), доступные пользователю.
-
-- Обычный пользователь видит только задачи, где он **автор или исполнитель**.
-- Admin/manager видит **все** удалённые задачи.
-
-Поддерживает поиск по заголовку (`search`).
-
-> ⚠️ Эндпоинт должен быть зарегистрирован **до** `/{task_id}`, иначе FastAPI интерпретирует «trash» как task_id.
-""",
-    responses={
-        200: {"description": "Список удалённых задач с пагинацией"},
-    },
-)
+@router.get("/trash", response_model=PaginatedResponse[SpisokSchema])
 async def list_deleted_tasks(
     session: SessionDep,
     pagination: PaginationParams = Depends(),
@@ -196,25 +107,7 @@ async def list_deleted_tasks(
 # ── Обычные CRUD ──────────────────────────────────────────────────────────────
 
 
-@router.get(
-    "/{task_id}",
-    response_model=SpisokSchema,
-    summary="Получить задачу",
-    description="""
-Возвращает задачу по ID.
-
-Доступ разрешён, если пользователь является:
-- автором задачи
-- исполнителем задачи
-- членом группы, которой назначена задача
-- admin или manager
-""",
-    responses={
-        200: {"description": "Данные задачи"},
-        403: {"description": "Нет доступа к задаче"},
-        404: {"description": "Задача не найдена"},
-    },
-)
+@router.get("/{task_id}", response_model=SpisokSchema)
 async def get_task(
     task_id: int,
     session: SessionDep,
@@ -223,32 +116,7 @@ async def get_task(
     return await get_task_service(session).get_task(task_id, current_user)
 
 
-@router.patch(
-    "/{task_id}/reassign",
-    response_model=SpisokSchema,
-    summary="Переназначить задачу",
-    description="""
-Меняет исполнителя или группу задачи.
-
-Должен быть передан ровно один из параметров: `user_id` или `group_id`.
-При смене на пользователя — `group_id` обнуляется, и наоборот.
-
-**Требует роль admin/manager или быть автором задачи.**
-
-Side-effects:
-- Отправляет Telegram-уведомление новому исполнителю/группе (в фоне).
-- Инвалидирует кэш задач.
-- Пишет запись в audit-лог.
-""",
-    responses={
-        200: {"description": "Задача переназначена"},
-        400: {
-            "description": "Нужно передать ровно один из параметров: user_id или group_id"
-        },
-        403: {"description": "Нет прав на переназначение"},
-        404: {"description": "Задача, пользователь или группа не найдены"},
-    },
-)
+@router.patch("/{task_id}/reassign", response_model=SpisokSchema)
 async def reassign_task(
     task_id: int,
     session: SessionDep,
@@ -266,26 +134,7 @@ async def reassign_task(
     return result
 
 
-@router.patch(
-    "/{task_id}",
-    response_model=SpisokSchema,
-    summary="Обновить задачу",
-    description="""
-Частичное обновление задачи (title, description, is_done, deadline).
-
-Право на изменение дедлайна — только у **автора, admin или manager**.
-
-Side-effects:
-- При переводе `is_done = true` отправляет Telegram-уведомление автору.
-- Инвалидирует кэш задач.
-- Пишет запись в audit-лог.
-""",
-    responses={
-        200: {"description": "Обновлённая задача"},
-        403: {"description": "Нет доступа к задаче или нет прав менять дедлайн"},
-        404: {"description": "Задача не найдена"},
-    },
-)
+@router.patch("/{task_id}", response_model=SpisokSchema)
 async def update_task(
     task_id: int,
     data: SpisokUpdate,
@@ -298,32 +147,7 @@ async def update_task(
     return task
 
 
-@router.delete(
-    "/{task_id}",
-    response_model=dict,
-    summary="Мягкое удаление задачи",
-    description="""
-Помечает задачу как удалённую (устанавливает `deleted_at`). Физически из БД не удаляется.
-
-Задача остаётся доступна через `/tasks/trash` и может быть восстановлена.
-
-**Требует быть автором, admin или manager.**
-
-Side-effects:
-- Пишет запись в audit-лог.
-- Инвалидирует кэш задач.
-""",
-    responses={
-        200: {
-            "description": "Задача перемещена в корзину",
-            "content": {
-                "application/json": {"example": {"message": "Task 42 deleted"}}
-            },
-        },
-        403: {"description": "Нет прав на удаление"},
-        404: {"description": "Задача не найдена"},
-    },
-)
+@router.delete("/{task_id}", response_model=dict)
 async def delete_task(
     task_id: int,
     session: SessionDep,
@@ -336,25 +160,7 @@ async def delete_task(
     return result
 
 
-@router.patch(
-    "/{task_id}/restore",
-    response_model=SpisokSchema,
-    summary="Восстановить задачу из корзины",
-    description="""
-Восстанавливает задачу: сбрасывает `deleted_at = NULL`.
-
-**Требует быть автором, admin или manager.**
-
-Side-effects:
-- Пишет запись в audit-лог.
-- Инвалидирует кэш задач.
-""",
-    responses={
-        200: {"description": "Задача восстановлена"},
-        403: {"description": "Нет прав на восстановление"},
-        404: {"description": "Задача не найдена"},
-    },
-)
+@router.patch("/{task_id}/restore", response_model=SpisokSchema)
 async def restore_task(
     task_id: int,
     session: SessionDep,
@@ -367,35 +173,7 @@ async def restore_task(
     return task
 
 
-@router.delete(
-    "/{task_id}/hard",
-    response_model=dict,
-    summary="Полное удаление задачи",
-    description="""
-Физически удаляет задачу из БД. **Восстановление невозможно.**
-
-Перед удалением записывает audit-лог с пометкой `hard_delete: true`.
-
-**Требует быть автором, admin или manager.**
-
-Side-effects:
-- Каскадно удаляет все комментарии к задаче.
-- Пишет запись в audit-лог.
-- Инвалидирует кэш задач.
-""",
-    responses={
-        200: {
-            "description": "Задача удалена навсегда",
-            "content": {
-                "application/json": {
-                    "example": {"message": "Task 42 permanently deleted"}
-                }
-            },
-        },
-        403: {"description": "Нет прав на удаление"},
-        404: {"description": "Задача не найдена"},
-    },
-)
+@router.delete("/{task_id}/hard", response_model=dict)
 async def hard_delete_task(
     task_id: int,
     session: SessionDep,

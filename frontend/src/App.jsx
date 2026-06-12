@@ -1,12 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { apiRequest, saveTokens, clearTokens, getRefreshToken } from "./api";
+import { apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
 
 // ─── Helpers ──────────────────────────────────────────────
-const initialForm = { title: "", description: "", deadline: "", priority: "medium" };
-
-const PRIORITY_COLORS = { critical: "#ef4444", high: "#f97316", medium: "#3b82f6", low: "#6b7280" };
-const PRIORITY_LABELS = { critical: "Критический", high: "Высокий", medium: "Средний", low: "Низкий" };
-const PRIORITY_ICONS  = { critical: "🔴", high: "🟠", medium: "🔵", low: "⚫" };
+const initialForm = { title: "", description: "", deadline: "", priority: "medium", project_id: "" };
 
 function decodeToken(token) {
     try {
@@ -209,8 +205,15 @@ function CommentsPanel({ taskId, token }) {
     );
 }
 
+
+// ─── Priority config ──────────────────────────────────────
+const PRIORITY_COLORS = { critical: "#ef4444", high: "#f97316", medium: "#3b82f6", low: "#6b7280" };
+const PRIORITY_LABELS = { critical: "Критический", high: "Высокий", medium: "Средний", low: "Низкий" };
+const PRIORITY_ICONS = { critical: "🔴", high: "🟠", medium: "🔵", low: "⚪" };
+
 // ─── TaskCard ─────────────────────────────────────────────
-function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, onReassign }) {
+function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible }) {
+    const [expanded, setExpanded] = useState(!collapsible);
     const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [showReassign, setShowReassign] = useState(false);
@@ -238,6 +241,58 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
         setShowReassign(false); setReassignUserId(""); setReassignGroupId("");
     }
 
+    // Компактная строка для свёрнутого режима
+    if (collapsible && !expanded) {
+        return (
+            <div
+                onClick={() => setExpanded(true)}
+                style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 14px", borderRadius: 8, cursor: "pointer",
+                    background: "var(--surface)", border: "1px solid var(--border)",
+                    transition: "border-color 0.15s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "var(--accent)"}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
+            >
+                <span style={{ fontSize: 15 }}>{task.is_done ? "✅" : "⏳"}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                        fontSize: 14, fontWeight: 500,
+                        color: task.is_done ? "var(--text-muted)" : "var(--text)",
+                        textDecoration: task.is_done ? "line-through" : "none",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                        <span className="task-id">#{task.id}</span> {task.title}
+                    </div>
+                    {dl && (
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                            📅 {dl.fmt}
+                        </div>
+                    )}
+                </div>
+                {task.user?.username && (
+                    <span className="meta-chip task-row-user" style={{
+                        fontSize: 11,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        flexShrink: 0,
+                    }}>{task.user.username}</span>
+                )}
+                {task.priority && (
+                    <span style={{
+                        fontSize: 11, padding: "2px 7px", borderRadius: 4,
+                        background: PRIORITY_COLORS[task.priority] + "22",
+                        color: PRIORITY_COLORS[task.priority], fontWeight: 600,
+                        whiteSpace: "nowrap", flexShrink: 0,
+                    }}>
+                        {PRIORITY_ICONS[task.priority]}
+                    </span>
+                )}
+                <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>▼</span>
+            </div>
+        );
+    }
+
     return (
         <article className={`task-card${task.is_done ? " done-card" : ""}`}>
             <div className="task-main-info"> {/* НОВЫЙ ИЗОЛИРУЮЩИЙ КОНТЕЙНЕР ДЛЯ ВЕРХНЕЙ ЧАСТИ */}
@@ -249,11 +304,6 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                         </div>
                         {task.description && <div className="task-desc">{task.description}</div>}
                         <div className="task-meta-row">
-                            {task.priority && task.priority !== "medium" && (
-                                <span className="meta-chip" style={{ color: PRIORITY_COLORS[task.priority], fontWeight: 600, background: PRIORITY_COLORS[task.priority] + "18" }}>
-                                    {PRIORITY_ICONS[task.priority]} {PRIORITY_LABELS[task.priority]}
-                                </span>
-                            )}
                             {dl && (
                                 <span className={`meta-chip${dl.isOverdue && !task.is_done ? " overdue" : dl.isToday && !task.is_done ? " today" : ""}`}>
                                     <Icon d={ICONS.clock} />
@@ -278,6 +328,24 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                     <span className={`badge ${task.is_done ? "badge-done" : "badge-active"}`}>
                         {task.is_done ? "Готово" : "В работе"}
                     </span>
+                    {task.priority && (
+                        <span style={{
+                            fontSize: 11, padding: "2px 7px", borderRadius: 4,
+                            background: PRIORITY_COLORS[task.priority] + "22",
+                            color: PRIORITY_COLORS[task.priority], fontWeight: 600, whiteSpace: "nowrap"
+                        }}>
+                            {PRIORITY_ICONS[task.priority]} {PRIORITY_LABELS[task.priority]}
+                        </span>
+                    )}
+                    {collapsible && (
+                        <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => { setExpanded(false); setEditing(false); setShowComments(false); setShowReassign(false); }}
+                            style={{ fontSize: 11, padding: "2px 8px", left: 5, position: "relative" }}
+                        >
+                            свернуть ▲
+                        </button>
+                    )}
                 </div>
             </div> {/* КОНЕЦ НОВОГО КОНТЕЙНЕРА */}
             {editing && (
@@ -347,9 +415,11 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                         <Icon d={ICONS.edit} /> Изменить
                     </button>
                 )}
-                <button className="btn btn-ghost btn-sm" onClick={() => { setShowReassign(v => !v); setEditing(false); }}>
-                    <Icon d={ICONS.reassign} /> Переназначить
-                </button>
+                {!hideReassign && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowReassign(v => !v); setEditing(false); }}>
+                        <Icon d={ICONS.reassign} /> Переназначить
+                    </button>
+                )}
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowComments(v => !v)}>
                     <Icon d={ICONS.comment} /> {showComments ? "Скрыть" : "Комментарии"}
                 </button>
@@ -380,11 +450,6 @@ function TrashCard({ task, onRestore, onHardDelete }) {
                         </div>
                         {task.description && <div className="task-desc">{task.description}</div>}
                         <div className="task-meta-row">
-                            {task.priority && task.priority !== "medium" && (
-                                <span className="meta-chip" style={{ color: PRIORITY_COLORS[task.priority], fontWeight: 600, background: PRIORITY_COLORS[task.priority] + "18" }}>
-                                    {PRIORITY_ICONS[task.priority]} {PRIORITY_LABELS[task.priority]}
-                                </span>
-                            )}
                             {dl && (
                                 <span className="meta-chip">
                                     <Icon d={ICONS.clock} />
@@ -571,13 +636,442 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
     );
 }
 
+
+// ─── ProjectsTab ──────────────────────────────────────────
+function ProjectsTab({ token, canManage }) {
+    const [projects, setProjects] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [selectedProject, setSelectedProject] = useState(null);
+    const [projectTasks, setProjectTasks] = useState([]);
+    const [tasksLoading, setTasksLoading] = useState(false);
+    const [showCreate, setShowCreate] = useState(false);
+    const [createForm, setCreateForm] = useState({ name: "", description: "" });
+    const [creating, setCreating] = useState(false);
+
+    // Форма создания задачи внутри проекта
+    const [showTaskForm, setShowTaskForm] = useState(false);
+    const [taskForm, setTaskForm] = useState({ title: "", description: "", deadline: "", priority: "medium" });
+    const [users, setUsers] = useState([]);
+    const [assignUserId, setAssignUserId] = useState("");
+    const [creatingTask, setCreatingTask] = useState(false);
+    const [taskError, setTaskError] = useState(null);
+
+    async function loadProjects() {
+        setLoading(true);
+        try {
+            const data = await apiRequest({ path: "/projects?page=1&size=50", token });
+            setProjects(extractItems(data));
+            setTotal(data?.total ?? 0);
+        } catch { setProjects([]); }
+        finally { setLoading(false); }
+    }
+
+    async function loadUsers() {
+        try {
+            const data = await apiRequest({ path: "/users?page=1&size=100", token });
+            setUsers(extractItems(data));
+        } catch { setUsers([]); }
+    }
+
+    useEffect(() => { loadProjects(); loadUsers(); }, []); // eslint-disable-line
+
+    async function handleCreate(e) {
+        e.preventDefault();
+        if (!createForm.name.trim()) return;
+        setCreating(true);
+        setError(null);
+        try {
+            await apiRequest({
+                path: "/projects", method: "POST", token, body: {
+                    name: createForm.name.trim(),
+                    description: createForm.description.trim() || null,
+                }
+            });
+            setCreateForm({ name: "", description: "" });
+            setShowCreate(false);
+            await loadProjects();
+        } catch (err) { setError(err.message); }
+        finally { setCreating(false); }
+    }
+
+    async function handleDelete(projectId) {
+        if (!window.confirm("Удалить проект и все его задачи? Это действие необратимо.")) return;
+        try {
+            await apiRequest({ path: `/projects/${projectId}`, method: "DELETE", token });
+            if (selectedProject?.id === projectId) {
+                setSelectedProject(null);
+                setProjectTasks([]);
+            }
+            await loadProjects();
+        } catch (err) { setError(err.message); }
+    }
+
+    async function loadProjectTasks(projectId) {
+        setTasksLoading(true);
+        try {
+            const data = await apiRequest({
+                path: `/tasks/filter?project_id=${projectId}&page=1&size=100`, token
+            });
+            setProjectTasks(extractItems(data));
+        } catch { setProjectTasks([]); }
+        finally { setTasksLoading(false); }
+    }
+
+    async function openProject(projectId) {
+        try {
+            const data = await apiRequest({ path: `/projects/${projectId}`, token });
+            setSelectedProject(data);
+            setProjectTasks([]);
+            setShowTaskForm(false);
+            await loadProjectTasks(projectId);
+        } catch (err) { setError(err.message); }
+    }
+
+    async function handleCreateTask(e) {
+        e.preventDefault();
+        if (!taskForm.title.trim() || !selectedProject) return;
+        setCreatingTask(true);
+        setTaskError(null);
+        try {
+            await apiRequest({
+                path: "/tasks", method: "POST", token, body: {
+                    title: taskForm.title.trim(),
+                    description: taskForm.description.trim() || null,
+                    deadline: taskForm.deadline ? `${taskForm.deadline}:00` : null,
+                    priority: taskForm.priority || "medium",
+                    project_id: selectedProject.id,
+                    user_id: assignUserId ? Number(assignUserId) : null,
+                }
+            });
+            setTaskForm({ title: "", description: "", deadline: "", priority: "medium" });
+            setAssignUserId("");
+            setShowTaskForm(false);
+            await loadProjectTasks(selectedProject.id);
+        } catch (err) { setTaskError(err.message); }
+        finally { setCreatingTask(false); }
+    }
+
+    const pct = (p) => p.task_count > 0 ? Math.round((p.done_count / p.task_count) * 100) : 0;
+
+    // ── Детальный вид проекта ──────────────────────────────
+    if (selectedProject) {
+        const progress = selectedProject.task_count > 0
+            ? Math.round((selectedProject.done_count / selectedProject.task_count) * 100) : 0;
+        return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div className="card">
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedProject(null); setProjectTasks([]); }} style={{ marginBottom: 12 }}>
+                        ← Назад к проектам
+                    </button>
+                    <div className="section-header">
+                        <div>
+                            <div className="section-title">{selectedProject.name}</div>
+                            {selectedProject.description && (
+                                <div className="section-sub">{selectedProject.description}</div>
+                            )}
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                            <button className="btn btn-primary btn-sm"
+                                onClick={() => { setShowTaskForm(v => !v); setTaskError(null); }}>
+                                <Icon d={ICONS.plus} /> Создать задачу
+                            </button>
+                            {canManage && (
+                                <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)" }}
+                                    onClick={() => handleDelete(selectedProject.id)}>
+                                    🗑 Удалить
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Форма создания задачи */}
+                    {showTaskForm && (
+                        <form onSubmit={handleCreateTask} style={{
+                            display: "flex", flexDirection: "column", gap: 10,
+                            marginBottom: 16, padding: 14,
+                            background: "var(--surface2)", borderRadius: 10,
+                            border: "1px solid var(--border)"
+                        }}>
+                            {taskError && <div className="alert">{taskError}</div>}
+                            <div className="form-group">
+                                <label className="form-label">Заголовок *</label>
+                                <input placeholder="Что нужно сделать?"
+                                    value={taskForm.title}
+                                    onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Описание</label>
+                                <textarea placeholder="Необязательно" rows={2}
+                                    value={taskForm.description}
+                                    onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} />
+                            </div>
+                            <div className="form-two-col">
+                                <div className="form-group">
+                                    <label className="form-label">Дедлайн</label>
+                                    <input type="datetime-local" value={taskForm.deadline}
+                                        onChange={e => setTaskForm(f => ({ ...f, deadline: e.target.value }))} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Приоритет</label>
+                                    <select value={taskForm.priority}
+                                        onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}>
+                                        <option value="low">⚪ Низкий</option>
+                                        <option value="medium">🔵 Средний</option>
+                                        <option value="high">🟠 Высокий</option>
+                                        <option value="critical">🔴 Критический</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Назначить</label>
+                                <select value={assignUserId}
+                                    onChange={e => setAssignUserId(e.target.value)}>
+                                    <option value="">— Никому —</option>
+                                    {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <button type="submit" className="btn btn-primary btn-sm"
+                                    disabled={creatingTask || !taskForm.title.trim()}>
+                                    <Icon d={ICONS.plus} /> {creatingTask ? "Создание…" : "Создать"}
+                                </button>
+                                <button type="button" className="btn btn-ghost btn-sm"
+                                    onClick={() => { setShowTaskForm(false); setTaskError(null); }}>
+                                    Отмена
+                                </button>
+                            </div>
+                        </form>
+                    )}
+
+                    <div className="stats-grid" style={{ marginBottom: 12 }}>
+                        <div className="stat-box">
+                            <div className="stat-value">{selectedProject.task_count}</div>
+                            <div className="stat-label">Задач</div>
+                        </div>
+                        <div className="stat-box">
+                            <div className="stat-value" style={{ color: "var(--green)" }}>{selectedProject.done_count}</div>
+                            <div className="stat-label">Готово</div>
+                        </div>
+                        <div className="stat-box">
+                            <div className="stat-value" style={{ color: "var(--accent-light)" }}>
+                                {selectedProject.task_count - selectedProject.done_count}
+                            </div>
+                            <div className="stat-label">В работе</div>
+                        </div>
+                    </div>
+                    <div className="progress-wrap" style={{ marginBottom: 16 }}>
+                        <div className="progress-track">
+                            <div className="progress-fill" style={{ width: `${progress}%` }} />
+                        </div>
+                        <div className="progress-caption">{progress}% выполнено</div>
+                    </div>
+
+                    {selectedProject.members && selectedProject.members.length > 0 && (
+                        <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>
+                                👥 Участники
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {selectedProject.members.map(m => (
+                                    <span key={m.id} className="meta-chip">{m.username}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>
+                            📋 Задачи проекта
+                        </div>
+                        <button className="btn btn-ghost btn-sm" onClick={() => loadProjectTasks(selectedProject.id)} disabled={tasksLoading}>
+                            <Icon d={ICONS.refresh} /> {tasksLoading ? "…" : "Обновить"}
+                        </button>
+                    </div>
+
+                    {tasksLoading ? (
+                        <div className="empty-state" style={{ padding: "16px 0" }}>
+                            <div className="empty-icon">⏳</div>Загрузка задач…
+                        </div>
+                    ) : projectTasks.length === 0 ? (
+                        <div className="empty-state" style={{ padding: "16px 0" }}>
+                            <div className="empty-icon">📋</div>Нет задач в проекте
+                        </div>
+                    ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {projectTasks.map(t => (
+                                <TaskCard
+                                    key={t.id}
+                                    task={t}
+                                    groups={[]}
+                                    users={users}
+                                    token={token}
+                                    onToggle={async (task) => {
+                                        // Оптимистичное обновление — сразу меняем локально
+                                        setProjectTasks(prev => prev.map(t =>
+                                            t.id === task.id ? { ...t, is_done: !t.is_done } : t
+                                        ));
+                                        try {
+                                            await apiRequest({
+                                                path: `/tasks/${task.id}`,
+                                                method: "PATCH",
+                                                token,
+                                                body: { is_done: !task.is_done },
+                                            });
+                                        } catch {
+                                            // Откат при ошибке
+                                            setProjectTasks(prev => prev.map(t =>
+                                                t.id === task.id ? { ...t, is_done: task.is_done } : t
+                                            ));
+                                        }
+                                    }}
+                                    onDelete={async (task) => {
+                                        if (!window.confirm("Удалить задачу?")) return;
+                                        setProjectTasks(prev => prev.filter(t => t.id !== task.id));
+                                        try {
+                                            await apiRequest({ path: `/tasks/${task.id}`, method: "DELETE", token });
+                                        } catch {
+                                            await loadProjectTasks(selectedProject.id);
+                                        }
+                                    }}
+                                    onUpdate={async (task, updates) => {
+                                        setProjectTasks(prev => prev.map(t =>
+                                            t.id === task.id ? { ...t, ...updates } : t
+                                        ));
+                                        try {
+                                            await apiRequest({
+                                                path: `/tasks/${task.id}`,
+                                                method: "PATCH",
+                                                token,
+                                                body: updates,
+                                            });
+                                        } catch {
+                                            await loadProjectTasks(selectedProject.id);
+                                        }
+                                    }}
+                                    onReassign={async (taskId, userId, groupId) => {
+                                        await apiRequest({
+                                            path: `/tasks/${taskId}`,
+                                            method: "PATCH",
+                                            token,
+                                            body: { user_id: userId, group_id: groupId },
+                                        });
+                                        await loadProjectTasks(selectedProject.id);
+                                    }}
+                                    hideReassign
+                                    collapsible
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // ── Список проектов ────────────────────────────────────
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="card">
+                <div className="section-header">
+                    <div>
+                        <div className="section-title">Проекты</div>
+                        <div className="section-sub">{total > 0 ? `${total} проектов` : "Нет проектов"}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={loadProjects} disabled={loading}>
+                            <Icon d={ICONS.refresh} /> Обновить
+                        </button>
+                        {canManage && (
+                            <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(v => !v)}>
+                                + Создать
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {showCreate && (
+                    <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12, padding: 12, background: "var(--surface)", borderRadius: 8 }}>
+                        {error && <div className="alert">{error}</div>}
+                        <div className="form-group">
+                            <label className="form-label">Название *</label>
+                            <input className="form-input" placeholder="Например, Редизайн сайта"
+                                value={createForm.name}
+                                onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Описание</label>
+                            <textarea className="form-input" placeholder="Необязательно" rows={2}
+                                value={createForm.description}
+                                onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} />
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                            <button type="submit" className="btn btn-primary btn-sm"
+                                disabled={creating || !createForm.name.trim()}>
+                                {creating ? "Создание…" : "Создать"}
+                            </button>
+                            <button type="button" className="btn btn-ghost btn-sm"
+                                onClick={() => { setShowCreate(false); setError(null); }}>
+                                Отмена
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
+
+            {loading ? (
+                <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+            ) : projects.length === 0 ? (
+                <div className="empty-state"><div className="empty-icon">📁</div>Нет доступных проектов</div>
+            ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {projects.map(p => (
+                        <div key={p.id} className="card" style={{ cursor: "pointer" }}
+                            onClick={() => openProject(p.id)}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                                <div style={{ fontSize: 28, lineHeight: 1 }}>📁</div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
+                                    {p.description && (
+                                        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 6 }}>
+                                            {p.description}
+                                        </div>
+                                    )}
+                                    <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+                                        <span>📋 {p.task_count}</span>
+                                        <span style={{ color: "var(--green)" }}>✅ {p.done_count}</span>
+                                        {p.members?.length > 0 && <span>👥 {p.members.length}</span>}
+                                    </div>
+                                    <div className="progress-wrap">
+                                        <div className="progress-track">
+                                            <div className="progress-fill" style={{ width: `${pct(p)}%` }} />
+                                        </div>
+                                        <div className="progress-caption">{pct(p)}%</div>
+                                    </div>
+                                </div>
+                                {canManage && (
+                                    <button className="btn btn-ghost btn-sm"
+                                        style={{ color: "var(--red)", flexShrink: 0, fontSize: 16 }}
+                                        onClick={e => { e.stopPropagation(); handleDelete(p.id); }}>
+                                        🗑
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Groups Tab ───────────────────────────────────────────
 function GroupsTab({ token, currentRole }) {
+    const canManage = currentRole === "admin" || currentRole === "manager";
     const [groups, setGroups] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [loading, setLoading] = useState(false);
-
-    const canManage = currentRole === "admin" || currentRole === "manager";
 
     const tokenRef = React.useRef(token);
     tokenRef.current = token;
@@ -595,19 +1089,6 @@ function GroupsTab({ token, currentRole }) {
     }, []);
 
 
-    const loadDashboard = useCallback(async () => {
-        if (!tokenRef.current) return;
-        setDashLoading(true);
-        try {
-            const [meData, statsData] = await Promise.all([
-                apiRequest({ path: "/users/me", token: tokenRef.current }),
-                apiRequest({ path: `/users/${currentUserId}/stats`, token: tokenRef.current }),
-            ]);
-            setDashStats({ ...statsData, username: meData?.username });
-        } catch { setDashStats(null); }
-        finally { setDashLoading(false); }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentUserId]);
 
     const loadUsers = useCallback(async () => {
         try {
@@ -785,12 +1266,13 @@ function App() {
     const [trashTasks, setTrash] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [tab, setTab] = useState("tasks"); // "tasks" | "groups" | "trash" | "dashboard"
+    const [tab, setTab] = useState("tasks"); // "tasks" | "projects" | "groups" | "trash" | "dashboard"
+    const [filterPriority, setFilterPriority] = useState(null);
+    const [appProjects, setAppProjects] = useState([]);
     const [dashStats, setDashStats] = useState(null);
     const [dashLoading, setDashLoading] = useState(false);
 
     const [filterType, setFilterType] = useState("");
-    const [filterPriority, setFilterPriority] = useState("");
     const [isDone, setIsDone] = useState("");
     const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
@@ -814,6 +1296,18 @@ function App() {
     const currentUserId = useMemo(() => tokenPayload?.sub ? Number(tokenPayload.sub) : null, [tokenPayload]);
     const currentUsername = useMemo(() => tokenPayload?.username || tokenPayload?.sub || "Пользователь", [tokenPayload]);
     const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
+    const canManage = currentRole === "admin" || currentRole === "manager";
+    const [showTooltip, setShowTooltip] = useState(false);
+    const loadAppProjects = React.useCallback(async () => {
+        if (!token) return;
+        try {
+            const data = await apiRequest({ path: "/projects?page=1&size=100", token });
+            setAppProjects(extractItems(data));
+        } catch { setAppProjects([]); }
+    }, [token]);
+
+    // Загружаем проекты при входе
+    useEffect(() => { if (token) loadAppProjects(); }, [token, loadAppProjects]);
 
     // Применяем тему к документу
     useEffect(() => {
@@ -826,15 +1320,15 @@ function App() {
     // что исключает цепочку useCallback→useEffect→двойной setState
     const tokenRef = React.useRef(token);
     const filterTypeRef = React.useRef(filterType);
-    const filterPriorityRef = React.useRef(filterPriority);
     const isDoneRef = React.useRef(isDone);
     const viewModeRef = React.useRef(viewMode);
     tokenRef.current = token;
     filterTypeRef.current = filterType;
-    filterPriorityRef.current = filterPriority;
     isDoneRef.current = isDone;
     viewModeRef.current = viewMode;
 
+    const filterPriorityRef = React.useRef(filterPriority);
+    filterPriorityRef.current = filterPriority;
     // AbortController отменяет предыдущий запрос при новом вызове
     const tasksAbortRef = React.useRef(null);
     const trashAbortRef = React.useRef(null);
@@ -852,9 +1346,9 @@ function App() {
             q.set("filter_user_group", mode);
             q.set("page", page);
             q.set("size", PAGE_SIZE);
-            if (filterTypeRef.current) q.set("filter_type", filterTypeRef.current);
-            if (isDoneRef.current) q.set("is_done", isDoneRef.current);
             if (filterPriorityRef.current) q.set("priority", filterPriorityRef.current);
+            if (isDoneRef.current) q.set("is_done", isDoneRef.current);
+            if (filterPriority) q.set("priority", filterPriority);
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
             // Если запрос был отменён — игнорируем результат
             if (controller.signal.aborted) return;
@@ -955,7 +1449,6 @@ function App() {
             if (tab === "tasks") loadTasks(1);
             if (tab === "trash") loadTrash(1);
             if (tab === "dashboard") loadDashboard();
-            if (tab === "dashboard") loadDashboard();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, tab, filterType, isDone, viewMode, filterPriority]);
@@ -1005,6 +1498,7 @@ function App() {
                 description: form.description.trim() || null,
                 is_done: taskDone,
                 priority: form.priority || "medium",
+                project_id: form.project_id ? Number(form.project_id) : null,
                 deadline: form.deadline ? `${form.deadline}:00` : null,
             };
             if (assignType === "self") { payload.user_id = currentUserId; payload.group_id = null; }
@@ -1151,13 +1645,16 @@ function App() {
                         <div className="brand-tagline">Менеджер задач</div>
                     </div>
                 </div>
-                <div className="header-right">
+                <div className="header-right" style={{ flexWrap: "wrap", alignItems: "center", gap: 6 }}>
                     <div className="tab-bar">
                         <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => { setTab("dashboard"); loadDashboard(); }}>
                             <Icon d={ICONS.chart} /> Дашборд
                         </button>
                         <button className={`tab-btn${tab === "tasks" ? " active" : ""}`} onClick={() => setTab("tasks")}>
                             Задачи {tasksTotal > 0 && <span className="count-badge">{tasksTotal}</span>}
+                        </button>
+                        <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
+                            📁 Проекты
                         </button>
                         <button className={`tab-btn${tab === "groups" ? " active" : ""}`} onClick={() => setTab("groups")}>
                             <Icon d={ICONS.group} /> Группы
@@ -1167,11 +1664,30 @@ function App() {
                             {trashTotal > 0 && <span className="count-badge">{trashTotal}</span>}
                         </button>
                     </div>
-                    <div className="user-chip">
-                        {currentUsername}
+                    <div className="user-chip"
+                        onMouseEnter={() => setShowTooltip(true)}
+                        onMouseLeave={() => setShowTooltip(false)}>
+                        <span className="user-chip-name">{currentUsername}</span>
                         <span className="role-badge" style={{ color: roleColor.color, background: roleColor.bg, marginLeft: 4 }}>
                             {ROLE_LABELS[currentRole] ?? currentRole}
                         </span>
+                        {showTooltip && (
+                            <span style={{
+                                position: "fixed",
+                                top: 20,
+                                right: 295,
+                                background: "var(--surface2)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                                fontSize: 12,
+                                padding: "5px 10px",
+                                borderRadius: 25,
+                                whiteSpace: "nowrap",
+                                zIndex: 1000,
+                            }}>
+                                {currentUsername}
+                            </span>
+                        )}
                     </div>
                     <button
                         className="btn btn-ghost btn-sm"
@@ -1250,6 +1766,16 @@ function App() {
                                 <div className="divider" />
                                 <div className="filter-row">
                                     <div className="form-group">
+                                        <label className="form-label">Приоритет</label>
+                                        <select value={filterPriority || ""} onChange={e => setFilterPriority(e.target.value || null)}>
+                                            <option value="">Все</option>
+                                            <option value="critical">🔴 Критический</option>
+                                            <option value="high">🟠 Высокий</option>
+                                            <option value="medium">🔵 Средний</option>
+                                            <option value="low">⚪ Низкий</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
                                         <label className="form-label">Тип задачи</label>
                                         <select value={filterType} onChange={e => setFilterType(e.target.value)}>
                                             <option value="">Все</option>
@@ -1309,12 +1835,18 @@ function App() {
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Приоритет</label>
-                                        <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}
-                                            style={{ borderLeft: `3px solid ${PRIORITY_COLORS[form.priority] || "#3b82f6"}` }}>
-                                            <option value="low">⚫ Низкий</option>
+                                        <select value={form.priority || "medium"} onChange={e => setForm({ ...form, priority: e.target.value })}>
+                                            <option value="low">⚪ Низкий</option>
                                             <option value="medium">🔵 Средний</option>
                                             <option value="high">🟠 Высокий</option>
                                             <option value="critical">🔴 Критический</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Проект</label>
+                                        <select value={form.project_id || ""} onChange={e => setForm({ ...form, project_id: e.target.value })}>
+                                            <option value="">— Без проекта —</option>
+                                            {appProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="form-group">
@@ -1399,6 +1931,12 @@ function App() {
                         username={currentUsername}
                         role={currentRole}
                     />
+                </div>
+            )}
+            {/* ── PROJECTS TAB ── */}
+            {tab === "projects" && (
+                <div>
+                    <ProjectsTab token={token} canManage={canManage} />
                 </div>
             )}
             {/* ── GROUPS TAB ── */}
