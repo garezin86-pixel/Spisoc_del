@@ -14,10 +14,13 @@ def main_menu_user() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="📝 Создать задачу"),
             ],
             [
-                KeyboardButton(text="🗑 Корзина"),  # ← новая
+                KeyboardButton(text="🗑 Корзина"),
                 KeyboardButton(text="👥 Моя группа"),
             ],
-            [KeyboardButton(text="⚙️ Настройки уведомлений")],
+            [
+                KeyboardButton(text="📁 Проекты"),
+                KeyboardButton(text="⚙️ Настройки \n уведомлений"),
+            ],
         ],
         resize_keyboard=True,
     )
@@ -37,9 +40,10 @@ def main_menu_admin() -> ReplyKeyboardMarkup:
             ],
             [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="👤 Группы")],
             [
-                KeyboardButton(text="🗑 Корзина"),  # ← новая
-                KeyboardButton(text="⚙️ Настройки \n уведомлений"),
+                KeyboardButton(text="🗑 Корзина"),
+                KeyboardButton(text="📁 Проекты"),
             ],
+            [KeyboardButton(text="⚙️ Настройки \n уведомлений")],
         ],
         resize_keyboard=True,
     )
@@ -177,7 +181,10 @@ def main_menu_manager() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="➕ Добавить в группу"),
                 KeyboardButton(text="➖ Удалить из группы"),
             ],
-            [KeyboardButton(text="⚙️ Настройки уведомлений")],
+            [
+                KeyboardButton(text="📁 Проекты"),
+                KeyboardButton(text="⚙️ Настройки \n уведомлений"),
+            ],
         ],
         resize_keyboard=True,
     )
@@ -198,3 +205,51 @@ def task_edit_manager_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+
+
+# ── Проекты ───────────────────────────────────────────────────────────────────
+
+
+def projects_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Меню проектов для обычного пользователя."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 Мои проекты")],
+            [KeyboardButton(text="🔍 Проект по ID")],
+            [KeyboardButton(text="🔙 Назад")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def projects_admin_keyboard() -> ReplyKeyboardMarkup:
+    """Меню проектов для admin/manager — расширенное."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 Мои проекты")],
+            [KeyboardButton(text="🔍 Проект по ID")],
+            [
+                KeyboardButton(text="➕ Создать проект"),
+                KeyboardButton(text="🗑 Удалить проект"),
+            ],
+            [
+                KeyboardButton(text="➕ Добавить участника"),
+                KeyboardButton(text="➖ Удалить участника"),
+            ],
+            [KeyboardButton(text="🔙 Назад")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def get_main_menu_keyboard(user) -> ReplyKeyboardMarkup:
+    """Возвращает нужное главное меню в зависимости от роли пользователя."""
+    from src.models.user import UserRole
+
+    if user is None:
+        return main_menu_user()
+    if user.role == UserRole.admin:
+        return main_menu_admin()
+    if user.role == UserRole.manager:
+        return main_menu_manager()
+    return main_menu_user()

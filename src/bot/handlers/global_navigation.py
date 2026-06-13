@@ -14,6 +14,19 @@ router = Router()
 async def set_main_menu(bot):
     commands = [
         BotCommand(command="start", description="🏠 Главное меню"),
+        BotCommand(command="my", description="📋 Мои задачи"),
+        BotCommand(command="today", description="📅 На сегодня"),
+        BotCommand(command="overdue", description="⚠️ Просроченные"),
+        BotCommand(command="stats", description="📊 Моя статистика"),
+        BotCommand(command="done", description="✅ Закрыть задачу: /done 42"),
+        BotCommand(command="undone", description="⏪ Снять отметку: /undone 42"),
+        BotCommand(command="task", description="🔍 Показать задачу: /task 42"),
+        BotCommand(command="del", description="🗑 В корзину: /del 42"),
+        BotCommand(
+            command="new", description="➕ Создать задачу: /new Название | дедлайн"
+        ),
+        BotCommand(command="find", description="🔎 Найти задачу: /find текст"),
+        BotCommand(command="group", description="👥 Задачи группы: /group 3"),
     ]
 
     await bot.set_my_commands(commands)
