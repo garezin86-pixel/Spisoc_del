@@ -109,7 +109,13 @@ async def my_tasks(message: Message):
             deadline = to_local(task.deadline)
             await message.answer(
                 f"{status} <b>{task.title}</b>\n"
-                f"🎯 {'🔴' if hasattr(task, 'priority') and task.priority and task.priority.value == 'critical' else '🟠' if hasattr(task, 'priority') and task.priority and task.priority.value == 'high' else '🔵' if hasattr(task, 'priority') and task.priority and task.priority.value == 'medium' else '⚫'} Приоритет\n"
+                f"🎯 {'🔴' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'critical'
+                      else '🟠' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'high'
+                      else '🔵' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'medium'
+                      else '⚪'} Приоритет\n"
                 f"📅 Дедлайн: {deadline}\n"
                 f"🆔 ID: {task.id}",
                 parse_mode="HTML",

@@ -17,7 +17,7 @@ class UserRepository(AbstractUserRepository):
 
     async def get_all(self) -> list[UserModel]:
         """Возвращает всех пользователей без пагинации. Используется в тестах и admin."""
-        result = await self.session.execute(select(UserModel))
+        result = await self.session.execute(select(UserModel).order_by(UserModel.id))
         return list(result.scalars().all())
 
     async def get_by_id(self, user_id: int) -> UserModel | None:
