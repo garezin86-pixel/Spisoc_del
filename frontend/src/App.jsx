@@ -416,8 +416,8 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                             )}
                         </div>
                     </div>
-                    <span className={`badge ${task.is_done ? "badge-done" : "badge-active"}`}>
-                        {task.is_done ? "Готово" : "В работе"}
+                    <span className={`badge ${task.status === "done" ? "badge-done" : "badge-active"}`}>
+                        {{ "backlog": "Очередь", "todo": "Новые", "in_progress": "В работе", "review": "На проверке", "done": "Готово" }[task.status] ?? (task.is_done ? "Готово" : "В работе")}
                     </span>
                     {task.priority && (
                         <span style={{
@@ -510,8 +510,33 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
             )}
 
             <div className="task-actions">
-                <button className={`btn btn-sm ${task.is_done ? "btn-ghost" : "btn-success"}`} onClick={() => onToggle(task)}>
-                    <Icon d={ICONS.check} /> {task.is_done ? "Снять отметку" : "Выполнено"}
+                {/* Кнопка "Назад" — только если есть куда возвращаться */}
+                {task.status && task.status !== "backlog" && task.status !== "done" && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => onToggle(task, {
+                        backlog: null,
+                        todo: "backlog",
+                        in_progress: "todo",
+                        review: "in_progress",
+                        done: "review",
+                    }[task.status])}>
+                        ◀ Назад
+                    </button>
+                )}
+                <button className={`btn btn-sm ${task.status === "done" ? "btn-ghost" : "btn-success"}`}
+                    onClick={() => onToggle(task, {
+                        backlog: "todo",
+                        todo: "in_progress",
+                        in_progress: "review",
+                        review: "done",
+                        done: "todo",
+                    }[task.status || (task.is_done ? "done" : "todo")])}>
+                    <Icon d={ICONS.check} /> {{
+                        backlog: "▶ В новые",
+                        todo: "▶ В работу",
+                        in_progress: "▶ На проверку",
+                        review: "✓ Завершить",
+                        done: "↩ Переоткрыть",
+                    }[task.status || (task.is_done ? "done" : "todo")] ?? "▶ Далее"}
                 </button>
                 {!editing && (
                     <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(true); setShowReassign(false); }}>
@@ -540,7 +565,6 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
     );
 }
 
-// ─── TrashCard ────────────────────────────────────────────
 // ─── TrashCard ────────────────────────────────────────────
 function TrashCard({ task, onRestore, onHardDelete }) {
     const dl = formatDeadline(task.deadline);
@@ -753,39 +777,31 @@ const KANBAN_COLUMNS = [
     { key: "done", label: "Готово", color: "#22c55e" },
 ];
 
-const PRIORITY_COLORS = {
-    low: { color: "#6b7280", bg: "rgba(107,114,128,0.12)" },
-    medium: { color: "#7c6af0", bg: "rgba(124,106,240,0.12)" },
-    high: { color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
-    critical: { color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
-};
-const PRIORITY_LABELS = { low: "Низкий", medium: "Средний", high: "Высокий", critical: "Критический" };
-const STATUS_LABELS = { backlog: "Очередь", todo: "Новые", in_progress: "В работе", review: "На проверке", done: "Готово" };
-
 function KanbanTab({ token }) {
     const [board, setBoard] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [projectId, setProjectId] = useState("");
     const [onlyMine, setOnlyMine] = useState(false);
+    const [onlyAuthor, setOnlyAuthor] = useState(false);
     const [projects, setProjects] = useState([]);
     const [dragging, setDragging] = useState(null); // { taskId, fromCol }
     const [dragOver, setDragOver] = useState(null);
     const [movingId, setMovingId] = useState(null);
 
-    const API = (path) => `/api${path}`;
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    // const API = (path) => `/api${path}`;
+    // const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
-    const loadBoard = useCallback(async (pid, mine) => {
+    const loadBoard = useCallback(async (pid, mine, author) => {
         setLoading(true);
         setError(null);
         try {
             const params = new URLSearchParams();
             if (pid) params.set("project_id", pid);
             if (mine) params.set("only_mine", "true");
-            const r = await fetch(API(`/tasks/kanban?${params}`), { headers });
-            if (!r.ok) throw new Error(await r.text());
-            setBoard(await r.json());
+            if (author) params.set("only_author", "true");
+            const data = await apiRequest({ path: `/tasks/kanban?${params}`, token });
+            setBoard(data);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -794,14 +810,16 @@ function KanbanTab({ token }) {
     }, [token]);
 
     useEffect(() => {
-        // Загружаем список проектов для фильтра
-        fetch(API("/projects/"), { headers })
-            .then(r => r.ok ? r.json() : [])
+        if (!token) return;
+        apiRequest({ path: "/projects?page=1&size=50", token })
             .then(data => setProjects(Array.isArray(data) ? data : (data.items ?? [])))
             .catch(() => { });
     }, [token]);
 
-    useEffect(() => { loadBoard(projectId, onlyMine); }, [projectId, onlyMine]);
+    useEffect(() => {
+        if (!token) return;
+        loadBoard(projectId, onlyMine, onlyAuthor);
+    }, [projectId, onlyMine, onlyAuthor, loadBoard]);
 
     // ── Drag & Drop ──────────────────────────────────────────
     const onDragStart = (e, taskId, fromCol) => {
@@ -885,10 +903,19 @@ function KanbanTab({ token }) {
                     <input
                         type="checkbox"
                         checked={onlyMine}
-                        onChange={e => setOnlyMine(e.target.checked)}
+                        onChange={e => { setOnlyMine(e.target.checked); if (e.target.checked) setOnlyAuthor(false); }}
                         style={{ accentColor: "var(--accent)" }}
                     />
                     Только мои
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "var(--text-dim)", fontSize: 13 }}>
+                    <input
+                        type="checkbox"
+                        checked={onlyAuthor}
+                        onChange={e => { setOnlyAuthor(e.target.checked); if (e.target.checked) setOnlyMine(false); }}
+                        style={{ accentColor: "var(--accent)" }}
+                    />
+                    Я автор
                 </label>
                 <button
                     className="btn btn-ghost btn-sm"
@@ -907,8 +934,10 @@ function KanbanTab({ token }) {
                 display: "flex",
                 gap: 12,
                 overflowX: "auto",
-                minHeight: 520,
+                overflowY: "hidden",
+                height: "calc(100vh - 220px)",
                 paddingBottom: 8,
+                paddingRight: 16,
                 alignItems: "flex-start",
             }}>
                 {KANBAN_COLUMNS.map(col => {
@@ -930,7 +959,9 @@ function KanbanTab({ token }) {
                                 border: `1.5px solid ${isOver ? "var(--accent)" : "var(--border)"}`,
                                 borderRadius: "var(--radius)",
                                 transition: "border-color 0.15s, background 0.15s",
-                                overflow: "hidden",
+                                // overflow: "hidden",
+                                overflowY: "auto",
+                                maxHeight: "100%",
                             }}
                         >
                             {/* Шапка колонки */}
@@ -997,7 +1028,7 @@ function KanbanTab({ token }) {
 }
 
 function KanbanCard({ task, col, onDragStart, onDragEnd, isMoving, isDragging }) {
-    const pri = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.medium;
+    const priColor = PRIORITY_COLORS[task.priority] ?? "#3b82f6";
     const isOverdue = task.deadline && !task.is_done && new Date(task.deadline) < new Date();
 
     return (
@@ -1023,8 +1054,8 @@ function KanbanCard({ task, col, onDragStart, onDragEnd, isMoving, isDragging })
                     fontSize: 10,
                     fontWeight: 700,
                     letterSpacing: "0.04em",
-                    color: pri.color,
-                    background: pri.bg,
+                    color: priColor,
+                    background: priColor + "22",
                     borderRadius: 6,
                     padding: "1px 7px",
                     textTransform: "uppercase",
@@ -1109,7 +1140,8 @@ function ProjectsTab({ token, canManage }) {
     const [createForm, setCreateForm] = useState({ name: "", description: "", group_id: "" });
     const [creating, setCreating] = useState(false);
     const [groups, setGroups] = useState([]);
-    const [showGroupPicker, setShowGroupPicker] = useState(false);
+    // const [showGroupPicker, setShowGroupPicker] = useState(false);
+    const [groupPickerProjectId, setGroupPickerProjectId] = useState(null);
     const [settingGroup, setSettingGroup] = useState(false);
 
     // Редактирование проекта в списке
@@ -1234,21 +1266,42 @@ function ProjectsTab({ token, canManage }) {
         finally { setCreatingTask(false); }
     }
 
-    async function handleSetGroup(groupId) {
-        if (!selectedProject) return;
+    // async function handleSetGroup(groupId) {
+    //     if (!selectedProject) return;
+    //     setSettingGroup(true);
+    //     try {
+    //         await apiRequest({
+    //             path: `/projects/${selectedProject.id}/group`,
+    //             method: "PATCH",
+    //             token,
+    //             body: { group_id: groupId || null },
+    //         });
+    //         const data = await apiRequest({ path: `/projects/${selectedProject.id}`, token });
+    //         setSelectedProject(data);
+    //         setShowGroupPicker(false);
+    //     } catch (err) { setError(err.message); }
+    //     finally { setSettingGroup(false); }
+    // }
+    async function handleSetGroup(projectId, groupId) {
         setSettingGroup(true);
+
         try {
             await apiRequest({
-                path: `/projects/${selectedProject.id}/group`,
+                path: `/projects/${projectId}/group`,
                 method: "PATCH",
                 token,
                 body: { group_id: groupId || null },
             });
-            const data = await apiRequest({ path: `/projects/${selectedProject.id}`, token });
-            setSelectedProject(data);
-            setShowGroupPicker(false);
-        } catch (err) { setError(err.message); }
-        finally { setSettingGroup(false); }
+
+            // обновляем список проектов
+            await loadProjects();
+
+            setGroupPickerProjectId(null);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSettingGroup(false);
+        }
     }
 
     async function handleEditProject(e, projectId) {
@@ -1339,12 +1392,6 @@ function ProjectsTab({ token, canManage }) {
                                 <Icon d={ICONS.plus} /> Создать задачу
                             </button>
                             {canManage && (
-                                <button className="btn btn-ghost btn-sm"
-                                    onClick={() => setShowGroupPicker(v => !v)}>
-                                    🏷 {selectedProject.group ? "Сменить группу" : "Привязать группу"}
-                                </button>
-                            )}
-                            {canManage && (
                                 <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)" }}
                                     onClick={() => handleDelete(selectedProject.id)}>
                                     🗑 Удалить
@@ -1352,28 +1399,6 @@ function ProjectsTab({ token, canManage }) {
                             )}
                         </div>
                     </div>
-
-                    {/* Привязка группы */}
-                    {showGroupPicker && canManage && (
-                        <div style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            padding: 12, marginBottom: 8,
-                            background: "var(--surface2)", borderRadius: 8,
-                            border: "1px solid var(--border)"
-                        }}>
-                            <select defaultValue={selectedProject.group_id || ""}
-                                onChange={e => handleSetGroup(e.target.value ? Number(e.target.value) : null)}
-                                disabled={settingGroup}
-                                style={{ flex: 1 }}>
-                                <option value="">— Без группы —</option>
-                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                            </select>
-                            <button className="btn btn-ghost btn-sm"
-                                onClick={() => setShowGroupPicker(false)}>
-                                Отмена
-                            </button>
-                        </div>
-                    )}
 
                     {/* Форма создания задачи */}
                     {showTaskForm && (
@@ -1496,22 +1521,27 @@ function ProjectsTab({ token, canManage }) {
                                     groups={[]}
                                     users={users}
                                     token={token}
-                                    onToggle={async (task) => {
-                                        // Оптимистичное обновление — сразу меняем локально
+                                    onToggle={async (task, newStatus) => {
+                                        const nextIsDone = newStatus === "done";
+
                                         setProjectTasks(prev => prev.map(t =>
-                                            t.id === task.id ? { ...t, is_done: !t.is_done } : t
+                                            t.id === task.id
+                                                ? { ...t, status: newStatus, is_done: nextIsDone }
+                                                : t
                                         ));
+
                                         try {
                                             await apiRequest({
-                                                path: `/tasks/${task.id}`,
+                                                path: `/tasks/${task.id}/status`,
                                                 method: "PATCH",
                                                 token,
-                                                body: { is_done: !task.is_done },
+                                                body: { status: newStatus },
                                             });
                                         } catch {
-                                            // Откат при ошибке
                                             setProjectTasks(prev => prev.map(t =>
-                                                t.id === task.id ? { ...t, is_done: task.is_done } : t
+                                                t.id === task.id
+                                                    ? { ...t, status: task.status, is_done: task.is_done }
+                                                    : t
                                             ));
                                         }
                                     }}
@@ -1630,10 +1660,10 @@ function ProjectsTab({ token, canManage }) {
                         const notMember = users.filter(u => !currentMembers.some(m => m.id === u.id));
                         return (
                             <div key={p.id} className="card">
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                                     <div style={{ fontSize: 28, lineHeight: 1, cursor: "pointer" }}
                                         onClick={() => openProject(p.id)}>📁</div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
                                         {isEditing ? (
                                             <form onSubmit={e => handleEditProject(e, p.id)}
                                                 style={{ display: "flex", flexDirection: "column", gap: 8 }}
@@ -1663,32 +1693,32 @@ function ProjectsTab({ token, canManage }) {
                                                     onClick={() => openProject(p.id)}>
                                                     {p.name}
                                                 </div>
-                                    {p.description && (
+                                                {p.description && (
                                                     <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 6, cursor: "pointer" }}
                                                         onClick={() => openProject(p.id)}>
-                                            {p.description}
-                                        </div>
-                                    )}
+                                                        {p.description}
+                                                    </div>
+                                                )}
                                                 <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--text-muted)", marginBottom: 8, cursor: "pointer" }}
                                                     onClick={() => openProject(p.id)}>
-                                        <span>📋 {p.task_count}</span>
-                                        <span style={{ color: "var(--green)" }}>✅ {p.done_count}</span>
-                                        {p.members?.length > 0 && <span>👥 {p.members.length}</span>}
-                                        {p.group?.name && <span>🏷 {p.group.name}</span>}
-                                    </div>
+                                                    <span>📋 {p.task_count}</span>
+                                                    <span style={{ color: "var(--green)" }}>✅ {p.done_count}</span>
+                                                    {p.members?.length > 0 && <span>👥 {p.members.length}</span>}
+                                                    {p.group?.name && <span>🏷 {p.group.name}</span>}
+                                                </div>
                                                 <div className="progress-wrap" style={{ cursor: "pointer" }}
                                                     onClick={() => openProject(p.id)}>
-                                        <div className="progress-track">
-                                            <div className="progress-fill" style={{ width: `${pct(p)}%` }} />
-                                        </div>
-                                        <div className="progress-caption">{pct(p)}%</div>
-                                    </div>
+                                                    <div className="progress-track">
+                                                        <div className="progress-fill" style={{ width: `${pct(p)}%` }} />
+                                                    </div>
+                                                    <div className="progress-caption">{pct(p)}%</div>
+                                                </div>
                                             </>
                                         )}
-                                </div>
+                                    </div>
                                     {canManage && !isEditing && (
                                         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                                    <button className="btn btn-ghost btn-sm"
+                                            <button className="btn btn-ghost btn-sm"
                                                 title="Редактировать проект"
                                                 onClick={e => {
                                                     e.stopPropagation();
@@ -1704,15 +1734,68 @@ function ProjectsTab({ token, canManage }) {
                                                 onClick={e => { e.stopPropagation(); toggleMembersPanel(p.id, p.members); }}>
                                                 <Icon d={ICONS.userPlus} />
                                             </button>
+                                            {/* сюда кнопку  */}
+                                            <button
+                                                className="btn btn-ghost btn-sm"
+                                                title={p.group ? "Сменить группу" : "Привязать группу"}
+                                                onClick={e => {
+                                                    e.stopPropagation();
+                                                    setGroupPickerProjectId(
+                                                        groupPickerProjectId === p.id ? null : p.id
+                                                    );
+                                                }}
+                                            >
+                                                🏷
+                                            </button>
                                             <button className="btn btn-ghost btn-sm"
                                                 title="Удалить проект"
                                                 style={{ color: "var(--red)" }}
-                                        onClick={e => { e.stopPropagation(); handleDelete(p.id); }}>
+                                                onClick={e => { e.stopPropagation(); handleDelete(p.id); }}>
                                                 <Icon d={ICONS.trash} />
-                                    </button>
+                                            </button>
                                         </div>
+                                    )}
+                                </div>
+
+                                {/* Панель выбора группы */}
+                                {groupPickerProjectId === p.id && canManage && (
+                                    <div
+                                        style={{
+                                            marginTop: 12,
+                                            padding: 12,
+                                            background: "var(--surface2)",
+                                            borderRadius: 8,
+                                            border: "1px solid var(--border)"
+                                        }}
+                                    >
+                                        <select
+                                            defaultValue={p.group_id || ""}
+                                            onChange={e =>
+                                                handleSetGroup(
+                                                    p.id,
+                                                    e.target.value ? Number(e.target.value) : null
+                                                )
+                                            }
+                                            disabled={settingGroup}
+                                            style={{ width: "100%" }}
+                                        >
+                                            <option value="">— Без группы —</option>
+                                            {groups.map(g => (
+                                                <option key={g.id} value={g.id}>
+                                                    {g.name}
+                                                </option>
+                                            ))}
+                                        </select>
+
+                                        <button
+                                            className="btn btn-ghost btn-sm"
+                                            style={{ marginTop: 8 }}
+                                            onClick={() => setGroupPickerProjectId(null)}
+                                        >
+                                            Отмена
+                                        </button>
+                                    </div>
                                 )}
-                            </div>
 
                                 {/* Панель управления участниками */}
                                 {isShowingMembers && canManage && (
@@ -1723,7 +1806,7 @@ function ProjectsTab({ token, canManage }) {
                                     }}>
                                         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>
                                             👥 Участники проекта
-                        </div>
+                                        </div>
                                         {currentMembers.length === 0 ? (
                                             <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>
                                                 Нет участников
@@ -1987,7 +2070,7 @@ function App() {
     const [dashLoading, setDashLoading] = useState(false);
 
     const [filterType, setFilterType] = useState("");
-    const [isDone, setIsDone] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
     const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
     const [tasksPage, setTasksPage] = useState(1);
@@ -2036,11 +2119,11 @@ function App() {
     // что исключает цепочку useCallback→useEffect→двойной setState
     const tokenRef = React.useRef(token);
     const filterTypeRef = React.useRef(filterType);
-    const isDoneRef = React.useRef(isDone);
+    const statusFilterRef = React.useRef(statusFilter);
     const viewModeRef = React.useRef(viewMode);
     tokenRef.current = token;
     filterTypeRef.current = filterType;
-    isDoneRef.current = isDone;
+    statusFilterRef.current = statusFilter;
     viewModeRef.current = viewMode;
 
     const filterPriorityRef = React.useRef(filterPriority);
@@ -2063,7 +2146,7 @@ function App() {
             q.set("page", page);
             q.set("size", PAGE_SIZE);
             if (filterPriorityRef.current) q.set("priority", filterPriorityRef.current);
-            if (isDoneRef.current) q.set("is_done", isDoneRef.current);
+            if (statusFilterRef.current) q.set("status", statusFilterRef.current);
             if (filterPriority) q.set("priority", filterPriority);
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
             // Если запрос был отменён — игнорируем результат
@@ -2167,7 +2250,7 @@ function App() {
             if (tab === "dashboard") loadDashboard();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, tab, filterType, isDone, viewMode, filterPriority]);
+    }, [token, tab, filterType, statusFilter, viewMode, filterPriority]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
@@ -2229,10 +2312,19 @@ function App() {
         } catch (err) { handleAuthError(err); }
     }
 
-    async function handleToggleTask(task) {
-        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_done: !task.is_done } : t));
+    async function handleToggleTask(task, newStatus) {
+        if (!newStatus) return;
+        const nextIsDone = newStatus === "done";
+        setTasks(prev => prev.map(t =>
+            t.id === task.id ? { ...t, status: newStatus, is_done: nextIsDone } : t
+        ));
         try {
-            await apiRequest({ path: `/tasks/${task.id}`, method: "PATCH", token, body: { is_done: !task.is_done } });
+            await apiRequest({
+                path: `/tasks/${task.id}/status`,
+                method: "PATCH",
+                token,
+                body: { status: newStatus },
+            });
         } catch (err) {
             setTasks(prev => prev.map(t => t.id === task.id ? task : t));
             handleAuthError(err);
@@ -2361,82 +2453,88 @@ function App() {
                         <div className="brand-tagline">Менеджер задач</div>
                     </div>
                 </div>
-                <div className="header-right" style={{ flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                    <div className="tab-bar">
-                        <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => { setTab("dashboard"); loadDashboard(); }}>
-                            <Icon d={ICONS.chart} /> Дашборд
-                        </button>
-                        <button className={`tab-btn${tab === "tasks" ? " active" : ""}`} onClick={() => setTab("tasks")}>
-                            Задачи {tasksTotal > 0 && <span className="count-badge">{tasksTotal}</span>}
-                        </button>
-                        <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
-                            📁 Проекты
-                        </button>
-                        <button className={`tab-btn${tab === "kanban" ? " active" : ""}`} onClick={() => setTab("kanban")}>
-                            <Icon d={ICONS.kanban ?? "M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"} /> Канбан
-                        </button>
-                        <button className={`tab-btn${tab === "groups" ? " active" : ""}`} onClick={() => setTab("groups")}>
-                            <Icon d={ICONS.group} /> Группы
-                        </button>
-                        <button className={`tab-btn${tab === "trash" ? " active" : ""}`} onClick={() => setTab("trash")}>
-                            <Icon d={ICONS.trash} /> Корзина
-                            {trashTotal > 0 && <span className="count-badge">{trashTotal}</span>}
-                        </button>
-                    </div>
-                    <div className="user-chip"
-                        ref={chipRef}
-                        onMouseEnter={() => {
-                            const rect = chipRef.current?.getBoundingClientRect();
-                            if (rect) setTooltipPos({
-                                top: rect.bottom + 8,
-                                right: window.innerWidth - rect.right,
-                            });
-                            setShowTooltip(true);
-                        }}
-                        onMouseLeave={() => setShowTooltip(false)}>
-                        <span className="user-chip-name">{currentUsername}</span>
-                        <span className="role-badge" style={{ color: roleColor.color, background: roleColor.bg, marginLeft: 4 }}>
-                            {ROLE_LABELS[currentRole] ?? currentRole}
-                        </span>
-                        {showTooltip && (
-                            <span style={{
-                                position: "fixed",
-                                top: tooltipPos.top,
-                                right: tooltipPos.right,
-                                background: "var(--surface2)",
-                                border: "1px solid var(--border)",
-                                color: "var(--text)",
-                                fontSize: 12,
-                                padding: "5px 10px",
-                                borderRadius: 25,
-                                whiteSpace: "nowrap",
-                                zIndex: 1000,
-                            }}>
-                                {currentUsername}
+                <div className="header-right">
+                    {/* Верхний ряд — пользователь и управление */}
+                    <div className="header-row header-row-top">
+                        <div className="user-chip"
+                            ref={chipRef}
+                            onMouseEnter={() => {
+                                const rect = chipRef.current?.getBoundingClientRect();
+                                if (rect) setTooltipPos({
+                                    top: rect.bottom + 8,
+                                    right: window.innerWidth - rect.right,
+                                });
+                                setShowTooltip(true);
+                            }}
+                            onMouseLeave={() => setShowTooltip(false)}>
+                            <span className="user-chip-name">{currentUsername}</span>
+                            <span className="role-badge" style={{ color: roleColor.color, background: roleColor.bg, marginLeft: 4 }}>
+                                {ROLE_LABELS[currentRole] ?? currentRole}
                             </span>
-                        )}
-                    </div>
-                    <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
-                        title="Переключить тему"
-                        style={{ fontSize: "0.85rem" }}
-                    >
-                        {theme === "dark" ? "☀️" : "🌙"}
-                    </button>
-                    {currentRole === "admin" && (
-                        <a
-                            href={import.meta.env.DEV ? "http://127.0.0.1:8000/admin/" : "https://spisoc-del.onrender.com/admin/"}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            {showTooltip && (
+                                <span style={{
+                                    position: "fixed",
+                                    top: tooltipPos.top,
+                                    right: tooltipPos.right,
+                                    background: "var(--surface2)",
+                                    border: "1px solid var(--border)",
+                                    color: "var(--text)",
+                                    fontSize: 12,
+                                    padding: "5px 10px",
+                                    borderRadius: 25,
+                                    whiteSpace: "nowrap",
+                                    zIndex: 1000,
+                                }}>
+                                    {currentUsername}
+                                </span>
+                            )}
+                        </div>
+                        <button
                             className="btn btn-ghost btn-sm"
+                            onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+                            title="Переключить тему"
+                            style={{ fontSize: "0.85rem" }}
                         >
-                            <Icon d={ICONS.shield} /> Админка
-                        </a>
-                    )}
-                    <button className="btn btn-ghost btn-sm" onClick={logout}>
-                        <Icon d={ICONS.logout} /> Выйти
-                    </button>
+                            {theme === "dark" ? "☀️" : "🌙"}
+                        </button>
+                        {currentRole === "admin" && (
+                            <a
+                                href={import.meta.env.DEV ? "http://127.0.0.1:8000/admin/" : "https://spisoc-del.onrender.com/admin/"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-ghost btn-sm"
+                            >
+                                <Icon d={ICONS.shield} /> Админка
+                            </a>
+                        )}
+                        <button className="btn btn-ghost btn-sm" onClick={logout}>
+                            <Icon d={ICONS.logout} /> Выйти
+                        </button>
+                    </div>
+                    {/* Нижний ряд — навигация */}
+                    <div className="header-row header-row-bottom">
+                        <div className="tab-bar">
+                            <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => { setTab("dashboard"); loadDashboard(); }}>
+                                <Icon d={ICONS.chart} /> Дашборд
+                            </button>
+                            <button className={`tab-btn${tab === "tasks" ? " active" : ""}`} onClick={() => setTab("tasks")}>
+                                Задачи {tasksTotal > 0 && <span className="count-badge">{tasksTotal}</span>}
+                            </button>
+                            <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
+                                📁 Проекты
+                            </button>
+                            <button className={`tab-btn${tab === "kanban" ? " active" : ""}`} onClick={() => setTab("kanban")}>
+                                <Icon d={ICONS.kanban ?? "M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"} /> Канбан
+                            </button>
+                            <button className={`tab-btn${tab === "groups" ? " active" : ""}`} onClick={() => setTab("groups")}>
+                                <Icon d={ICONS.group} /> Группы
+                            </button>
+                            <button className={`tab-btn${tab === "trash" ? " active" : ""}`} onClick={() => setTab("trash")}>
+                                <Icon d={ICONS.trash} /> Корзина
+                                {trashTotal > 0 && <span className="count-badge">{trashTotal}</span>}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </header>
 
@@ -2514,10 +2612,13 @@ function App() {
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Статус</label>
-                                        <select value={isDone} onChange={e => setIsDone(e.target.value)}>
+                                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                                             <option value="">Все</option>
-                                            <option value="false">Не выполненные</option>
-                                            <option value="true">Выполненные</option>
+                                            <option value="backlog">Очередь</option>
+                                            <option value="todo">Новые</option>
+                                            <option value="in_progress">В работе</option>
+                                            <option value="review">На проверке</option>
+                                            <option value="done">Готово</option>
                                         </select>
                                     </div>
                                 </div>

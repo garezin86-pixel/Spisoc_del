@@ -34,12 +34,14 @@ class ProjectAdmin(ModelView, model=ProjectModel):
         ProjectModel.created_at,
         ProjectModel.updated_at,
         ProjectModel.members,
+        ProjectModel.group,
     ]
     form_columns = [
         ProjectModel.name,
         ProjectModel.description,
         ProjectModel.owner,
         ProjectModel.members,
+        ProjectModel.group,
     ]
     column_labels = {
         "id": "ID",
@@ -48,6 +50,7 @@ class ProjectAdmin(ModelView, model=ProjectModel):
         "tasks": "Задачи",
         "owner": "Владелец",
         "members": "Участники",
+        "group": "Группа",
         "created_at": "Создано",
         "updated_at": "Обновлено",
     }

@@ -70,7 +70,16 @@ async def cmd_start_deeplink(
                 await message.answer("❌ Задача не найдена или у вас нет доступа.")
                 return
 
-            status = "✅ Выполнена" if task.is_done else "⏳ Не выполнена"
+            _STATUS_LABELS = {
+                "done": "✅ Выполнена",
+                "in_progress": "⚙️ В работе",
+                "review": "👁 На проверке",
+                "todo": "📋 Новая",
+                "backlog": "📥 В очереди",
+            }
+            status = _STATUS_LABELS.get(
+                task.status.value if task.status else "todo", "⏳"
+            )
             author = task.author.username if task.author else "Неизвестный"
 
             from src.bot.keyboards.main import task_edit_keyboard

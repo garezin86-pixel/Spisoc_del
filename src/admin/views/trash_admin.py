@@ -50,7 +50,7 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         ),
     }
 
-    column_list = ["id", "title", "is_done", "deleted_at"]
+    column_list = ["id", "title", "status", "deleted_at"]
     column_searchable_list = ["title"]
     column_sortable_list = ["id", "deleted_at", "title"]
     column_default_sort = [("deleted_at", True)]
@@ -59,7 +59,7 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         "id",
         "title",
         "description",
-        "is_done",
+        "status",
         "deadline",
         "created_at",
         "updated_at",
@@ -70,7 +70,7 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         "id": "ID",
         "title": "Название",
         "description": "Описание",
-        "is_done": "Выполнено",
+        "status": "Статус",
         "deadline": "Дедлайн",
         "created_at": "Добавлено",
         "updated_at": "Изменено",

@@ -5,8 +5,7 @@
 
     <!-- Заголовок -->
     <div style="display:flex; align-items:center; gap:16px; margin-bottom:24px;">
-        <a href="{{ urls.list }}"
-        style="color:#6c757d;text-decoration:none;font-size:14px;">
+        <a href="{{ urls.list }}" style="color:#6c757d;text-decoration:none;font-size:14px;">
             ← Назад к пользователям
         </a>
     </div>
@@ -21,13 +20,12 @@
                 </div>
             </div>
 
-            <a href="{{ urls.toggle }}"
-               style="padding:8px 18px; border-radius:8px; font-size:14px; text-decoration:none; color:#fff;
+            <a href="{{ urls.toggle }}" style="padding:8px 18px; border-radius:8px; font-size:14px; text-decoration:none; color:#fff;
                       background:{% if user.is_active %}#dc3545{% else %}#198754{% endif %};">
                 {% if user.is_active %}
-                    Отключить пользователя ✗
+                Отключить пользователя ✗
                 {% else %}
-                    Включить пользователя ✓
+                Включить пользователя ✓
                 {% endif %}
             </a>
         </div>
@@ -56,7 +54,8 @@
             <span style="font-weight:700; color:#198754;">{{ percent }}%</span>
         </div>
         <div class="progress" style="height:22px; border-radius:10px; background:#e9ecef;">
-            <div class="progress-bar bg-success" style="width:{{ percent }}%; border-radius:10px; font-size:13px; font-weight:600;">
+            <div class="progress-bar bg-success"
+                style="width:{{ percent }}%; border-radius:10px; font-size:13px; font-weight:600;">
                 {{ percent }}%
             </div>
         </div>
@@ -82,13 +81,18 @@
         <h5 style="margin-bottom:16px;">🕒 Последние назначенные задачи</h5>
 
         {% if tasks %}
-        <table style="width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06);">
+        <table
+            style="width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06);">
             <thead>
                 <tr>
-                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">ID</th>
-                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">Название</th>
-                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">Статус</th>
-                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">Дедлайн</th>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">ID
+                    </th>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">
+                        Название</th>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">
+                        Статус</th>
+                    <th style="background:#343a40; color:#fff; padding:10px 12px; text-align:left; font-weight:500;">
+                        Дедлайн</th>
                 </tr>
             </thead>
             <tbody>{% for t in tasks %}
@@ -96,20 +100,34 @@
                     <td style="padding:8px 12px;">{{t.id}}</td>
                     <td style="padding:8px 12px;">
                         <a href="{{task_urls.details }}{{t.id}}"
-                           style="color:#0d6efd;text-decoration:none;">{{t.title}}</a>
+                            style="color:#0d6efd;text-decoration:none;">{{t.title}}</a>
                     </td>
                     <td>
-                        {% if t.is_done %}
-                        <span style="background:#198754;color:#fff;padding:2px 8px;'
-                        'border-radius:10px;font-size:11px;">✓ Выполнено</span>
+                        {% if t.status == 'done' %}
+                        <span style="background:#198754;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">✓
+                            Готово</span>
+                        {% elif t.status == 'in_progress' %}
+                        <span
+                            style="background:#0d6efd;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">⚙️
+                            В работе</span>
+                        {% elif t.status == 'review' %}
+                        <span
+                            style="background:#6f42c1;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">👁
+                            На проверке</span>
+                        {% elif t.status == 'todo' %}
+                        <span
+                            style="background:#ffc107;color:#000;padding:2px 8px;border-radius:10px;font-size:11px;">📋
+                            Новая</span>
                         {% else %}
-                        <span style="background:#ffc107;color:#000;padding:2px 8px;'
-                        'border-radius:10px;font-size:11px;">⏳ В работе</span>
+                        <span
+                            style="background:#6c757d;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">📥
+                            Очередь</span>
                         {% endif %}
                     </td>
-                    <td>{{ t.deadline.strftime("%d.%m.%Y") if t.deadline else "—" }}</td>
+                    <td>{{ t.deadline if t.deadline else "—" }}</td>
                 </tr>
-                {% endfor %}</tbody>
+                {% endfor %}
+            </tbody>
         </table>
         {% else %}
         <p style="color:#6c757d;">Нет назначенных задач</p>

@@ -33,6 +33,7 @@ FIELD_LABELS = {
     "title": "Заголовок",
     "description": "Описание",
     "is_done": "Статус",
+    "status": "Статус",
     "deadline": "Дедлайн",
     "user_id": "Исполнитель",
     "group_id": "Группа",

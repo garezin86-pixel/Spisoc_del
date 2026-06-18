@@ -6,7 +6,7 @@ from src.repositories.abstract import (
     AbstractUserRepository,
     AbstractGroupRepository,
 )
-from src.models.task import SpisokModel
+from src.models.task import SpisokModel, TaskStatus
 from src.models.user import UserModel, UserRole
 from src.schemas.task import FilterUserGroup, SpisokAddSchema
 
@@ -103,12 +103,12 @@ class TaskService:
         task = SpisokModel(
             title=data.title,
             description=data.description,
-            is_done=data.is_done,
             user_id=data.user_id,
             group_id=data.group_id,
             deadline=deadline,
             author_id=current_user.id,
             project_id=data.project_id,
+            status=data.status,
         )
         task = await self.task_repo.create(task)
         await logger.ainfo(
@@ -259,10 +259,10 @@ class TaskService:
             no_access(NO_ACCESS)
 
         update_data = data.model_dump(exclude_unset=True)
-        was_done = task.is_done
+        was_status = task.status
 
         # Простые поля — обновляем через setattr (легко расширять)
-        simple_fields = {"title", "description", "is_done", "priority"}
+        simple_fields = {"title", "description", "priority", "status"}
         for field in simple_fields:
             if field in update_data:
                 setattr(task, field, update_data[field])
@@ -287,7 +287,11 @@ class TaskService:
             task_id=updated_task.id,
             changed_fields=list(update_data.keys()),
         )
-        if "is_done" in update_data and update_data["is_done"] and not was_done:
+        if (
+            "status" in update_data
+            and update_data["status"] == TaskStatus.done
+            and was_status != TaskStatus.done
+        ):
             tasks_completed.inc()
             await self._notify_task_done(updated_task, current_user)
         return updated_task
@@ -422,10 +426,13 @@ class TaskService:
                 {
                     "id": t.id,
                     "title": t.title,
-                    "is_done": t.is_done,
+                    # "is_done": t.is_done,
+                    "status": t.status.value if t.status else "backlog",  # ← добавить
                     "priority": t.priority,
-                    "deadline": str(t.deadline) if t.deadline else None,
-                    "created_at": str(t.created_at) if t.created_at else None,
+                    "deadline": t.deadline.strftime("%d.%m.%Y") if t.deadline else None,
+                    "created_at": (
+                        t.created_at.strftime("%d.%m.%Y") if t.created_at else None
+                    ),
                 }
                 for t in recent_tasks
             ],
@@ -480,3 +487,75 @@ class TaskService:
             limit=limit,
             **filters,
         )
+
+    # ── Канбан ────────────────────────────────────────────────────────────────
+
+    async def get_kanban(
+        self,
+        current_user: UserModel,
+        project_id: int | None = None,
+        only_mine: bool = False,
+        only_author: bool = False,
+    ) -> dict:
+        """Возвращает задачи, сгруппированные по статусам для канбан-доски.
+
+        Один запрос к БД вместо пяти — важно для производительности.
+        Если project_id задан — только задачи этого проекта.
+        """
+        tasks = await self.task_repo.get_kanban_tasks(
+            user_id=current_user.id,
+            project_id=project_id,
+            only_mine=only_mine,
+            only_author=only_author,
+        )
+        grouped: dict[str, list] = {
+            "backlog": [],
+            "todo": [],
+            "in_progress": [],
+            "review": [],
+            "done": [],
+        }
+        for task in tasks:
+            key = task.status.value if task.status else "todo"
+            if key in grouped:
+                grouped[key].append(task)
+        return grouped
+
+    async def update_task_status(
+        self,
+        task_id: int,
+        new_status: TaskStatus,
+        current_user: UserModel,
+    ) -> SpisokModel:
+        """Атомарная смена статуса задачи (перемещение между колонками канбана).
+
+        Отдельный эндпоинт от update_task — потому что это именно
+        канбан-операция, не частичное редактирование задачи.
+        Синхронизирует is_done при переходе в done/из done.
+        """
+        task = await self.task_repo.get_by_id(task_id)
+        if not task:
+            task_not_found(TASK_NOT_FOUND)
+        if not await can_edit_task(task, current_user, self.group_repo):
+            await logger.awarning("no_access", user_id=current_user.id, task_id=task_id)
+            no_access(NO_ACCESS)
+
+        old_status = task.status
+        task.status = new_status
+
+        if self.session is not None:
+            self.session.info["audit_user_id"] = current_user.id  # ← добавить
+
+        updated_task = await self.task_repo.update(task)
+
+        await logger.ainfo(
+            "task_status_changed",
+            task_id=task_id,
+            from_status=old_status,
+            to_status=new_status,
+            user_id=current_user.id,
+        )
+        if new_status == TaskStatus.done and old_status != TaskStatus.done:
+            tasks_completed.inc()
+            await self._notify_task_done(updated_task, current_user)
+        return updated_task

@@ -9,14 +9,14 @@ from zoneinfo import ZoneInfo
 from typing import Any, List, Tuple, Optional
 from sqlalchemy import Select, select
 from sqlalchemy.orm import selectinload
-from sqladmin.filters import BooleanFilter
 from sqladmin.filters import ForeignKeyFilter
 from sqlalchemy.orm import object_session
 from wtforms import SelectField
 from src.admin.utils.url_helpers import URLS
 from src.core.exceptions import incorrect_valueerror
 from src.models import UserModel, SpisokModel, GroupModel
-from src.models.task import TaskPriority
+from src.models.project import ProjectModel
+from src.models.task import TaskPriority, TaskStatus
 from src.services.notifications import (
     notify_comment_added,
     notify_task_assigned,
@@ -44,7 +44,7 @@ _ACTION_ICONS = {
 _FIELD_LABELS = {
     "title": "Название",
     "description": "Описание",
-    "is_done": "Выполнено",
+    "status": "Статус",
     "user_id": "Исполнитель (ID)",
     "group_id": "Группа (ID)",
     "deadline": "Дедлайн",
@@ -57,6 +57,14 @@ PRIORITY_LABELS = {
     "medium": "🔵 Средний",
     "high": "🟠 Высокий",
     "critical": "🔴 Критический",
+}
+
+STATUS_LABELS = {
+    "backlog": "Очередь",
+    "todo": "Новые",
+    "in_progress": "В работе",
+    "review": "На проверке",
+    "done": "Готово",
 }
 
 
@@ -188,6 +196,34 @@ class AssignmentFilter:
         return query
 
 
+class StatusFilter:
+    has_operator = False
+    title = "Статус"
+    parameter_name = "status"
+
+    def __init__(self, column=None, title=None, parameter_name=None):
+        self.column = column or SpisokModel.status
+
+        if title:
+            self.title = title
+        if parameter_name:
+            self.parameter_name = parameter_name
+
+    async def lookups(self, request, model, run_query):
+        return [
+            ("backlog", "Очередь"),
+            ("todo", "Новые"),
+            ("in_progress", "В работе"),
+            ("review", "Проверка"),
+            ("done", "Готово"),
+        ]
+
+    async def get_filtered_query(self, query, value, model):
+        if value == "all":
+            return query
+        return query.filter(model.status == value)
+
+
 class TaskAdmin(ModelView, model=SpisokModel):
     identity = "spisok-model"
     name = "Задача"
@@ -199,16 +235,18 @@ class TaskAdmin(ModelView, model=SpisokModel):
     column_list = [
         SpisokModel.id,
         SpisokModel.title,
-        SpisokModel.is_done,
         SpisokModel.author_id,
+        SpisokModel.status,
+        SpisokModel.project_id,
         SpisokModel.user_id,
         SpisokModel.group_id,
         SpisokModel.priority,
         SpisokModel.deadline,
     ]
-    column_searchable_list = [SpisokModel.title, SpisokModel.is_done]
+    column_searchable_list = [SpisokModel.title, SpisokModel.status]
 
     column_filters = [
+        StatusFilter(),
         AssignmentFilter(),
         ForeignKeyFilter(
             SpisokModel.user_id, UserModel.username, title="Назначено на пользователя"
@@ -216,12 +254,14 @@ class TaskAdmin(ModelView, model=SpisokModel):
         ForeignKeyFilter(
             SpisokModel.group_id, GroupModel.name, title="Назначено на группу"
         ),
-        BooleanFilter(column=SpisokModel.is_done),
+        ForeignKeyFilter(
+            SpisokModel.project_id, ProjectModel.name, title="Назначено на проект"
+        ),
     ]
 
     column_sortable_list = [
         SpisokModel.title,
-        SpisokModel.is_done,
+        SpisokModel.status,
         SpisokModel.author_id,
         SpisokModel.user_id,
         SpisokModel.group_id,
@@ -245,7 +285,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.id,
         SpisokModel.title,
         SpisokModel.description,
-        SpisokModel.is_done,
+        SpisokModel.status,
         SpisokModel.user,
         SpisokModel.group,
         SpisokModel.project,
@@ -263,7 +303,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         "id": "ID",
         "title": "Название",
         "description": "Описание",
-        "is_done": "Выполнено",
+        "status": "Статус",
         "user": "Пользователь",
         "group": "Группа",
         "project": "Проект",
@@ -285,6 +325,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.created_at: lambda m, a: to_local(m.created_at),
         SpisokModel.updated_at: lambda m, a: to_local(m.updated_at),
         "priority": lambda m, a: PRIORITY_LABELS.get(m.priority, m.priority),
+        "status": lambda m, a: STATUS_LABELS.get(m.status, m.status),
     }
 
     column_formatters_detail = {
@@ -303,10 +344,12 @@ class TaskAdmin(ModelView, model=SpisokModel):
         # Записи audit_log подгружаются отдельным синхронным запросом через
         # run_sync, чтобы не ломать синхронный интерфейс sqladmin formatters.
         "priority": column_formatters["priority"],
+        "status": column_formatters["status"],
     }
 
     form_overrides = {
         "priority": SelectField,
+        "status": SelectField,
     }
 
     form_args = {
@@ -318,6 +361,11 @@ class TaskAdmin(ModelView, model=SpisokModel):
             "description": "Выберите приоритет задачи",
             "choices": list(PRIORITY_LABELS.items()),
             "coerce": lambda x: TaskPriority(x),
+        },
+        "status": {
+            "description": "Выберите статус задачи",
+            "choices": list(STATUS_LABELS.items()),
+            "coerce": lambda x: TaskStatus(x),
         },
     }
 
@@ -395,7 +443,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
                 "title",
                 "description",
                 "deadline",
-                "is_done",
+                "status",
                 "user_id",
                 "group_id",
             ]

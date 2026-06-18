@@ -7,10 +7,11 @@ from aiogram.fsm.context import FSMContext
 
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
-from src.schemas.task import SpisokUpdate
+from src.models.task import TaskStatus
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.repositories.groups_repository import GroupRepository
+from src.schemas.task import SpisokUpdate
 from src.services.task_service import TaskService
 from src.services.notifications import notify_task_updated
 from datetime import datetime, timezone, timedelta
@@ -51,8 +52,8 @@ async def notif_done_callback(callback: CallbackQuery):
             return
 
         try:
-            await make_task_service(uow).update_task(
-                task_id, SpisokUpdate(is_done=True), user
+            await make_task_service(uow).update_task_status(
+                task_id, TaskStatus.done, user
             )
             await uow.commit()
         except Exception as e:
@@ -60,7 +61,7 @@ async def notif_done_callback(callback: CallbackQuery):
             return
 
     await notify_task_updated(
-        task_id, {"is_done": True}, editor_telegram_id=callback.from_user.id
+        task_id, {"status": "done"}, editor_telegram_id=callback.from_user.id
     )
 
     if isinstance(callback.message, Message):

@@ -77,7 +77,7 @@ class ProjectSchema(BaseModel):
             ),
             group_id=project.group_id,
             task_count=len(tasks),
-            done_count=sum(1 for t in tasks if t.is_done),
+            done_count=sum(1 for t in tasks if t.status and t.status.value == "done"),
             created_at=_fmt_dt(project.created_at),
             updated_at=_fmt_dt(project.updated_at),
         )
