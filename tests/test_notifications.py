@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.task import SpisokModel
+from src.models.task import SpisokModel, TaskStatus
 from src.models.comment import CommentModel
 from src.models.notification_settings import (
     NotificationSettingsModel as NotificationSettings,
@@ -119,7 +119,10 @@ async def create_task_with_users(session, same_user=False):
         await create_notification_settings(session, user.id)
 
     task = SpisokModel(
-        title="Тестовая задача", author_id=author.id, user_id=user.id, is_done=False
+        title="Тестовая задача",
+        author_id=author.id,
+        user_id=user.id,
+        status=TaskStatus.todo,
     )
     session.add(task)
     await session.commit()
@@ -250,9 +253,13 @@ class TestNotifyTaskUpdated:
     async def test_message_contains_status(self, session, mock_bot):
         task, _, _ = await create_task_with_users(session)
 
-        await notify_task_updated(task.id, changed_fields={"is_done": True})
+        await notify_task_updated(
+            task.id,
+            changed_fields={"status": TaskStatus.done},
+        )
 
         assert mock_bot.send_message.called
+
         text = mock_bot.send_message.call_args.kwargs["text"]
         assert "Выполнено" in text
 

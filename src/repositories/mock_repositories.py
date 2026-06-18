@@ -7,7 +7,7 @@ from collections import namedtuple
 
 from src.models.comment import CommentModel
 from src.models.group import GroupModel
-from src.models.task import SpisokModel
+from src.models.task import SpisokModel, TaskStatus
 from src.models.user import UserModel
 from src.repositories.abstract.base_user_repository import AbstractUserRepository
 from src.repositories.abstract.base_task_repository import AbstractTaskRepository
@@ -93,7 +93,9 @@ class MockUserRepository(AbstractUserRepository):
 # Task
 # ---------------------------------------------------------------------------
 
-_TaskStats = namedtuple("TaskStats", ["total", "done", "pending"])
+TaskStats = namedtuple(
+    "TaskStats", ["total", "done", "backlog", "todo", "in_progress", "review"]
+)
 _CreatedStats = namedtuple("CreatedStats", ["total", "done"])
 
 
@@ -143,20 +145,29 @@ class MockTaskRepository(AbstractTaskRepository):
         return [t for t in self._tasks if t.user_id == user_id]
 
     async def get_user_tasks_by_status(
-        self, user_id: int, done: bool
-    ) -> list[SpisokModel]:
-        return [
-            t
-            for t in self._tasks
-            if t.user_id == user_id and (t.status.value == "done") == done
-        ]
+        self,
+        *,
+        user_id: int,
+        status: TaskStatus | None = None,
+    ):
+        tasks = [t for t in self._tasks if t.user_id == user_id]
+
+        if status is not None:
+            tasks = [t for t in tasks if t.status == status]
+
+        return tasks
 
     # Остальные методы...
     async def get_assigned_tasks(self, pk: int):
-        user_tasks = [t for t in self._tasks if t.user_id == pk]
-        done = sum(1 for t in user_tasks if t.status and t.status.value == "done")
-        return _TaskStats(
-            total=len(user_tasks), done=done, pending=len(user_tasks) - done
+        tasks = [t for t in self._tasks if t.user_id == pk]
+
+        return TaskStats(
+            total=len(tasks),
+            done=len([t for t in tasks if t.status == TaskStatus.done]),
+            backlog=len([t for t in tasks if t.status == TaskStatus.backlog]),
+            todo=len([t for t in tasks if t.status == TaskStatus.todo]),
+            in_progress=len([t for t in tasks if t.status == TaskStatus.in_progress]),
+            review=len([t for t in tasks if t.status == TaskStatus.review]),
         )
 
     async def get_created_tasks_stats(self, pk: int):

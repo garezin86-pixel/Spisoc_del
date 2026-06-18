@@ -77,9 +77,9 @@ class TestTaskNotifications:
         client, _ = auth_client
         create_resp = await client.post("/tasks/", json={"title": "Выполнить"})
         task_id = create_resp.json()["id"]
-        resp = await client.patch(f"/tasks/{task_id}", json={"is_done": True})
+        resp = await client.patch(f"/tasks/{task_id}", json={"status": "done"})
         assert resp.status_code == 200
-        assert resp.json()["is_done"] is True
+        assert resp.json()["status"] == "done"
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -26,7 +26,7 @@ class TestTasksCreate:
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Написать тесты"
-        assert data["is_done"] is False
+        assert data["status"] == "todo"
 
     @pytest.mark.asyncio
     async def test_create_task_without_auth_returns_403(self, client):
@@ -106,13 +106,17 @@ class TestTasksGet:
     @pytest.mark.asyncio
     async def test_filter_tasks_by_done(self, auth_client):
         client, _ = auth_client
-        await client.post("/tasks/", json={"title": "Done task", "is_done": True})
-        await client.post("/tasks/", json={"title": "Pending task", "is_done": False})
+        await client.post("/tasks/", json={"title": "Done task", "status": "done"})
+        await client.post("/tasks/", json={"title": "Todo task", "status": "todo"})
+        await client.post(
+            "/tasks/", json={"title": "In progress task", "status": "in_progress"}
+        )
+        await client.post("/tasks/", json={"title": "Review task", "status": "review"})
 
-        resp = await client.get("/tasks/filter?is_done=true")
+        resp = await client.get("/tasks/filter?status=done")
         assert resp.status_code == 200
         data = resp.json()
-        assert all(t["is_done"] is True for t in data["items"])  # ← data["items"]
+        assert all(t["status"] == "done" for t in data["items"])  # ← data["items"]
 
     @pytest.mark.asyncio
     async def test_filter_tasks_limit(self, auth_client):
@@ -151,9 +155,9 @@ class TestTasksUpdate:
         client, _ = auth_client
         create_resp = await client.post("/tasks/", json={"title": "Task to complete"})
         task_id = create_resp.json()["id"]
-        resp = await client.patch(f"/tasks/{task_id}", json={"is_done": True})
+        resp = await client.patch(f"/tasks/{task_id}", json={"status": "done"})
         assert resp.status_code == 200
-        assert resp.json()["is_done"] is True
+        assert resp.json()["status"] == "done"
 
     @pytest.mark.asyncio
     async def test_other_user_cannot_update_task(self, client, engine):
