@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from src.models.task import SpisokModel
+from src.models.task import SpisokModel, TaskStatus
 from src.models.comment import CommentModel
 
 
@@ -55,7 +55,10 @@ class AbstractTaskRepository(ABC):
 
     @abstractmethod
     async def get_user_tasks_by_status(
-        self, user_id: int, done: bool
+        self,
+        *,
+        user_id: int,
+        status: TaskStatus | None = None,
     ) -> list[SpisokModel]:
         raise NotImplementedError
 

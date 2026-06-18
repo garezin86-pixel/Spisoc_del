@@ -11,7 +11,6 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-
 # revision identifiers, used by Alembic.
 revision: str = "4c9b58a062c6"
 down_revision: Union[str, Sequence[str], None] = "add_task_status_kanban"

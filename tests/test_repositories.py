@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from src.models.user import UserModel
-from src.models.task import SpisokModel
+from src.models.task import SpisokModel, TaskStatus
 from src.models.group import GroupModel
 from src.repositories.mock_repositories import (
     MockUserRepository,
@@ -34,16 +34,21 @@ def make_user(
 
 
 def make_task(
-    id: int, user_id: int, author_id: int, is_done: bool = False
+    id: int,
+    user_id: int,
+    author_id: int,
+    status: TaskStatus = TaskStatus.todo,
 ) -> SpisokModel:
     t = MagicMock(spec=SpisokModel)
     t.id = id
     t.user_id = user_id
     t.author_id = author_id
-    t.is_done = is_done
+    t.status = status
+
     from datetime import datetime
 
     t.created_at = datetime.now()
+
     return t
 
 
@@ -69,6 +74,7 @@ async def test_user_create_and_get():
     assert created.id == 1
 
     fetched = await repo.get_by_id(1)
+    assert fetched is not None
     assert fetched.username == "alice"
 
 
@@ -132,32 +138,41 @@ async def test_task_create_and_delete():
 @pytest.mark.asyncio
 async def test_get_user_tasks_by_status():
     tasks = [
-        make_task(1, user_id=1, author_id=2, is_done=True),
-        make_task(2, user_id=1, author_id=2, is_done=False),
-        make_task(3, user_id=1, author_id=2, is_done=False),
+        make_task(1, user_id=1, author_id=2, status=TaskStatus.done),
+        make_task(2, user_id=1, author_id=2, status=TaskStatus.todo),
+        make_task(3, user_id=1, author_id=2, status=TaskStatus.todo),
     ]
+
     repo = MockTaskRepository(tasks=tasks)
 
-    pending = await repo.get_user_tasks_by_status(user_id=1, is_done=False)
-    assert len(pending) == 2
+    todo = await repo.get_user_tasks_by_status(
+        user_id=1,
+        status=TaskStatus.todo,
+    )
+    assert len(todo) == 2
 
-    done = await repo.get_user_tasks_by_status(user_id=1, is_done=True)
+    done = await repo.get_user_tasks_by_status(
+        user_id=1,
+        status=TaskStatus.done,
+    )
     assert len(done) == 1
 
 
 @pytest.mark.asyncio
 async def test_assigned_tasks_stats():
     tasks = [
-        make_task(1, user_id=5, author_id=1, is_done=True),
-        make_task(2, user_id=5, author_id=1, is_done=False),
-        make_task(3, user_id=5, author_id=1, is_done=False),
+        make_task(1, user_id=5, author_id=1, status=TaskStatus.done),
+        make_task(2, user_id=5, author_id=1, status=TaskStatus.todo),
+        make_task(3, user_id=5, author_id=1, status=TaskStatus.todo),
     ]
+
     repo = MockTaskRepository(tasks=tasks)
 
     stats = await repo.get_assigned_tasks(pk=5)
+
     assert stats.total == 3
     assert stats.done == 1
-    assert stats.pending == 2
+    assert stats.todo == 2
 
 
 # ---------------------------------------------------------------------------
@@ -219,8 +234,8 @@ async def test_stats():
         make_user(3, "u3", role="user", is_active=False),
     ]
     tasks = [
-        make_task(1, 1, 2, is_done=True),
-        make_task(2, 1, 2, is_done=False),
+        make_task(1, 1, 2, status=TaskStatus.done),
+        make_task(2, 1, 2, status=TaskStatus.todo),
     ]
     groups = [make_group(1, "g1"), make_group(2, "g2")]
 
