@@ -156,13 +156,23 @@ async def done_tasks(message: Message):
         if not user:
             await message.answer("❌ У вас нет доступа.")
             return
-        tasks = await uow.tasks.get_user_tasks_by_status(user.id, done=True)
+        tasks = await uow.tasks.get_user_tasks_by_status(
+            user_id=user.id, status=TaskStatus.done
+        )
         if not tasks:
             await message.answer("📭 Нет выполненных задач.")
             return
         for task in tasks:
             await message.answer(
-                f"✅ <b>{task.title}</b>\n📅 {to_local(task.deadline)}\n🆔 ID: {task.id}",
+                f"✅ <b>{task.title}</b>\n"
+                f"🎯 {'🔴' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'critical'
+                      else '🟠' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'high'
+                      else '🔵' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'medium'
+                      else '⚪'} Приоритет\n"
+                f"📅 {to_local(task.deadline)}\n🆔 ID: {task.id}",
                 parse_mode="HTML",
             )
 
@@ -175,13 +185,23 @@ async def pending_tasks(message: Message):
         if not user:
             await message.answer("❌ У вас нет доступа.")
             return
-        tasks = await uow.tasks.get_user_tasks_by_status(user.id, done=False)
+        tasks = await uow.tasks.get_user_tasks_by_status(
+            user_id=user.id, exclude_status=TaskStatus.done
+        )
         if not tasks:
             await message.answer("📭 Нет невыполненных задач.")
             return
         for task in tasks:
             await message.answer(
-                f"⏳ <b>{task.title}</b>\n📅 {to_local(task.deadline)}\n🆔 ID: {task.id}",
+                f"⏳ <b>{task.title}</b>\n"
+                f"🎯 {'🔴' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'critical'
+                      else '🟠' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'high'
+                      else '🔵' if hasattr(task, 'priority')
+                      and task.priority and task.priority.value == 'medium'
+                      else '⚪'} Приоритет\n"
+                f"📅 {to_local(task.deadline)}\n🆔 ID: {task.id}",
                 parse_mode="HTML",
             )
 

@@ -133,18 +133,24 @@ class TaskRepository(AbstractTaskRepository):
         return list(result.scalars().all())
 
     async def get_user_tasks_by_status(
-        self, user_id: int, done: bool
+        self,
+        *,
+        user_id: int,
+        status: TaskStatus | None = None,
+        exclude_status: TaskStatus | None = None,
     ) -> list[SpisokModel]:
-        status_filter = (
-            SpisokModel.status == TaskStatus.done
-            if done
-            else SpisokModel.status != TaskStatus.done
-        )
+        query = select(SpisokModel).where(SpisokModel.user_id == user_id)
+
+        if status is not None:
+            query = query.where(SpisokModel.status == status)
+
+        if exclude_status is not None:
+            query = query.where(SpisokModel.status != exclude_status)
+
         result = await self.session.execute(
-            select(SpisokModel)
-            .where(SpisokModel.user_id == user_id, status_filter)
-            .order_by(SpisokModel.created_at.desc())
+            query.order_by(SpisokModel.created_at.desc())
         )
+
         return list(result.scalars().all())
 
     async def filter_tasks_paginated_total(self, base_query) -> int:
