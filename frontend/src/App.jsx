@@ -106,6 +106,7 @@ const ICONS = {
     userMinus: "M14 14.252V16h-4v2H2v-2c0-2.21 3.582-4 8-4 1.506 0 2.919.281 4 .752zM12 13c-3.315 0-6-2.685-6-6s2.685-6 6-6 6 2.685 6 6-2.685 6-6 6zm7 3v-3h2v3h3v2h-3v3h-2v-3h-3v-2h3z",
     shield: "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z",
     hardDel: "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z",
+    kanban: "M3 3h5v18H3zm6.5 0H15v8H9.5zm0 10H15v8H9.5zM17 3h4v11h-4zm0 13h4v5h-4z",
 };
 
 // ─── Pagination ───────────────────────────────────────────
@@ -743,6 +744,358 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
 }
 
 
+// ─── KanbanTab ────────────────────────────────────────────
+const KANBAN_COLUMNS = [
+    { key: "backlog", label: "Очередь", color: "#6b7280" },
+    { key: "todo", label: "Новые", color: "#7c6af0" },
+    { key: "in_progress", label: "В работе", color: "#f59e0b" },
+    { key: "review", label: "На проверке", color: "#3b82f6" },
+    { key: "done", label: "Готово", color: "#22c55e" },
+];
+
+const PRIORITY_COLORS = {
+    low: { color: "#6b7280", bg: "rgba(107,114,128,0.12)" },
+    medium: { color: "#7c6af0", bg: "rgba(124,106,240,0.12)" },
+    high: { color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
+    critical: { color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
+};
+const PRIORITY_LABELS = { low: "Низкий", medium: "Средний", high: "Высокий", critical: "Критический" };
+const STATUS_LABELS = { backlog: "Очередь", todo: "Новые", in_progress: "В работе", review: "На проверке", done: "Готово" };
+
+function KanbanTab({ token }) {
+    const [board, setBoard] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [projectId, setProjectId] = useState("");
+    const [onlyMine, setOnlyMine] = useState(false);
+    const [projects, setProjects] = useState([]);
+    const [dragging, setDragging] = useState(null); // { taskId, fromCol }
+    const [dragOver, setDragOver] = useState(null);
+    const [movingId, setMovingId] = useState(null);
+
+    const API = (path) => `/api${path}`;
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+
+    const loadBoard = useCallback(async (pid, mine) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            if (pid) params.set("project_id", pid);
+            if (mine) params.set("only_mine", "true");
+            const r = await fetch(API(`/tasks/kanban?${params}`), { headers });
+            if (!r.ok) throw new Error(await r.text());
+            setBoard(await r.json());
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [token]);
+
+    useEffect(() => {
+        // Загружаем список проектов для фильтра
+        fetch(API("/projects/"), { headers })
+            .then(r => r.ok ? r.json() : [])
+            .then(data => setProjects(Array.isArray(data) ? data : (data.items ?? [])))
+            .catch(() => { });
+    }, [token]);
+
+    useEffect(() => { loadBoard(projectId, onlyMine); }, [projectId, onlyMine]);
+
+    // ── Drag & Drop ──────────────────────────────────────────
+    const onDragStart = (e, taskId, fromCol) => {
+        setDragging({ taskId, fromCol });
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("taskId", taskId);
+    };
+
+    const onDragOver = (e, col) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDragOver(col);
+    };
+
+    const onDrop = async (e, toCol) => {
+        e.preventDefault();
+        setDragOver(null);
+        if (!dragging || dragging.fromCol === toCol) { setDragging(null); return; }
+        const { taskId, fromCol } = dragging;
+        setDragging(null);
+
+        // Оптимистичное обновление
+        setBoard(prev => {
+            const task = prev[fromCol].find(t => t.id === taskId);
+            if (!task) return prev;
+            return {
+                ...prev,
+                [fromCol]: prev[fromCol].filter(t => t.id !== taskId),
+                [toCol]: [{ ...task, status: toCol }, ...prev[toCol]],
+            };
+        });
+
+        setMovingId(taskId);
+        try {
+            const r = await fetch(API(`/tasks/${taskId}/status`), {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({ status: toCol }),
+            });
+            if (!r.ok) throw new Error();
+        } catch {
+            // Откат при ошибке
+            loadBoard(projectId, onlyMine);
+        } finally {
+            setMovingId(null);
+        }
+    };
+
+    const onDragEnd = () => { setDragging(null); setDragOver(null); };
+
+    // ── Render ───────────────────────────────────────────────
+    if (loading) return (
+        <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
+            Загрузка канбан-доски…
+        </div>
+    );
+    if (error) return (
+        <div style={{ padding: 40, textAlign: "center", color: "var(--red)" }}>
+            Ошибка: {error}
+        </div>
+    );
+
+    const totalTasks = board ? Object.values(board).reduce((s, arr) => s + arr.length, 0) : 0;
+
+    return (
+        <div style={{ padding: "16px 16px 32px" }}>
+            {/* Фильтры */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+                <select
+                    className="form-control"
+                    style={{ minWidth: 180, maxWidth: 260 }}
+                    value={projectId}
+                    onChange={e => setProjectId(e.target.value)}
+                >
+                    <option value="">Все задачи</option>
+                    {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "var(--text-dim)", fontSize: 13 }}>
+                    <input
+                        type="checkbox"
+                        checked={onlyMine}
+                        onChange={e => setOnlyMine(e.target.checked)}
+                        style={{ accentColor: "var(--accent)" }}
+                    />
+                    Только мои
+                </label>
+                <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => loadBoard(projectId, onlyMine)}
+                    style={{ marginLeft: "auto" }}
+                >
+                    <Icon d={ICONS.refresh} /> Обновить
+                </button>
+                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                    {totalTasks} задач
+                </span>
+            </div>
+
+            {/* Доска */}
+            <div style={{
+                display: "flex",
+                gap: 12,
+                overflowX: "auto",
+                minHeight: 520,
+                paddingBottom: 8,
+                alignItems: "flex-start",
+            }}>
+                {KANBAN_COLUMNS.map(col => {
+                    const tasks = board?.[col.key] ?? [];
+                    const isOver = dragOver === col.key;
+                    return (
+                        <div
+                            key={col.key}
+                            onDragOver={e => onDragOver(e, col.key)}
+                            onDrop={e => onDrop(e, col.key)}
+                            onDragLeave={() => setDragOver(null)}
+                            style={{
+                                minWidth: 260,
+                                maxWidth: 300,
+                                flexShrink: 0,
+                                background: isOver
+                                    ? "rgba(124,106,240,0.08)"
+                                    : "var(--surface)",
+                                border: `1.5px solid ${isOver ? "var(--accent)" : "var(--border)"}`,
+                                borderRadius: "var(--radius)",
+                                transition: "border-color 0.15s, background 0.15s",
+                                overflow: "hidden",
+                            }}
+                        >
+                            {/* Шапка колонки */}
+                            <div style={{
+                                padding: "12px 14px 10px",
+                                borderBottom: "1px solid var(--border)",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                            }}>
+                                <span style={{
+                                    display: "inline-block",
+                                    width: 10, height: 10,
+                                    borderRadius: "50%",
+                                    background: col.color,
+                                    flexShrink: 0,
+                                }} />
+                                <span style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 13 }}>
+                                    {col.label}
+                                </span>
+                                <span style={{
+                                    marginLeft: "auto",
+                                    background: "var(--surface2)",
+                                    color: "var(--text-muted)",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    borderRadius: 20,
+                                    padding: "1px 8px",
+                                }}>
+                                    {tasks.length}
+                                </span>
+                            </div>
+
+                            {/* Карточки */}
+                            <div style={{ padding: "8px 8px", display: "flex", flexDirection: "column", gap: 7, minHeight: 60 }}>
+                                {tasks.length === 0 ? (
+                                    <div style={{
+                                        textAlign: "center",
+                                        color: "var(--text-muted)",
+                                        fontSize: 12,
+                                        padding: "24px 0",
+                                        opacity: isOver ? 0.3 : 0.6,
+                                    }}>
+                                        {isOver ? "Отпустите сюда" : "Пусто"}
+                                    </div>
+                                ) : tasks.map(task => (
+                                    <KanbanCard
+                                        key={task.id}
+                                        task={task}
+                                        col={col.key}
+                                        onDragStart={onDragStart}
+                                        onDragEnd={onDragEnd}
+                                        isMoving={movingId === task.id}
+                                        isDragging={dragging?.taskId === task.id}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+function KanbanCard({ task, col, onDragStart, onDragEnd, isMoving, isDragging }) {
+    const pri = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.medium;
+    const isOverdue = task.deadline && !task.is_done && new Date(task.deadline) < new Date();
+
+    return (
+        <div
+            draggable
+            onDragStart={e => onDragStart(e, task.id, col)}
+            onDragEnd={onDragEnd}
+            style={{
+                background: "var(--surface2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 12px",
+                cursor: isDragging ? "grabbing" : "grab",
+                opacity: isDragging ? 0.4 : isMoving ? 0.7 : 1,
+                transition: "opacity 0.15s, box-shadow 0.15s",
+                boxShadow: isDragging ? "none" : "var(--shadow-sm)",
+                userSelect: "none",
+            }}
+        >
+            {/* Приоритет */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                    color: pri.color,
+                    background: pri.bg,
+                    borderRadius: 6,
+                    padding: "1px 7px",
+                    textTransform: "uppercase",
+                }}>
+                    {PRIORITY_LABELS[task.priority] ?? task.priority}
+                </span>
+                <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>
+                    #{task.id}
+                </span>
+            </div>
+
+            {/* Заголовок */}
+            <div style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--text)",
+                lineHeight: 1.4,
+                marginBottom: 6,
+                wordBreak: "break-word",
+            }}>
+                {task.title}
+            </div>
+
+            {/* Описание (обрезанное) */}
+            {task.description && (
+                <div style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    lineHeight: 1.4,
+                    marginBottom: 6,
+                    overflow: "hidden",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                }}>
+                    {task.description}
+                </div>
+            )}
+
+            {/* Дедлайн + исполнитель */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                {task.deadline && (
+                    <span style={{
+                        fontSize: 11,
+                        color: isOverdue ? "var(--red)" : "var(--text-muted)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                    }}>
+                        <Icon d={ICONS.clock} size={11} />
+                        {new Date(task.deadline).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                    </span>
+                )}
+                {task.user && (
+                    <span style={{
+                        marginLeft: "auto",
+                        fontSize: 11,
+                        color: "var(--text-dim)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                    }}>
+                        <Icon d={ICONS.user} size={11} />
+                        {task.user.username}
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ─── ProjectsTab ──────────────────────────────────────────
 function ProjectsTab({ token, canManage }) {
     const [projects, setProjects] = useState([]);
@@ -759,6 +1112,16 @@ function ProjectsTab({ token, canManage }) {
     const [showGroupPicker, setShowGroupPicker] = useState(false);
     const [settingGroup, setSettingGroup] = useState(false);
 
+    // Редактирование проекта в списке
+    const [editingProjectId, setEditingProjectId] = useState(null);
+    const [editForm, setEditForm] = useState({ name: "", description: "" });
+    const [saving, setSaving] = useState(false);
+
+    // Управление участниками в списке
+    const [membersProjectId, setMembersProjectId] = useState(null);
+    const [membersData, setMembersData] = useState({}); // { [projectId]: [{id, username}] }
+    const [addMemberUserId, setAddMemberUserId] = useState("");
+    const [memberLoading, setMemberLoading] = useState(false);
 
     // Форма создания задачи внутри проекта
     const [showTaskForm, setShowTaskForm] = useState(false);
@@ -886,6 +1249,62 @@ function ProjectsTab({ token, canManage }) {
             setShowGroupPicker(false);
         } catch (err) { setError(err.message); }
         finally { setSettingGroup(false); }
+    }
+
+    async function handleEditProject(e, projectId) {
+        e.preventDefault();
+        if (!editForm.name.trim()) return;
+        setSaving(true);
+        try {
+            await apiRequest({
+                path: `/projects/${projectId}`, method: "PATCH", token,
+                body: { name: editForm.name.trim(), description: editForm.description.trim() || null },
+            });
+            setEditingProjectId(null);
+            await loadProjects();
+        } catch (err) { setError(err.message); }
+        finally { setSaving(false); }
+    }
+
+    async function loadProjectMembers(projectId) {
+        try {
+            const data = await apiRequest({ path: `/projects/${projectId}`, token });
+            setMembersData(prev => ({ ...prev, [projectId]: data.members || [] }));
+        } catch { /* ignore */ }
+    }
+
+    async function toggleMembersPanel(projectId, currentMembers) {
+        if (membersProjectId === projectId) {
+            setMembersProjectId(null);
+            setAddMemberUserId("");
+        } else {
+            setMembersProjectId(projectId);
+            setAddMemberUserId("");
+            setMembersData(prev => ({ ...prev, [projectId]: currentMembers || [] }));
+            await loadProjectMembers(projectId);
+        }
+    }
+
+    async function handleAddMember(projectId) {
+        if (!addMemberUserId) return;
+        setMemberLoading(true);
+        try {
+            await apiRequest({ path: `/projects/${projectId}/members/${addMemberUserId}`, method: "POST", token });
+            setAddMemberUserId("");
+            await loadProjectMembers(projectId);
+            await loadProjects();
+        } catch (err) { setError(err.message); }
+        finally { setMemberLoading(false); }
+    }
+
+    async function handleRemoveMember(projectId, userId) {
+        setMemberLoading(true);
+        try {
+            await apiRequest({ path: `/projects/${projectId}/members/${userId}`, method: "DELETE", token });
+            await loadProjectMembers(projectId);
+            await loadProjects();
+        } catch (err) { setError(err.message); }
+        finally { setMemberLoading(false); }
     }
 
     const pct = (p) => p.task_count > 0 ? Math.round((p.done_count / p.task_count) * 100) : 0;
@@ -1204,41 +1623,157 @@ function ProjectsTab({ token, canManage }) {
                 <div className="empty-state"><div className="empty-icon">📁</div>Нет доступных проектов</div>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {projects.map(p => (
-                        <div key={p.id} className="card" style={{ cursor: "pointer" }}
-                            onClick={() => openProject(p.id)}>
+                    {projects.map(p => {
+                        const isEditing = editingProjectId === p.id;
+                        const isShowingMembers = membersProjectId === p.id;
+                        const currentMembers = membersData[p.id] || p.members || [];
+                        const notMember = users.filter(u => !currentMembers.some(m => m.id === u.id));
+                        return (
+                            <div key={p.id} className="card">
                             <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                                <div style={{ fontSize: 28, lineHeight: 1 }}>📁</div>
+                                    <div style={{ fontSize: 28, lineHeight: 1, cursor: "pointer" }}
+                                        onClick={() => openProject(p.id)}>📁</div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
+                                        {isEditing ? (
+                                            <form onSubmit={e => handleEditProject(e, p.id)}
+                                                style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                                                onClick={e => e.stopPropagation()}>
+                                                <input value={editForm.name}
+                                                    onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                                                    placeholder="Название проекта"
+                                                    style={{ fontWeight: 600, fontSize: 14 }}
+                                                    autoFocus />
+                                                <textarea value={editForm.description}
+                                                    onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                                                    placeholder="Описание (необязательно)" rows={2} />
+                                                <div style={{ display: "flex", gap: 6 }}>
+                                                    <button type="submit" className="btn btn-primary btn-sm"
+                                                        disabled={saving || !editForm.name.trim()}>
+                                                        <Icon d={ICONS.save} /> {saving ? "…" : "Сохранить"}
+                                                    </button>
+                                                    <button type="button" className="btn btn-ghost btn-sm"
+                                                        onClick={() => setEditingProjectId(null)}>
+                                                        <Icon d={ICONS.x} /> Отмена
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        ) : (
+                                            <>
+                                                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, cursor: "pointer" }}
+                                                    onClick={() => openProject(p.id)}>
+                                                    {p.name}
+                                                </div>
                                     {p.description && (
-                                        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 6 }}>
+                                                    <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 6, cursor: "pointer" }}
+                                                        onClick={() => openProject(p.id)}>
                                             {p.description}
                                         </div>
                                     )}
-                                    <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+                                                <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--text-muted)", marginBottom: 8, cursor: "pointer" }}
+                                                    onClick={() => openProject(p.id)}>
                                         <span>📋 {p.task_count}</span>
                                         <span style={{ color: "var(--green)" }}>✅ {p.done_count}</span>
                                         {p.members?.length > 0 && <span>👥 {p.members.length}</span>}
                                         {p.group?.name && <span>🏷 {p.group.name}</span>}
                                     </div>
-                                    <div className="progress-wrap">
+                                                <div className="progress-wrap" style={{ cursor: "pointer" }}
+                                                    onClick={() => openProject(p.id)}>
                                         <div className="progress-track">
                                             <div className="progress-fill" style={{ width: `${pct(p)}%` }} />
                                         </div>
                                         <div className="progress-caption">{pct(p)}%</div>
                                     </div>
+                                            </>
+                                        )}
                                 </div>
-                                {canManage && (
+                                    {canManage && !isEditing && (
+                                        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                                     <button className="btn btn-ghost btn-sm"
-                                        style={{ color: "var(--red)", flexShrink: 0, fontSize: 16 }}
+                                                title="Редактировать проект"
+                                                onClick={e => {
+                                                    e.stopPropagation();
+                                                    setEditForm({ name: p.name, description: p.description || "" });
+                                                    setEditingProjectId(p.id);
+                                                    setMembersProjectId(null);
+                                                }}>
+                                                <Icon d={ICONS.edit} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-sm"
+                                                title="Участники"
+                                                style={{ color: isShowingMembers ? "var(--accent-light)" : undefined }}
+                                                onClick={e => { e.stopPropagation(); toggleMembersPanel(p.id, p.members); }}>
+                                                <Icon d={ICONS.userPlus} />
+                                            </button>
+                                            <button className="btn btn-ghost btn-sm"
+                                                title="Удалить проект"
+                                                style={{ color: "var(--red)" }}
                                         onClick={e => { e.stopPropagation(); handleDelete(p.id); }}>
-                                        🗑
+                                                <Icon d={ICONS.trash} />
                                     </button>
+                                        </div>
                                 )}
                             </div>
+
+                                {/* Панель управления участниками */}
+                                {isShowingMembers && canManage && (
+                                    <div style={{
+                                        marginTop: 12, padding: 12,
+                                        background: "var(--surface2)", borderRadius: 8,
+                                        border: "1px solid var(--border)"
+                                    }}>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>
+                                            👥 Участники проекта
                         </div>
-                    ))}
+                                        {currentMembers.length === 0 ? (
+                                            <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>
+                                                Нет участников
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                                                {currentMembers.map(m => (
+                                                    <span key={m.id} style={{
+                                                        display: "inline-flex", alignItems: "center", gap: 4,
+                                                        padding: "2px 8px", borderRadius: 12,
+                                                        background: "var(--surface)", border: "1px solid var(--border)",
+                                                        fontSize: 12,
+                                                    }}>
+                                                        {m.username}
+                                                        <button
+                                                            onClick={() => handleRemoveMember(p.id, m.id)}
+                                                            disabled={memberLoading}
+                                                            style={{
+                                                                background: "none", border: "none", cursor: "pointer",
+                                                                color: "var(--red)", padding: 0, lineHeight: 1,
+                                                                display: "flex", alignItems: "center",
+                                                            }}
+                                                            title="Удалить участника">
+                                                            <Icon d={ICONS.x} size={12} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div style={{ display: "flex", gap: 6 }}>
+                                            <select value={addMemberUserId}
+                                                onChange={e => setAddMemberUserId(e.target.value)}
+                                                style={{ flex: 1 }}
+                                                disabled={memberLoading}>
+                                                <option value="">Добавить участника…</option>
+                                                {notMember.map(u => (
+                                                    <option key={u.id} value={u.id}>{u.username}</option>
+                                                ))}
+                                            </select>
+                                            <button className="btn btn-primary btn-sm"
+                                                onClick={() => handleAddMember(p.id)}
+                                                disabled={memberLoading || !addMemberUserId}>
+                                                <Icon d={ICONS.userPlus} /> {memberLoading ? "…" : "Добавить"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -1837,6 +2372,9 @@ function App() {
                         <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
                             📁 Проекты
                         </button>
+                        <button className={`tab-btn${tab === "kanban" ? " active" : ""}`} onClick={() => setTab("kanban")}>
+                            <Icon d={ICONS.kanban ?? "M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"} /> Канбан
+                        </button>
                         <button className={`tab-btn${tab === "groups" ? " active" : ""}`} onClick={() => setTab("groups")}>
                             <Icon d={ICONS.group} /> Группы
                         </button>
@@ -2126,6 +2664,12 @@ function App() {
             {tab === "projects" && (
                 <div>
                     <ProjectsTab token={token} canManage={canManage} />
+                </div>
+            )}
+            {/* ── KANBAN TAB ── */}
+            {tab === "kanban" && (
+                <div>
+                    <KanbanTab token={token} />
                 </div>
             )}
             {/* ── GROUPS TAB ── */}
