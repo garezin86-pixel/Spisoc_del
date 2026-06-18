@@ -85,8 +85,12 @@ export async function apiRequest({
     _retry = false,   // внутренний флаг — защита от бесконечного цикла
 }) {
     const headers = {};
-    if (token) {
-        headers.Authorization = `Bearer ${token}`;
+    // if (token) {
+    //     headers.Authorization = `Bearer ${token}`;
+    // }
+    const accessToken = token || getAccessToken();
+    if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
     }
     if (body !== null) {
         headers["Content-Type"] = "application/json";

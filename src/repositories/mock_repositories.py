@@ -143,21 +143,25 @@ class MockTaskRepository(AbstractTaskRepository):
         return [t for t in self._tasks if t.user_id == user_id]
 
     async def get_user_tasks_by_status(
-        self, user_id: int, is_done: bool
+        self, user_id: int, done: bool
     ) -> list[SpisokModel]:
-        return [t for t in self._tasks if t.user_id == user_id and t.is_done == is_done]
+        return [
+            t
+            for t in self._tasks
+            if t.user_id == user_id and (t.status.value == "done") == done
+        ]
 
     # Остальные методы...
     async def get_assigned_tasks(self, pk: int):
         user_tasks = [t for t in self._tasks if t.user_id == pk]
-        done = sum(1 for t in user_tasks if t.is_done)
+        done = sum(1 for t in user_tasks if t.status and t.status.value == "done")
         return _TaskStats(
             total=len(user_tasks), done=done, pending=len(user_tasks) - done
         )
 
     async def get_created_tasks_stats(self, pk: int):
         author_tasks = [t for t in self._tasks if t.author_id == pk]
-        done = sum(1 for t in author_tasks if t.is_done)
+        done = sum(1 for t in author_tasks if t.status and t.status.value == "done")
         return _CreatedStats(total=len(author_tasks), done=done)
 
     async def get_last_appointed_tasks(self, pk: int) -> list[SpisokModel]:
@@ -257,6 +261,27 @@ class MockTaskRepository(AbstractTaskRepository):
 
     async def hard_delete(self, task: SpisokModel) -> None:
         self._tasks = [t for t in self._tasks if t.id != task.id]
+
+    async def get_kanban_tasks(
+        self,
+        *,
+        user_id: int,
+        project_id: int | None = None,
+        only_mine: bool = False,
+        only_author: bool = False,
+    ) -> list[SpisokModel]:
+        tasks = self._tasks.copy()
+
+        if project_id is not None:
+            tasks = [t for t in tasks if t.project_id == project_id]
+
+        if only_mine:
+            tasks = [t for t in tasks if t.user_id == user_id]
+
+        if only_author:
+            tasks = [t for t in tasks if t.author_id == user_id]
+
+        return tasks
 
 
 # ---------------------------------------------------------------------------
@@ -477,8 +502,12 @@ class MockStatsRepository(AbstractStatsRepository):
     async def get_tasks_stats(self) -> _TasksStats:
         return _TasksStats(
             total_tasks=len(self._tasks),
-            done_tasks=sum(1 for t in self._tasks if t.is_done),
-            pending_tasks=sum(1 for t in self._tasks if not t.is_done),
+            done_tasks=sum(
+                1 for t in self._tasks if t.status and t.status.value == "done"
+            ),
+            pending_tasks=sum(
+                1 for t in self._tasks if not t.status or t.status.value != "done"
+            ),
         )
 
     async def get_groups_count(self) -> int:

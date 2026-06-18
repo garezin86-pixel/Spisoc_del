@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from src.models.comment import CommentModel
 from src.models.notification_log import NotificationLogModel
 from src.models.notification_settings import NotificationSettingsModel
-from src.models.task import SpisokModel
+from src.models.task import SpisokModel, TaskStatus
 from src.models import UserModel, GroupModel
 from src.repositories.abstract.base_other_repositories import (
     AbstractCommentRepository,
@@ -217,7 +217,7 @@ class NotificationRepository(AbstractNotificationRepository):
     async def get_overdue_tasks(self, now: datetime, user_id: Optional[int] = None):
         """Поиск просроченных задач"""
         query = select(SpisokModel).where(
-            SpisokModel.deadline < now, SpisokModel.is_done.is_(False)
+            SpisokModel.deadline < now, SpisokModel.status != TaskStatus.done
         )
 
         if user_id:
@@ -503,12 +503,12 @@ class StatsRepository(AbstractStatsRepository):
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total_tasks"),
-                func.sum(case((SpisokModel.is_done.is_(True), 1), else_=0)).label(
-                    "done_tasks"
-                ),
-                func.sum(case((SpisokModel.is_done.is_(False), 1), else_=0)).label(
-                    "pending_tasks"
-                ),
+                func.sum(
+                    case((SpisokModel.status == TaskStatus.done, 1), else_=0)
+                ).label("done_tasks"),
+                func.sum(
+                    case((SpisokModel.status != TaskStatus.done, 1), else_=0)
+                ).label("pending_tasks"),
             )
         )
         return result.one()

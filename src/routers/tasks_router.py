@@ -10,7 +10,10 @@ from src.schemas.task import (
     SpisokUpdate,
     TaskFilter,
     TaskPriorityFilter,
+    TaskStatusUpdate,
+    KanbanResponse,
 )
+from src.models.task import TaskStatus
 from src.core.dependencies import get_current_user
 from src.services.notifications import notify_task_assigned
 from src.services.task_service import TaskService
@@ -60,6 +63,7 @@ async def filter_tasks(
     filter_type: TaskFilter | None = Query(None),
     is_done: bool | None = Query(None),
     priority: TaskPriorityFilter | None = Query(None),
+    status: TaskStatus | None = Query(None, description="Фильтр по статусу канбана"),
     limit: int | None = Query(None, ge=1, le=100),
 ):
     final_limit = limit or pagination.size
@@ -73,6 +77,7 @@ async def filter_tasks(
         filter_type=filter_type,
         is_done=is_done,
         priority=priority,
+        status=status,
     )
 
     return PaginatedResponse.create(
@@ -103,6 +108,37 @@ async def list_deleted_tasks(
     )
     return PaginatedResponse.create(
         items=tasks, total=total, page=pagination.page, size=pagination.size
+    )
+
+
+# ── Канбан GET — должен быть до /{task_id} ────────────────────────────────────
+
+
+@router.get(
+    "/kanban",
+    response_model=KanbanResponse,
+    summary="Канбан-доска",
+    description=(
+        "Возвращает все доступные задачи, сгруппированные по статусам. "
+        "Один запрос вместо пяти. "
+        "Параметр project_id фильтрует задачи по проекту. "
+        "Параметр only_mine=true показывает только задачи где текущий пользователь — исполнитель."
+    ),
+)
+async def get_kanban(
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+    project_id: int | None = Query(None, description="Фильтр по проекту"),
+    only_mine: bool = Query(False, description="Только мои задачи (исполнитель)"),
+    only_author: bool = Query(
+        False, description="Только задачи, где текущий пользователь — автор"
+    ),
+):
+    return await get_task_service(session).get_kanban(
+        current_user,
+        project_id=project_id,
+        only_mine=only_mine,
+        only_author=only_author,
     )
 
 
@@ -201,3 +237,22 @@ async def get_task_audit(
 ):
     entries = await AuditRepository(session).get_task_audit_entries(task_id)
     return [AuditLogSchema.from_model(e) for e in entries]
+
+
+@router.patch(
+    "/{task_id}/status",
+    response_model=SpisokSchema,
+    summary="Сменить статус задачи",
+    description="Атомарная операция перемещения карточки между колонками канбана.",
+)
+async def update_task_status(
+    task_id: int,
+    data: TaskStatusUpdate,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    task = await get_task_service(session).update_task_status(
+        task_id, data.status, current_user
+    )
+    await cache_manager.invalidate_tasks()
+    return task

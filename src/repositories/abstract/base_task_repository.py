@@ -55,7 +55,7 @@ class AbstractTaskRepository(ABC):
 
     @abstractmethod
     async def get_user_tasks_by_status(
-        self, user_id: int, is_done: bool
+        self, user_id: int, done: bool
     ) -> list[SpisokModel]:
         raise NotImplementedError
 
@@ -73,7 +73,7 @@ class AbstractTaskRepository(ABC):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,
+        is_done: bool | None = None,  # deprecated, используй status
     ) -> list[SpisokModel]:
         raise NotImplementedError
 
@@ -85,7 +85,7 @@ class AbstractTaskRepository(ABC):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,
+        is_done: bool | None = None,  # deprecated
     ) -> int:
         raise NotImplementedError
 
@@ -100,7 +100,7 @@ class AbstractTaskRepository(ABC):
         group_id: int | None = None,
         project_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,
+        is_done: bool | None = None,  # deprecated
     ):
         raise NotImplementedError
 
@@ -144,4 +144,15 @@ class AbstractTaskRepository(ABC):
 
     @abstractmethod
     async def hard_delete(self, task: SpisokModel) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_kanban_tasks(
+        self,
+        *,
+        user_id: int,
+        project_id: int | None = None,
+        only_mine: bool = False,
+        only_author: bool = False,
+    ) -> list[SpisokModel]:
         raise NotImplementedError

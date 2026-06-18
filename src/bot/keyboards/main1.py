@@ -130,12 +130,10 @@ def task_edit_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="✏️ Изменить название")],
             [KeyboardButton(text="📅 Изменить дедлайн")],
-            [
-                KeyboardButton(text="⬅️ Статус назад"),
-                KeyboardButton(text="➡️ Статус вперёд"),
-            ],
+            [KeyboardButton(text="✅ Отметить как выполненную")],
+            [KeyboardButton(text="⏳ Отметить как невыполненную")],
             [KeyboardButton(text="💬 Комментарии")],
-            [KeyboardButton(text="🗑 Удалить задачу")],
+            [KeyboardButton(text="🗑 Удалить задачу")],  # ← новая
             [KeyboardButton(text="🔙 Назад в меню фильтры")],
         ],
         resize_keyboard=True,
@@ -198,11 +196,9 @@ def task_edit_manager_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="✏️ Изменить название")],
             [KeyboardButton(text="📅 Изменить дедлайн")],
-            [KeyboardButton(text="🔄 Переназначить задачу")],
-            [
-                KeyboardButton(text="⬅️ Статус назад"),
-                KeyboardButton(text="➡️ Статус вперёд"),
-            ],
+            [KeyboardButton(text="🔄 Переназначить задачу")],  # ← только у manager+
+            [KeyboardButton(text="✅ Отметить как выполненную")],
+            [KeyboardButton(text="⏳ Отметить как невыполненную")],
             [KeyboardButton(text="💬 Комментарии")],
             [KeyboardButton(text="🗑 Удалить задачу")],
             [KeyboardButton(text="🔙 Назад в меню фильтры")],

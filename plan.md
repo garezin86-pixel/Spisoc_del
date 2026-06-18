@@ -403,3 +403,217 @@ BotCommand(command="find", description="🔎 Найти задачу"),
 
 
 Канбан — после проектов сам напросится
+
+Главная проблема
+Сейчас у задачи два состояния: is_done = false → is_done = true. Канбан требует минимум 4 колонки. Значит нужно либо добавить поле status в БД, либо эмулировать колонки из существующих данных.
+
+Подход B — Поле status (правильно, требует миграции)
+Добавляем enum в БД:
+pythonclass TaskStatus(str, Enum):
+    backlog  = "backlog"   # Очередь
+    todo     = "todo"      # Новые
+    in_progress = "in_progress"  # В работе
+    review   = "review"    # На проверке
+    done     = "done"      # Готово
+is_done становится производным: is_done = (status == "done").
+Плюсы: полноценный канбан, любое количество колонок, легко расширять.
+
+Минусы: миграция БД, нужно обновить все места где используется is_done.
+Рекомендую Подход B — одна миграция сейчас сэкономит много боли потом.
+
+Бэкенд — что нужно сделать
+1. Миграция
+sqlCREATE TYPE taskstatus AS ENUM ('backlog', 'todo', 'in_progress', 'review', 'done');
+ALTER TABLE spisok_del ADD COLUMN status taskstatus DEFAULT 'todo';
+-- Перенос данных:
+UPDATE spisok_del SET status = 'done' WHERE is_done = true;
+UPDATE spisok_del SET status = 'todo' WHERE is_done = false;
+2. Новый эндпоинт PATCH для перемещения между колонками
+PATCH /tasks/{task_id}/status
+Body: { "status": "in_progress" }
+Это отдельный эндпоинт от update_task — потому что перемещение карточки это атомарная операция, не частичное обновление.
+3. Новый эндпоинт для канбан-вида
+GET /tasks/kanban?project_id=1
+Возвращает задачи сгруппированные по колонкам:
+json{
+  "backlog":     [...],
+  "todo":        [...],
+  "in_progress": [...],
+  "review":      [...],
+  "done":        [...]
+}
+Один запрос вместо пяти — важно для производительности.
+
+Фронтенд — что нужно сделать
+1. Новая вкладка «Канбан» в хедере (рядом с «Проекты»)
+2. CSS для колонок — горизонтальный скролл:
+css.kanban-board {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  min-height: 500px;
+}
+.kanban-column {
+  min-width: 260px;
+  max-width: 300px;
+  flex-shrink: 0;
+}
+3. Drag & Drop — через браузерный draggable API (без библиотек):
+jsx// При начале перетаскивания
+onDragStart={e => e.dataTransfer.setData("taskId", task.id)}
+
+// При отпускании в колонку
+onDrop={e => moveTask(e.dataTransfer.getData("taskId"), column)}
+При drop вызываем PATCH /tasks/{id}/status — оптимистичное обновление (сразу двигаем карточку, откатываем при ошибке).
+4. Фильтр по проекту — селект вверху канбана:
+Показывать: [Все задачи ▼]  [Мои задачи ▼]
+
+Интеграция с проектами
+Канбан без проектов показывает все твои задачи.
+
+Канбан внутри проекта показывает только задачи этого проекта.
+На странице проекта кнопка «Открыть канбан» — переходит на /kanban?project_id=5.
+
+Порядок реализации
+
+Миграция — добавить status, перенести данные из is_done
+PATCH /tasks/{id}/status — эндпоинт смены статуса
+GET /tasks/kanban — эндпоинт группировки
+Базовый UI — 5 колонок, карточки без drag & drop
+Drag & Drop — добавляем перетаскивание
+Фильтр по проекту — связка с проектами
+
+Шаги 1-4 дают рабочий канбан за 2-3 дня. Шаг 5 — ещё 1-2 дня.
+
+
+
+План реализации: Шаблоны задач------------------------------------------------------------
+
+Backend (FastAPI + PostgreSQL)
+1. Миграция БД
+Две новые таблицы:
+sql-- Шаблон
+task_templates
+  id            SERIAL PRIMARY KEY
+  title         VARCHAR(255) NOT NULL
+  description   TEXT
+  owner_id      INTEGER FK → users(id)
+  created_at    TIMESTAMP
+
+-- Задачи внутри шаблона
+task_template_items
+  id            SERIAL PRIMARY KEY
+  template_id   INTEGER FK → task_templates(id) ON DELETE CASCADE
+  title         VARCHAR(255) NOT NULL
+  priority      priority_enum  -- переиспользуем существующий enum
+  order_index   INTEGER
+2. Pydantic схемы (schemas/template.py)
+TemplateItemCreate   — title, priority, order_index
+TemplateCreate       — title, description, items: list
+TemplateResponse     — полный объект с items
+3. CRUD функции (crud/template.py)
+create_template(db, user_id, data)
+get_templates(db, user_id)
+get_template(db, template_id, user_id)
+update_template(db, template_id, data)
+delete_template(db, template_id, user_id)
+apply_template(db, template_id, project_id, user_id)  ← главная функция
+apply_template — клонирует все task_template_items в реальные задачи внутри выбранного проекта.
+4. Роутер (routers/templates.py) с префиксом /api/templates
+GET    /                      — список шаблонов пользователя
+POST   /                      — создать шаблон
+GET    /{id}                  — получить шаблон
+PUT    /{id}                  — обновить шаблон
+DELETE /{id}                  — удалить шаблон
+POST   /{id}/apply            — применить шаблон → создать задачи в проекте
+
+Frontend (React)
+1. Новый таб в навигации рядом с Projects:
+[ Задачи ] [ Канбан ] [ Проекты ] [ Шаблоны ]
+2. Компонент TemplatesTab.jsx
+Три состояния внутри одного компонента:
+list     — список карточек шаблонов
+create   — форма создания/редактирования
+apply    — модалка выбора проекта для применения
+3. Логика форм
+Форма создания шаблона — динамический список задач:
+
+добавить задачу (+ добавить)
+удалить задачу (×)
+drag-and-drop порядка (переиспользовать логику из KanbanTab)
+выбор приоритета через существующий PRIORITY_COLORS
+
+4. Применение шаблона
+При нажатии "Использовать":
+
+модалка с дропдауном существующих проектов
+кнопка "Создать задачи" → POST /api/templates/{id}/apply
+после успеха — редирект на вкладку Задачи с фильтром по этому проекту
+
+5. API вызовы (все через apiRequest из api.js):
+getTemplates()
+createTemplate(data)
+updateTemplate(id, data)
+deleteTemplate(id)
+applyTemplate(id, projectId)
+
+Порядок реализации
+День 1 — Backend
+  ├── миграция (две таблицы)
+  ├── схемы Pydantic
+  ├── CRUD функции
+  └── роутер + регистрация в main.py
+
+День 2 — Frontend (список + создание)
+  ├── TemplatesTab.jsx — список карточек
+  ├── форма создания с динамическими задачами
+  └── удаление шаблона
+
+День 3 — Frontend (применение)
+  ├── модалка выбора проекта
+  ├── вызов apply endpoint
+  └── UX polish
+
+Что переиспользуем из существующего кода
+
+priority_enum — не создаём заново, берём существующий
+PRIORITY_COLORS — для визуала приоритетов в форме
+apiRequest из api.js — все запросы через него
+drag-and-drop логику из KanbanTab — для сортировки задач в шаблоне
+стили карточек из ProjectsTab — карточки шаблонов выглядят похоже
+
+
+Когда будешь готов начать — стартуем с миграции и backend'а. Всё расписано, можно брать и делать по шагам.
+
+---------------------------------------------------------------------------------------------
+
+О, это уже реально интересная фича. И она имеет смысл именно в Telegram — голосовые там отправляют постоянно.
+
+Как это работает технически
+Пользователь → голосовое сообщение
+      ↓
+Telegram Bot API → получает .ogg файл
+      ↓
+Whisper (OpenAI) → транскрибация в текст
+      ↓
+Gemini / GPT → парсит текст → JSON с задачей
+      ↓
+FastAPI → создаёт задачу в БД
+      ↓
+Бот отвечает: "✅ Задача создана: Созвон с клиентом [high]"
+
+Что нужно
+Транскрибация голоса — тут Gemini не поможет, нужен отдельный сервис:
+
+Whisper API (OpenAI) — платный, но очень точный, $0.006 за минуту
+Whisper локально — бесплатно, но нужны ресурсы сервера, на Render free tier не потянет
+Groq Whisper — бесплатный тир, очень быстрый, хороший вариант
+
+Парсинг в задачу — вот тут Gemini Flash бесплатно справится отлично:
+Текст: "нужно позвонить Ивану по поводу договора, это срочно, лучше до пятницы"
+
+→ { title: "Позвонить Ивану по договору", priority: "critical", deadline: "пятница" }
+
+Реальная оценка
+Это уже не просто "AI для галочки" — это фича которой нет у большинства таск-менеджеров в Telegram. Whisper распознаёт русский язык очень хорошо.
+Groq — самый разумный старт: бесплатный тир, Whisper large-v3, быстрее реального времени.

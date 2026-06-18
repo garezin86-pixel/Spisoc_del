@@ -279,7 +279,16 @@ async def notify_task_updated(
             "title": ("📝 Название", lambda v: v),
             "description": ("📄 Описание", lambda v: v or "—"),
             "deadline": ("📅 Дедлайн", lambda v: to_local(v) if v else "Удалён"),
-            "is_done": ("✅ Статус", lambda v: "Выполнено" if v else "Не выполнено"),
+            "status": (
+                "✅ Статус",
+                lambda v: {
+                    "done": "Выполнено",
+                    "in_progress": "В работе",
+                    "review": "На проверке",
+                    "todo": "Новая",
+                    "backlog": "В очереди",
+                }.get(v, v),
+            ),
             "user_id": ("👤 Исполнитель", lambda v: "изменён"),
             "group_id": ("👥 Группа", lambda v: "изменена"),
         }

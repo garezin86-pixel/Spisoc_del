@@ -11,7 +11,7 @@ from enum import Enum
 from datetime import datetime, timezone
 import zoneinfo
 
-from src.models.task import TaskPriority
+from src.models.task import TaskPriority, TaskStatus
 from src.schemas.group import GroupSchema
 from src.schemas.user import UserSchemaForTask
 
@@ -21,13 +21,13 @@ USER_TZ = zoneinfo.ZoneInfo("Europe/Kiev")
 class SpisokAddSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
-    is_done: bool = False
     deadline: Optional[datetime] = None
 
     user_id: Optional[int] = Field(default=None, ge=1)
     group_id: Optional[int] = Field(default=None, ge=1)
     project_id: Optional[int] = Field(default=None, ge=1)
     priority: TaskPriority = TaskPriority.medium
+    status: TaskStatus = TaskStatus.todo
 
     @field_validator("user_id", "group_id")
     def validate_ids(cls, v):
@@ -58,7 +58,6 @@ class SpisokSchema(BaseModel):
     id: int
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
-    is_done: bool = False
     deadline: Optional[datetime] = None
     user_id: Optional[int] = Field(None, ge=1)
     group_id: Optional[int] = Field(None, ge=1)
@@ -68,6 +67,7 @@ class SpisokSchema(BaseModel):
     group: GroupSchema | None
     project_id: Optional[int] = None
     priority: TaskPriority = TaskPriority.medium
+    status: TaskStatus = TaskStatus.todo
 
     created_at: datetime
     updated_at: datetime | None
@@ -88,9 +88,9 @@ class SpisokUpdate(BaseModel):
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, max_length=2000)
-    is_done: Optional[bool] = None
     deadline: Optional[datetime] = None
     priority: Optional[TaskPriority] = None
+    status: Optional[TaskStatus] = None
 
     @field_validator("deadline")
     @classmethod
@@ -122,13 +122,13 @@ class TaskResponse(BaseModel):
     id: int
     title: str
     description: str | None
-    is_done: bool
     deadline: datetime | None
     author: UserSchemaForTask | None
     user: UserSchemaForTask | None
     group: GroupSchema | None
     project_id: Optional[int] = None
     priority: TaskPriority = TaskPriority.medium
+    status: TaskStatus = TaskStatus.todo
     created_at: datetime
     updated_at: datetime | None
 
@@ -140,3 +140,22 @@ class TaskPriorityFilter(str, Enum):
     medium = "medium"
     high = "high"
     critical = "critical"
+
+
+# ── Канбан ────────────────────────────────────────────────────────────────────
+
+
+class TaskStatusUpdate(BaseModel):
+    """Тело запроса PATCH /tasks/{id}/status — атомарная смена статуса."""
+
+    status: TaskStatus
+
+
+class KanbanResponse(BaseModel):
+    """Ответ GET /tasks/kanban — задачи, сгруппированные по колонкам."""
+
+    backlog: list[SpisokSchema] = []
+    todo: list[SpisokSchema] = []
+    in_progress: list[SpisokSchema] = []
+    review: list[SpisokSchema] = []
+    done: list[SpisokSchema] = []

@@ -20,6 +20,16 @@ class TaskPriority(str, Enum):
     critical = "critical"
 
 
+class TaskStatus(str, Enum):
+    """Статус задачи для канбан-доски."""
+
+    backlog = "backlog"  # Очередь
+    todo = "todo"  # Новые
+    in_progress = "in_progress"  # В работе
+    review = "review"  # На проверке
+    done = "done"  # Готово
+
+
 if TYPE_CHECKING:
     from src.models.user import (
         UserModel,
@@ -49,7 +59,6 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    is_done: Mapped[bool] = mapped_column(default=False)
 
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     author_id: Mapped[int] = mapped_column(
@@ -71,6 +80,12 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
 
     project_id: Mapped[int | None] = mapped_column(
         ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[TaskStatus] = mapped_column(
+        SAEnum(TaskStatus, name="taskstatus"),
+        default=TaskStatus.todo,
+        server_default="todo",
+        nullable=False,
     )
 
     user: Mapped["UserModel"] = relationship(
@@ -108,21 +123,21 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         Index("ix_spisok_del_author_id", "author_id"),
         Index("ix_spisok_del_user_id", "user_id"),
         Index("ix_spisok_del_group_id", "group_id"),
-        Index("ix_spisok_del_is_done", "is_done"),
+        Index("ix_spisok_del_status", "status"),
         Index("ix_spisok_del_deadline", "deadline"),
         Index("ix_spisok_del_reminder_sent", "reminder_sent"),
         # Составные индексы
-        Index("ix_spisok_del_author_done", "author_id", "is_done"),
-        Index("ix_spisok_del_user_done", "user_id", "is_done"),
-        Index("ix_spisok_del_group_done", "group_id", "is_done"),
+        Index("ix_spisok_del_author_done", "author_id", "status"),
+        Index("ix_spisok_del_user_done", "user_id", "status"),
+        Index("ix_spisok_del_group_done", "group_id", "status"),
         Index("ix_spisok_del_deadline_user", "deadline", "user_id"),
-        Index("ix_spisok_del_done_deadline", "is_done", "deadline"),
+        Index("ix_spisok_del_done_deadline", "status", "deadline"),
         # Частичные индексы (PostgreSQL)
         Index(
             "ix_spisok_del_reminder_pending",
             "deadline",
             postgresql_where=sa.text(
-                "reminder_sent = false AND is_done = false AND user_id IS NOT NULL"
+                "reminder_sent = false AND status != 'done' AND user_id IS NOT NULL"
             ),
         ),
         Index(

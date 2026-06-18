@@ -73,7 +73,7 @@ def _is_manager(user) -> bool:
 
 
 def _fmt_project_short(p, idx: int) -> str:
-    done = sum(1 for t in p.tasks if t.is_done)
+    done = sum(1 for t in p.tasks if t.status and t.status.value == "done")
     total = len(p.tasks)
     pct = round(done / total * 100) if total else 0
     return (
@@ -83,8 +83,17 @@ def _fmt_project_short(p, idx: int) -> str:
     )
 
 
+_TASK_STATUS_EMOJI = {
+    "done": "✅",
+    "in_progress": "⚙️",
+    "review": "👁",
+    "todo": "📋",
+    "backlog": "📥",
+}
+
+
 def _fmt_project_full(p) -> str:
-    done = sum(1 for t in p.tasks if t.is_done)
+    done = sum(1 for t in p.tasks if t.status and t.status.value == "done")
     total = len(p.tasks)
     pct = round(done / total * 100) if total else 0
 
@@ -95,7 +104,7 @@ def _fmt_project_full(p) -> str:
     # последние 10 задач
     tasks_lines = []
     for t in sorted(p.tasks, key=lambda x: x.created_at or 0, reverse=True)[:10]:
-        st = "✅" if t.is_done else "⏳"
+        st = _TASK_STATUS_EMOJI.get(t.status.value if t.status else "todo", "⏳")
         tasks_lines.append(f"  {st} {t.title} (#{t.id})")
     tasks_str = "\n".join(tasks_lines) if tasks_lines else "  нет задач"
 

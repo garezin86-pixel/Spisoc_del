@@ -20,11 +20,11 @@ from aiogram.types import Message
 
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
-from src.models.task import SpisokModel, TaskPriority
+from src.models.task import SpisokModel, TaskPriority, TaskStatus
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
-from src.schemas.task import FilterUserGroup, SpisokUpdate, TaskFilter
+from src.schemas.task import FilterUserGroup, TaskFilter
 from src.services.notifications import notify_task_assigned
 from src.services.task_service import TaskService
 
@@ -70,8 +70,18 @@ def _fmt_deadline(task) -> str:
     return dt.astimezone(LOCAL_TZ).strftime("%d.%m.%Y %H:%M")
 
 
+_STATUS_EMOJI = {
+    "done": "✅",
+    "in_progress": "⚙️",
+    "review": "👁",
+    "todo": "📋",
+    "backlog": "📥",
+}
+
+
 def _fmt_short(task) -> str:
-    status = "✅" if task.is_done else "⏳"
+    key = task.status.value if task.status else "todo"
+    status = _STATUS_EMOJI.get(key, "⏳")
     return (
         f"{status} <b>{task.title}</b>\n"
         f"{_priority_emoji(task)} | 📅 {_fmt_deadline(task)} | 🆔 {task.id}"
@@ -79,7 +89,15 @@ def _fmt_short(task) -> str:
 
 
 def _fmt_full(task) -> str:
-    status = "✅ Выполнена" if task.is_done else "⏳ Не выполнена"
+    _status_labels = {
+        "done": "✅ Выполнена",
+        "in_progress": "⚙️ В работе",
+        "review": "👁 На проверке",
+        "todo": "📋 Новая",
+        "backlog": "📥 В очереди",
+    }
+    key = task.status.value if task.status else "todo"
+    status = _status_labels.get(key, "⏳ Неизвестно")
     author = task.author.username if task.author else "Неизвестный"
     priority_labels = {
         "critical": "🔴 Критический",
@@ -141,8 +159,8 @@ async def cmd_done(message: Message, command: CommandObject):
             return
         uow.set_audit_user(user.id)
         try:
-            await make_task_service(uow).update_task(
-                task_id, SpisokUpdate(is_done=True), user
+            await make_task_service(uow).update_task_status(
+                task_id, TaskStatus.done, user
             )
             await uow.commit()
             await message.answer(
@@ -169,12 +187,12 @@ async def cmd_undone(message: Message, command: CommandObject):
             return
         uow.set_audit_user(user.id)
         try:
-            await make_task_service(uow).update_task(
-                task_id, SpisokUpdate(is_done=False), user
+            await make_task_service(uow).update_task_status(
+                task_id, TaskStatus.todo, user
             )
             await uow.commit()
             await message.answer(
-                f"⏳ Задача <b>#{task_id}</b> отмечена как невыполненная.",
+                f"⏳ Задача <b>#{task_id}</b> переведена в статус «Новая».",
                 parse_mode="HTML",
             )
         except Exception as e:
@@ -314,7 +332,7 @@ async def cmd_stats(message: Message):
     if s["tasks"]:
         items = []
         for t in s["tasks"][:5]:
-            st = "✅" if t["is_done"] else "⏳"
+            st = "✅" if t["status"] == "done" else "⏳"
             items.append(f"  {st} {t['title']} (#{t['id']})")
         recent_lines = "\n\n<b>🕐 Последние задачи:</b>\n" + "\n".join(items)
 
@@ -411,7 +429,6 @@ async def cmd_new(message: Message, command: CommandObject):
         task = SpisokModel(
             title=title,
             description=None,
-            is_done=False,
             user_id=assigned_user_id,
             group_id=None,
             deadline=deadline,
