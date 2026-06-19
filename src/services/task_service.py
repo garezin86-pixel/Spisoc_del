@@ -162,7 +162,6 @@ class TaskService:
             filter_user_group=filter_user_group,
             group_id=group_id,
             filter_type=filter_type,
-            is_done=is_done,
         )
 
     async def get_task(self, task_id: int, current_user: UserModel) -> SpisokModel:

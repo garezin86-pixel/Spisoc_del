@@ -203,7 +203,6 @@ class MockTaskRepository(AbstractTaskRepository):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,
     ) -> list[SpisokModel]:
         return self._tasks[offset : offset + limit]
 
@@ -214,7 +213,6 @@ class MockTaskRepository(AbstractTaskRepository):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,
     ) -> int:
         return len(self._tasks)
 

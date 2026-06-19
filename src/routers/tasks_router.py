@@ -61,7 +61,6 @@ async def filter_tasks(
     group_id: int | None = Query(None),
     project_id: int | None = Query(None),  # ← добавить
     filter_type: TaskFilter | None = Query(None),
-    is_done: bool | None = Query(None),
     priority: TaskPriorityFilter | None = Query(None),
     status: TaskStatus | None = Query(None, description="Фильтр по статусу канбана"),
     limit: int | None = Query(None, ge=1, le=100),
@@ -75,7 +74,6 @@ async def filter_tasks(
         group_id=group_id,
         project_id=project_id,
         filter_type=filter_type,
-        is_done=is_done,
         priority=priority,
         status=status,
     )

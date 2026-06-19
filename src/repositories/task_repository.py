@@ -314,14 +314,12 @@ class TaskRepository(AbstractTaskRepository):
         filter_user_group=None,
         group_id: Optional[int] = None,
         filter_type=None,
-        is_done: Optional[bool] = None,
     ) -> int:
         query = self._build_filtered_tasks_query(
             user_id=user_id,
             filter_user_group=filter_user_group,
             group_id=group_id,
             filter_type=filter_type,
-            is_done=is_done,
         )
         return await self.filter_tasks_paginated_total(query)
 
