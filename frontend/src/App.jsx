@@ -417,7 +417,7 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                         </div>
                     </div>
                     <span className={`badge ${task.status === "done" ? "badge-done" : "badge-active"}`}>
-                        {{ "backlog": "Очередь", "todo": "Новые", "in_progress": "В работе", "review": "На проверке", "done": "Готово" }[task.status] ?? (task.is_done ? "Готово" : "В работе")}
+                        {{ "backlog": "Очередь", "todo": "Новые", "in_progress": "В работе", "review": "На проверке", "done": "Готово" }[task.status]}
                     </span>
                     {task.priority && (
                         <span style={{
@@ -2145,9 +2145,9 @@ function App() {
             q.set("filter_user_group", mode);
             q.set("page", page);
             q.set("size", PAGE_SIZE);
+            if (filterTypeRef.current) q.set("filter_type", filterTypeRef.current);
             if (filterPriorityRef.current) q.set("priority", filterPriorityRef.current);
             if (statusFilterRef.current) q.set("status", statusFilterRef.current);
-            if (filterPriority) q.set("priority", filterPriority);
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
             // Если запрос был отменён — игнорируем результат
             if (controller.signal.aborted) return;

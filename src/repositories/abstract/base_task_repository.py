@@ -76,7 +76,6 @@ class AbstractTaskRepository(ABC):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,  # deprecated, используй status
     ) -> list[SpisokModel]:
         raise NotImplementedError
 
@@ -88,7 +87,6 @@ class AbstractTaskRepository(ABC):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,  # deprecated
     ) -> int:
         raise NotImplementedError
 
@@ -103,7 +101,6 @@ class AbstractTaskRepository(ABC):
         group_id: int | None = None,
         project_id: int | None = None,
         filter_type=None,
-        is_done: bool | None = None,  # deprecated
     ):
         raise NotImplementedError
 
