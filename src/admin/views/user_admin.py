@@ -72,6 +72,8 @@ class UserAdmin(ModelView, model=UserModel):
         UserModel.groups,
         UserModel.notification_settings,  # ← добавить
         UserModel.notification_logs,
+        UserModel.projects,
+        UserModel.owned_projects,
     ]
 
     form_widget_args = {"telegram_id": {"readonly": True}}

@@ -172,7 +172,6 @@ h4 {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  overflow: hidden;
 }
 
 .app-header-left {
@@ -839,23 +838,53 @@ textarea {
   }
 
   .app-header {
+    flex-direction: column;
     align-items: stretch;
-    gap: 14px;
-    padding: 16px;
+    gap: 0;
+    padding: 0;
+    height: auto;
+    overflow: visible;
+    margin-bottom: 12px;
   }
 
-  .app-header-left,
+  .app-header-left {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+  }
+
+  .header-row-top {
+    padding: 8px 12px 6px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .header-row-bottom {
+    padding: 6px 12px 8px;
+  }
+
   .header-right {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
     width: 100%;
   }
 
-  .header-right {
-    align-items: stretch;
+  .header-row {
+    width: 100%;
   }
 
   .tab-bar {
     width: 100%;
-    order: 1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .tab-btn {
+    padding: 8px 6px;
+    font-size: 0.8rem;
+    justify-content: center;
   }
 
   .user-chip {
@@ -1414,12 +1443,12 @@ textarea {
 
   .tab-bar {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .tab-btn {
-    padding: 7px 8px;
-    font-size: 0.78rem;
+    padding: 6px 4px;
+    font-size: 0.75rem;
   }
 
   .card {
