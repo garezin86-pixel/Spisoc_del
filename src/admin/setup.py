@@ -44,8 +44,6 @@ def setup_admin(app, engine):
     admin.add_view(UserAdmin)
     admin.add_view(TaskAdmin)
     admin.add_view(ProjectAdmin)
-    admin.add_view(TaskTemplateAdmin)
-    admin.add_view(TaskTemplateItemAdmin)
     admin.add_view(GroupAdmin)
     admin.add_view(CommentAdmin)
     admin.add_view(NotificationLogAdmin)
@@ -53,8 +51,11 @@ def setup_admin(app, engine):
     StatsView._session_maker = session_maker
     StatusView._session_maker = session_maker
     NotificationStatsView._session_maker = session_maker
+    TaskTemplateAdmin._session_maker = session_maker
 
     admin.add_base_view(NotificationStatsView)
     admin.add_base_view(StatsView)
     admin.add_base_view(StatusView)
     admin.add_view(TrashTaskAdmin)
+    admin.add_view(TaskTemplateAdmin)
+    admin.add_view(TaskTemplateItemAdmin)

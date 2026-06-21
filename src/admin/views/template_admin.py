@@ -1,10 +1,16 @@
 from markupsafe import Markup
-from sqladmin import ModelView
-from sqladmin.filters import ForeignKeyFilter
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqladmin import ModelView, expose
+from sqlalchemy import select
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
 from wtforms import SelectField
 
 from src.models.template import TaskTemplateModel, TaskTemplateItemModel
-from src.models.task import TaskPriority
+from src.models.project import ProjectModel
+from src.models.task import TaskPriority, TaskStatus, SpisokModel
+
+# from src.admin.utils.url_helpers import admin_url
 from src.utils.datetime_utils import to_local
 
 PRIORITY_LABELS = {
@@ -14,50 +20,51 @@ PRIORITY_LABELS = {
     "critical": "🔴 Критический",
 }
 
+PRIORITY_COLORS = {
+    "low": "#6c757d",
+    "medium": "#0d6efd",
+    "high": "#fd7e14",
+    "critical": "#dc3545",
+}
+
+
+def _priority_val(item) -> str:
+    return (
+        item.priority.value if hasattr(item.priority, "value") else str(item.priority)
+    )
+
 
 def _render_items(model, attr) -> Markup:  # type: ignore[override]
-    """Рендерит список задач шаблона в виде HTML-таблицы."""
     items = sorted(model.items, key=lambda x: x.order_index) if model.items else []
     if not items:
         return Markup(
             '<span style="color:#6c757d; font-style:italic;">Нет задач</span>'
         )
 
-    rows = []
-    for item in items:
-        priority_label = PRIORITY_LABELS.get(
-            item.priority.value if hasattr(item.priority, "value") else item.priority,
-            str(item.priority),
-        )
-        rows.append(
-            f"<tr>"
-            f'<td style="padding:4px 8px; color:#6c757d; font-size:12px;">{item.order_index + 1}</td>'
-            f'<td style="padding:4px 8px; font-size:13px;">{item.title}</td>'
-            f'<td style="padding:4px 8px; font-size:12px;">{priority_label}</td>'
-            f"</tr>"
-        )
-
-    rows_html = "\n".join(rows)
-    return Markup(f"""
-        <table style="width:100%; border-collapse:collapse; font-size:13px; margin-top:4px;">
-            <thead>
-                <tr style="background:#f8f9fa; border-bottom:2px solid #dee2e6;">
-                    <th style="padding:6px 8px; text-align:left; width:40px;">#</th>
-                    <th style="padding:6px 8px; text-align:left;">Название</th>
-                    <th style="padding:6px 8px; text-align:left; width:140px;">Приоритет</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows_html}
-            </tbody>
-        </table>
-        """)
+    rows = "".join(
+        f"<tr>"
+        f'<td style="padding:4px 8px;color:#6c757d;font-size:12px;">{i + 1}</td>'
+        f'<td style="padding:4px 8px;font-size:13px;">{item.title}</td>'
+        f'<td style="padding:4px 8px;font-size:12px;color:{PRIORITY_COLORS.get(_priority_val(item), "#333")};">'
+        f"{PRIORITY_LABELS.get(_priority_val(item), _priority_val(item))}</td>"
+        f"</tr>"
+        for i, item in enumerate(items)
+    )
+    return Markup(
+        f'<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:4px;">'
+        f'<thead><tr style="background:#f8f9fa;border-bottom:2px solid #dee2e6;">'
+        f'<th style="padding:6px 8px;text-align:left;width:40px;">#</th>'
+        f'<th style="padding:6px 8px;text-align:left;">Название</th>'
+        f'<th style="padding:6px 8px;text-align:left;width:140px;">Приоритет</th>'
+        f"</tr></thead><tbody>{rows}</tbody></table>"
+    )
 
 
 class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
+    _session_maker: async_sessionmaker
     identity = "task-template"
     name = "Шаблон задач"
-    name_plural = "Шаблоны проектов"
+    name_plural = "Шаблоны задач"
     icon = "fa-solid fa-file-lines"
 
     column_list = [
@@ -66,6 +73,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         TaskTemplateModel.owner,
         TaskTemplateModel.created_at,
         "items_count",
+        "apply_link",
     ]
 
     column_searchable_list = [TaskTemplateModel.title]
@@ -83,6 +91,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         TaskTemplateModel.owner,
         TaskTemplateModel.created_at,
         "items_detail",
+        "apply_link",
     ]
 
     column_labels = {
@@ -95,24 +104,33 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         "items": "Задачи",
         "items_count": "Кол-во задач",
         "items_detail": "Задачи шаблона",
+        "apply_link": "Применить",
     }
 
     column_formatters = {
         TaskTemplateModel.created_at: lambda m, a: to_local(m.created_at),
         "items_count": lambda m, a: Markup(
-            f'<span style="display:inline-block; min-width:24px; padding:2px 8px; '
-            f'background:#0d6efd; color:#fff; border-radius:12px; font-size:12px; text-align:center;">'
+            f'<span style="display:inline-block;min-width:24px;padding:2px 8px;'
+            f'background:#0d6efd;color:#fff;border-radius:12px;font-size:12px;text-align:center;">'
             f"{len(m.items)}</span>"
+        ),
+        "apply_link": lambda m, a: Markup(
+            f'<a href="/admin/task-template/apply/{m.id}" '
+            f'style="padding:4px 12px;background:#198754;color:#fff;border-radius:6px;'
+            f'font-size:12px;text-decoration:none;white-space:nowrap;">▶ Применить</a>'
         ),
     }
 
     column_formatters_detail = {
         TaskTemplateModel.created_at: lambda m, a: to_local(m.created_at),
         "items_detail": _render_items,
+        "apply_link": lambda m, a: Markup(
+            f'<a href="/admin/task-template/apply/{m.id}" '
+            f'style="padding:6px 16px;background:#198754;color:#fff;border-radius:8px;'
+            f'font-size:13px;text-decoration:none;">▶ Применить шаблон к проекту</a>'
+        ),
     }
 
-    # Форма — редактируем только название и описание шаблона.
-    # Задачи (items) — через отдельный view TaskTemplateItemAdmin ниже.
     form_columns = [
         TaskTemplateModel.title,
         TaskTemplateModel.description,
@@ -124,6 +142,92 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         "title": {"label": "Название"},
         "description": {"label": "Описание"},
     }
+
+    @expose("/apply/{pk}")
+    async def apply_template(self, request: Request):
+        pk = request.path_params.get("pk")
+        if not pk or not str(pk).isdigit():
+            return RedirectResponse("/admin/task-template/list", status_code=303)
+        pk = int(pk)
+
+        success = None
+        success_project = None
+        error = None
+
+        async with self._session_maker() as session:
+            # Загружаем шаблон
+            result = await session.execute(
+                select(TaskTemplateModel).where(TaskTemplateModel.id == pk)
+            )
+            template = result.unique().scalar_one_or_none()
+            if not template:
+                return RedirectResponse("/admin/task-template/list", status_code=303)
+
+            # Загружаем проекты
+            proj_result = await session.execute(select(ProjectModel))
+            projects = list(proj_result.scalars().all())
+
+            items = sorted(template.items, key=lambda x: x.order_index)
+
+            if request.method == "POST":
+                form = await request.form()
+                project_id = form.get("project_id")
+                if project_id and str(project_id).isdigit():
+                    project_id = int(str(project_id))
+                    project = next((p for p in projects if p.id == project_id), None)
+
+                    if not items:
+                        error = "Шаблон не содержит задач"
+                    elif not project:
+                        error = "Проект не найден"
+                    else:
+                        try:
+                            created = []
+                            for item in items:
+                                task = SpisokModel(
+                                    title=item.title,
+                                    priority=item.priority,
+                                    status=TaskStatus.todo,
+                                    project_id=project_id,
+                                    author_id=template.owner_id,
+                                    user_id=template.owner_id,
+                                )
+                                session.add(task)
+                                created.append(task)
+                            await session.commit()
+                            success = len(created)
+                            success_project = project.name
+                        except Exception as e:
+                            await session.rollback()
+                            error = str(e)
+
+        # Готовим данные для шаблона
+        items_ctx = [
+            {
+                "title": item.title,
+                "priority_label": PRIORITY_LABELS.get(
+                    _priority_val(item), _priority_val(item)
+                ),
+                "priority_color": PRIORITY_COLORS.get(_priority_val(item), "#333"),
+            }
+            for item in items
+        ]
+
+        return await self.templates.TemplateResponse(
+            request,
+            "admin/template_apply.html",
+            {
+                "request": request,
+                "template": template,
+                "items": items_ctx,
+                "projects": projects,
+                "apply_url": f"/admin/task-template/apply/{pk}",
+                "urls": {"list": "/admin/task-template/list"},
+                "success": success,
+                "success_project": success_project,
+                "error": error,
+            },
+        )
 
 
 class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
@@ -141,7 +245,6 @@ class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
     ]
 
     column_searchable_list = [TaskTemplateItemModel.title]
-
     column_sortable_list = [
         TaskTemplateItemModel.id,
         TaskTemplateItemModel.title,
@@ -153,14 +256,6 @@ class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
         (TaskTemplateItemModel.order_index, False),
     ]
 
-    column_details_list = [
-        TaskTemplateItemModel.id,
-        TaskTemplateItemModel.template,
-        TaskTemplateItemModel.title,
-        TaskTemplateItemModel.priority,
-        TaskTemplateItemModel.order_index,
-    ]
-
     column_labels = {
         "id": "ID",
         "template": "Шаблон",
@@ -170,22 +265,12 @@ class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
         "order_index": "Порядок",
     }
 
-    column_filters = [
-        ForeignKeyFilter(
-            TaskTemplateItemModel.template_id,
-            TaskTemplateModel.title,
-            title="Задачи к шаблонам",
-        )
-    ]
-
     column_formatters = {
         "priority": lambda m, a: PRIORITY_LABELS.get(
-            m.priority.value if hasattr(m.priority, "value") else m.priority,
-            str(m.priority),
+            _priority_val(m), _priority_val(m)
         ),
     }
-
-    column_formatters_detail: dict = column_formatters  # type: ignore[assignment]
+    column_formatters_detail = column_formatters
 
     form_columns = [
         TaskTemplateItemModel.template,

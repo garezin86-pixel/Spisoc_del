@@ -1,0 +1,90 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div style="max-width: 700px; margin: 0 auto; padding: 30px; font-family: sans-serif;">
+
+    <div style="margin-bottom: 20px;">
+        <a href="{{ urls.list }}" style="color: #6c757d; text-decoration: none; font-size: 14px;">
+            ← Назад к шаблонам
+        </a>
+    </div>
+
+    <div class="card p-4 mb-4" style="border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08);">
+        <h4 style="margin: 0 0 4px;">📋 {{ template.title }}</h4>
+        {% if template.description %}
+        <div style="color: #6c757d; font-size: 14px; margin-bottom: 12px;">{{ template.description }}</div>
+        {% endif %}
+
+        <!-- Список задач шаблона -->
+        <div style="margin-top: 12px;">
+            <div style="font-size: 13px; font-weight: 600; color: #495057; margin-bottom: 8px;">
+                ЗАДАЧИ ({{ items | length }}):
+            </div>
+            {% if items %}
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                        <th style="padding: 6px 10px; text-align: left; width: 36px;">#</th>
+                        <th style="padding: 6px 10px; text-align: left;">Название</th>
+                        <th style="padding: 6px 10px; text-align: left; width: 120px;">Приоритет</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr style="border-bottom: 1px solid #f0f0f0;">
+                        <td style="padding: 6px 10px; color: #adb5bd;">{{ loop.index }}</td>
+                        <td style="padding: 6px 10px;">{{ item.title }}</td>
+                        <td style="padding: 6px 10px; color: {{ item.priority_color }};">{{ item.priority_label }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div style="color: #adb5bd; font-style: italic; font-size: 13px;">Нет задач в шаблоне</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Форма применения -->
+    <div class="card p-4" style="border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08);">
+        <h5 style="margin: 0 0 16px;">Применить шаблон к проекту</h5>
+
+        {% if success %}
+        <div style="background: #d1e7dd; border: 1px solid #a3cfbb; border-radius: 8px; padding: 14px; margin-bottom: 16px; color: #0f5132;">
+            ✅ Создано <strong>{{ success }}</strong> задач в проекте <strong>{{ success_project }}</strong>
+        </div>
+        {% endif %}
+
+        {% if error %}
+        <div style="background: #f8d7da; border: 1px solid #f5c2c7; border-radius: 8px; padding: 14px; margin-bottom: 16px; color: #842029;">
+            ❌ {{ error }}
+        </div>
+        {% endif %}
+
+        {% if not items %}
+        <div style="color: #6c757d; font-style: italic;">Нельзя применить — шаблон не содержит задач.</div>
+        {% elif not projects %}
+        <div style="color: #6c757d; font-style: italic;">Нет доступных проектов.</div>
+        {% else %}
+        <form method="post" action="{{ apply_url }}">
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 13px; font-weight: 600; color: #495057; margin-bottom: 6px;">
+                    ВЫБЕРИТЕ ПРОЕКТ
+                </label>
+                <select name="project_id" style="width: 100%; padding: 10px 12px; border: 1px solid #ced4da;
+                    border-radius: 8px; font-size: 14px; background: #fff;">
+                    {% for project in projects %}
+                    <option value="{{ project.id }}">{{ project.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" style="padding: 10px 24px; background: #0d6efd; color: #fff;
+                border: none; border-radius: 8px; font-size: 14px; cursor: pointer;">
+                ▶ Создать {{ items | length }} задач в проекте
+            </button>
+        </form>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}
