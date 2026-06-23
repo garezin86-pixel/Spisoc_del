@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.db import SessionDep
 from src.models.user import UserModel
@@ -24,9 +25,14 @@ def get_repo(session: SessionDep) -> TemplateRepository:
 async def list_templates(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
+    visibility: Literal["private", "group", "global"] | None = Query(
+        None, description="Фильтр по видимости"
+    ),
 ):
-    """Список шаблонов текущего пользователя."""
-    return await get_repo(session).get_all(current_user.id)
+    """Список шаблонов доступных пользователю с опциональным фильтром по видимости."""
+    return await get_repo(session).get_all(
+        current_user.id, visibility_filter=visibility
+    )
 
 
 @router.post("", response_model=TemplateResponse, status_code=201)
@@ -35,7 +41,6 @@ async def create_template(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    """Создать новый шаблон с задачами."""
     template = await get_repo(session).create(current_user.id, data)
     await session.commit()
     return template
@@ -47,10 +52,9 @@ async def get_template(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    """Получить шаблон по id."""
     template = await get_repo(session).get_by_id(template_id, current_user.id)
     if not template:
-        raise HTTPException(status_code=404, detail="Шаблон не найден")
+        raise HTTPException(404, "Шаблон не найден или недоступен")
     return template
 
 
@@ -61,11 +65,11 @@ async def update_template(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    """Обновить шаблон (полная замена items если переданы)."""
+    """Редактировать может только владелец."""
     repo = get_repo(session)
-    template = await repo.get_by_id(template_id, current_user.id)
+    template = await repo.get_by_id_owner_only(template_id, current_user.id)
     if not template:
-        raise HTTPException(status_code=404, detail="Шаблон не найден")
+        raise HTTPException(404, "Шаблон не найден или нет прав")
     template = await repo.update(template, data)
     await session.commit()
     return template
@@ -77,11 +81,11 @@ async def delete_template(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    """Удалить шаблон вместе со всеми задачами."""
+    """Удалить может только владелец."""
     repo = get_repo(session)
-    template = await repo.get_by_id(template_id, current_user.id)
+    template = await repo.get_by_id_owner_only(template_id, current_user.id)
     if not template:
-        raise HTTPException(status_code=404, detail="Шаблон не найден")
+        raise HTTPException(404, "Шаблон не найден или нет прав")
     await repo.delete(template)
     await session.commit()
     return {"message": f"Template {template_id} deleted"}
@@ -91,7 +95,6 @@ async def delete_template(
     "/{template_id}/apply",
     response_model=list[SpisokSchema],
     summary="Применить шаблон",
-    description="Создаёт задачи из шаблона в указанном проекте.",
 )
 async def apply_template(
     template_id: int,
@@ -99,14 +102,14 @@ async def apply_template(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    """Клонировать задачи шаблона в проект."""
+    """Применить может любой у кого есть доступ (private/group/global)."""
     session.info["audit_user_id"] = current_user.id
     repo = get_repo(session)
     template = await repo.get_by_id(template_id, current_user.id)
     if not template:
-        raise HTTPException(status_code=404, detail="Шаблон не найден")
+        raise HTTPException(404, "Шаблон не найден или недоступен")
     if not template.items:
-        raise HTTPException(status_code=400, detail="Шаблон не содержит задач")
+        raise HTTPException(400, "Шаблон не содержит задач")
     tasks = await repo.apply(template, data.project_id, current_user.id)
     await session.commit()
     await cache_manager.invalidate_tasks()

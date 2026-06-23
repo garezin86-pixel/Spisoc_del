@@ -15,7 +15,6 @@
         <div style="color: #6c757d; font-size: 14px; margin-bottom: 12px;">{{ template.description }}</div>
         {% endif %}
 
-        <!-- Список задач шаблона -->
         <div style="margin-top: 12px;">
             <div style="font-size: 13px; font-weight: 600; color: #495057; margin-bottom: 8px;">
                 ЗАДАЧИ ({{ items | length }}):
@@ -45,7 +44,6 @@
         </div>
     </div>
 
-    <!-- Форма применения -->
     <div class="card p-4" style="border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08);">
         <h5 style="margin: 0 0 16px;">Применить шаблон к проекту</h5>
 
@@ -66,7 +64,9 @@
         {% elif not projects %}
         <div style="color: #6c757d; font-style: italic;">Нет доступных проектов.</div>
         {% else %}
-        <form method="post" action="{{ apply_url }}">
+        {# sqladmin @expose поддерживает только GET, используем method="get" с hidden confirm=1 #}
+        <form method="get" action="{{ apply_url }}">
+            <input type="hidden" name="confirm" value="1">
             <div style="margin-bottom: 16px;">
                 <label style="display: block; font-size: 13px; font-weight: 600; color: #495057; margin-bottom: 6px;">
                     ВЫБЕРИТЕ ПРОЕКТ
@@ -78,8 +78,8 @@
                     {% endfor %}
                 </select>
             </div>
-            <button type="submit" style="padding: 10px 24px; background: #0d6efd; color: #fff;
-                border: none; border-radius: 8px; font-size: 14px; cursor: pointer;">
+            <button type="submit" style="padding: 10px 24px; background: #198754; color: #fff;
+                border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600;">
                 ▶ Создать {{ items | length }} задач в проекте
             </button>
         </form>
