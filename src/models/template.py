@@ -1,9 +1,23 @@
+import enum
+
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, String, Text, DateTime, Integer
 from sqlalchemy import Enum as SAEnum
 from datetime import datetime, timezone
 from src.db import Base
 from src.models.task import TaskPriority
+
+
+class TemplateVisibility(str, enum.Enum):
+    private = "private"
+    group = "group"
+    global_ = "global"
+
+    @classmethod
+    def _missing_(cls, value):
+        if value == "global":
+            return cls.global_
+        return None
 
 
 class TaskTemplateModel(Base):
@@ -15,6 +29,21 @@ class TaskTemplateModel(Base):
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    visibility: Mapped[str] = mapped_column(
+        SAEnum(
+            "private",
+            "group",
+            "global",
+            name="templatevisibility",
+            create_type=False,
+        ),
+        nullable=False,
+        default="private",
+        server_default="private",
+    )
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("groups.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -22,6 +51,7 @@ class TaskTemplateModel(Base):
     )
 
     owner = relationship("UserModel", lazy="joined")
+    group = relationship("GroupModel", lazy="joined", foreign_keys=[group_id])
     items = relationship(
         "TaskTemplateItemModel",
         back_populates="template",

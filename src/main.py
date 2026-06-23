@@ -181,6 +181,7 @@ Authorization: Bearer <access_token>
     ],
 )
 
+
 # После создания app — автоматические метрики HTTP запросов
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
@@ -231,6 +232,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(api_router)
 app.include_router(health_router)
 setup_admin(app, get_engine())
+
 
 # ── Статика фронтенда (только на проде) ──────────────────────────────────────
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

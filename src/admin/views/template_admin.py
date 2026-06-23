@@ -1,4 +1,5 @@
 from markupsafe import Markup
+from sqladmin.filters import ForeignKeyFilter
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqladmin import ModelView, expose
 from sqlalchemy import select
@@ -6,11 +7,10 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from wtforms import SelectField
 
+from src.admin.utils.url_helpers import URLS
 from src.models.template import TaskTemplateModel, TaskTemplateItemModel
 from src.models.project import ProjectModel
 from src.models.task import TaskPriority, TaskStatus, SpisokModel
-
-# from src.admin.utils.url_helpers import admin_url
 from src.utils.datetime_utils import to_local
 
 PRIORITY_LABELS = {
@@ -25,6 +25,12 @@ PRIORITY_COLORS = {
     "medium": "#0d6efd",
     "high": "#fd7e14",
     "critical": "#dc3545",
+}
+
+VISIBILITY_TEMPLATE = {
+    "private": "🔒 Приватный",
+    "group": "👥 Для группы",
+    "global": "🌐 Глобальный",
 }
 
 
@@ -63,14 +69,15 @@ def _render_items(model, attr) -> Markup:  # type: ignore[override]
 class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
     _session_maker: async_sessionmaker
     identity = "task-template"
-    name = "Шаблон задач"
-    name_plural = "Шаблоны задач"
+    name = "Шаблон проекта"
+    name_plural = "Шаблоны проектов"
     icon = "fa-solid fa-file-lines"
 
     column_list = [
         TaskTemplateModel.id,
         TaskTemplateModel.title,
         TaskTemplateModel.owner,
+        TaskTemplateModel.visibility,
         TaskTemplateModel.created_at,
         "items_count",
         "apply_link",
@@ -89,6 +96,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         TaskTemplateModel.title,
         TaskTemplateModel.description,
         TaskTemplateModel.owner,
+        TaskTemplateModel.visibility,
         TaskTemplateModel.created_at,
         "items_detail",
         "apply_link",
@@ -100,6 +108,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         "description": "Описание",
         "owner": "Владелец",
         "owner_id": "Владелец (ID)",
+        "visibility": "Область Видимости",
         "created_at": "Создан",
         "items": "Задачи",
         "items_count": "Кол-во задач",
@@ -115,9 +124,13 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
             f"{len(m.items)}</span>"
         ),
         "apply_link": lambda m, a: Markup(
-            f'<a href="/admin/task-template/apply/{m.id}" '
+            f'<a href="{URLS["template"]["apply"]}{m.id}" '
             f'style="padding:4px 12px;background:#198754;color:#fff;border-radius:6px;'
             f'font-size:12px;text-decoration:none;white-space:nowrap;">▶ Применить</a>'
+        ),
+        "visibility": lambda m, a: VISIBILITY_TEMPLATE.get(
+            m.visibility.value if hasattr(m.visibility, "value") else str(m.visibility),
+            str(m.visibility),
         ),
     }
 
@@ -125,7 +138,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         TaskTemplateModel.created_at: lambda m, a: to_local(m.created_at),
         "items_detail": _render_items,
         "apply_link": lambda m, a: Markup(
-            f'<a href="/admin/task-template/apply/{m.id}" '
+            f'<a href="{URLS["template"]["apply"]}{m.id}" '
             f'style="padding:6px 16px;background:#198754;color:#fff;border-radius:8px;'
             f'font-size:13px;text-decoration:none;">▶ Применить шаблон к проекту</a>'
         ),
@@ -135,19 +148,36 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         TaskTemplateModel.title,
         TaskTemplateModel.description,
         TaskTemplateModel.owner,
+        TaskTemplateModel.visibility,
+        TaskTemplateModel.group,
     ]
+
+    form_overrides = {"visibility": SelectField}
 
     form_args = {
         "owner": {"label": "Владелец"},
         "title": {"label": "Название"},
         "description": {"label": "Описание"},
+        "visibility": {
+            "label": "Видимость",
+            "choices": list(VISIBILITY_TEMPLATE.items()),
+            "coerce": str,
+        },
+        "group": {"label": "Группа (для visibility=group)"},
     }
 
     @expose("/apply/{pk}")
     async def apply_template(self, request: Request):
+        """
+        GET /apply/{pk}              — показать форму выбора проекта
+        GET /apply/{pk}?confirm=1&project_id=X — применить шаблон
+
+        sqladmin @expose поддерживает только GET, поэтому форма
+        использует method="get" вместо "post".
+        """
         pk = request.path_params.get("pk")
         if not pk or not str(pk).isdigit():
-            return RedirectResponse("/admin/task-template/list", status_code=303)
+            return RedirectResponse(URLS["template"]["list"], status_code=303)
         pk = int(pk)
 
         success = None
@@ -161,7 +191,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
             )
             template = result.unique().scalar_one_or_none()
             if not template:
-                return RedirectResponse("/admin/task-template/list", status_code=303)
+                return RedirectResponse(URLS["template"]["list"], status_code=303)
 
             # Загружаем проекты
             proj_result = await session.execute(select(ProjectModel))
@@ -169,39 +199,39 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
 
             items = sorted(template.items, key=lambda x: x.order_index)
 
-            if request.method == "POST":
-                form = await request.form()
-                project_id = form.get("project_id")
-                if project_id and str(project_id).isdigit():
-                    project_id = int(str(project_id))
-                    project = next((p for p in projects if p.id == project_id), None)
+            # Применяем шаблон если передан confirm=1&project_id=X
+            confirm = request.query_params.get("confirm")
+            project_id_q = request.query_params.get("project_id")
 
-                    if not items:
-                        error = "Шаблон не содержит задач"
-                    elif not project:
-                        error = "Проект не найден"
-                    else:
-                        try:
-                            created = []
-                            for item in items:
-                                task = SpisokModel(
-                                    title=item.title,
-                                    priority=item.priority,
-                                    status=TaskStatus.todo,
-                                    project_id=project_id,
-                                    author_id=template.owner_id,
-                                    user_id=template.owner_id,
-                                )
-                                session.add(task)
-                                created.append(task)
-                            await session.commit()
-                            success = len(created)
-                            success_project = project.name
-                        except Exception as e:
-                            await session.rollback()
-                            error = str(e)
+            if confirm == "1" and project_id_q and str(project_id_q).isdigit():
+                project_id = int(str(project_id_q))
+                project = next((p for p in projects if p.id == project_id), None)
 
-        # Готовим данные для шаблона
+                if not items:
+                    error = "Шаблон не содержит задач"
+                elif not project:
+                    error = "Проект не найден"
+                else:
+                    try:
+                        created = []
+                        for item in items:
+                            task = SpisokModel(
+                                title=item.title,
+                                priority=item.priority,
+                                status=TaskStatus.todo,
+                                project_id=project_id,
+                                author_id=template.owner_id,
+                                user_id=template.owner_id,
+                            )
+                            session.add(task)
+                            created.append(task)
+                        await session.commit()
+                        success = len(created)
+                        success_project = project.name
+                    except Exception as e:
+                        await session.rollback()
+                        error = str(e)
+
         items_ctx = [
             {
                 "title": item.title,
@@ -221,8 +251,8 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
                 "template": template,
                 "items": items_ctx,
                 "projects": projects,
-                "apply_url": f"/admin/task-template/apply/{pk}",
-                "urls": {"list": "/admin/task-template/list"},
+                "apply_url": f'{URLS["template"]["apply"]}{pk}',
+                "urls": {"list": URLS["template"]["list"]},
                 "success": success,
                 "success_project": success_project,
                 "error": error,
@@ -254,6 +284,14 @@ class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
     column_default_sort = [
         (TaskTemplateItemModel.template_id, False),
         (TaskTemplateItemModel.order_index, False),
+    ]
+
+    column_filters = [
+        ForeignKeyFilter(
+            TaskTemplateItemModel.template_id,
+            TaskTemplateModel.title,
+            title="Задачи шаблона",
+        )
     ]
 
     column_labels = {

@@ -7,6 +7,12 @@ from starlette.requests import Request
 ADMIN_PREFIX = "/admin"
 
 URLS = {
+    "template": {
+        "list": f"{ADMIN_PREFIX}/task-template-model/list",
+        "details": f"{ADMIN_PREFIX}/task-template-model/details/",
+        "edit": f"{ADMIN_PREFIX}/task-template-model/edit/",
+        "apply": f"{ADMIN_PREFIX}/task-template-model/apply/",
+    },
     "user": {
         "list": f"{ADMIN_PREFIX}/user-model/list",
         "details": f"{ADMIN_PREFIX}/user-model/details/",

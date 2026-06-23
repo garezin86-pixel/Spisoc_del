@@ -689,7 +689,7 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 520px) {
   .task-actions {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -877,15 +877,28 @@ textarea {
   .tab-bar {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    overflow-x: visible;
+    grid-template-columns: repeat(7, 1fr);
   }
 
   .tab-btn {
-    padding: 8px 6px;
-    font-size: 0.8rem;
-    justify-content: center;
+    padding: 6px 2px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    gap: 2px;
   }
+
+  .tab-btn svg,
+  .tab-btn i {
+    width: 12px !important;
+    height: 12px !important;
+    min-width: 12px !important;
+    flex-shrink: 0;
+  }
+
+
 
   .user-chip {
     order: 2;
@@ -1418,7 +1431,7 @@ textarea {
   display: block;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 530px) {
   .page-shell {
     padding-inline: 10px;
   }
@@ -1447,8 +1460,14 @@ textarea {
   }
 
   .tab-btn {
-    padding: 6px 4px;
-    font-size: 0.75rem;
+    padding: 6px 3px;
+    font-size: 0.68rem;
+    gap: 0;
+  }
+
+  .tab-btn svg,
+  .tab-btn i {
+    display: none;
   }
 
   .card {
