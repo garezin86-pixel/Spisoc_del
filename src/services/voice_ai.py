@@ -1,8 +1,13 @@
 """
 src/services/voice_ai.py
 
-Транскрибация голоса через Groq Whisper + парсинг в задачу через Groq LLM.
-Один провайдер — никаких проблем с квотами Gemini.
+Транскрибация голоса через Groq Whisper + парсинг намерения через Groq LLaMA.
+
+Поддерживаемые намерения (intent):
+- create       — создать новую задачу
+- find         — найти задачу по тексту
+- update_status  — изменить статус задачи
+- update_priority — изменить приоритет задачи
 """
 
 import json
@@ -28,9 +33,6 @@ def _get_groq() -> AsyncGroq:
 
 
 async def transcribe_voice(ogg_bytes: bytes) -> str:
-    """
-    Транскрибирует голосовое сообщение через Groq Whisper large-v3.
-    """
     groq = _get_groq()
 
     with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
@@ -50,99 +52,140 @@ async def transcribe_voice(ogg_bytes: bytes) -> str:
     return text.strip()
 
 
-async def parse_task_from_text(text: str) -> dict:
+async def parse_voice_intent(text: str) -> dict:
     """
-    Парсит произвольный текст в структуру задачи через Groq LLaMA.
+    Парсит текст в намерение + данные.
+
+    Возвращает один из вариантов:
+
+    create:
+    {"intent": "create", "title": ..., "description": ...,
+     "priority": ..., "deadline": ..., "deadline_time": ...}
+
+    find:
+    {"intent": "find", "search_query": "текст для поиска"}
+
+    update_status:
+    {"intent": "update_status", "search_query": "текст задачи",
+     "status": "todo|in_progress|review|done|backlog"}
+
+    update_priority:
+    {"intent": "update_priority", "search_query": "текст задачи",
+     "priority": "low|medium|high|critical"}
     """
     today = date.today()
     friday = today + timedelta(days=(4 - today.weekday()) % 7)
     tomorrow = today + timedelta(days=1)
     next_monday = today + timedelta(days=(7 - today.weekday()) % 7)
 
-    prompt = f"""Ты — помощник, который парсит текст в структуру задачи.
+    prompt = f"""Ты — помощник таск-менеджера. Определи намерение пользователя и извлеки данные.
 
-Сегодняшняя дата: {today.isoformat()}
-Завтра: {tomorrow.isoformat()}
-Ближайшая пятница: {friday.isoformat()}
-Следующий понедельник: {next_monday.isoformat()}
+Сегодня: {today.isoformat()}, завтра: {tomorrow.isoformat()}, пятница: {friday.isoformat()}, пн: {next_monday.isoformat()}
 
-Текст пользователя: "{text}"
+Текст: "{text}"
 
-Верни ТОЛЬКО валидный JSON без markdown-обёртки, без пояснений:
-{{
-  "title": "краткое название задачи (до 100 символов)",
-  "description": "подробности если есть, иначе null",
-  "priority": "low | medium | high | critical",
-  "deadline": "YYYY-MM-DD или null",
-  "deadline_time": "HH:MM или null"
-}}
+Верни ТОЛЬКО валидный JSON без markdown, без пояснений.
+
+Намерения:
+
+1. СОЗДАТЬ ЗАДАЧУ — пользователь хочет создать/добавить/записать задачу:
+{{"intent":"create","title":"краткое название","description":"детали или null","priority":"low|medium|high|critical","deadline":"YYYY-MM-DD или null","deadline_time":"HH:MM или null"}}
+
+2. НАЙТИ ЗАДАЧУ — пользователь ищет/хочет найти/показать задачу:
+{{"intent":"find","search_query":"ключевые слова для поиска"}}
+
+3. ИЗМЕНИТЬ СТАТУС — пользователь хочет обновить статус задачи:
+{{"intent":"update_status","search_query":"ключевые слова задачи","status":"todo|in_progress|review|done|backlog"}}
+
+4. ИЗМЕНИТЬ ПРИОРИТЕТ — пользователь хочет изменить приоритет задачи:
+{{"intent":"update_priority","search_query":"ключевые слова задачи","priority":"low|medium|high|critical"}}
+
+Правила статуса:
+- выполнена / сделана / готово / закрыть → done
+- в работе / начал / приступил / делаю → in_progress
+- на проверке / проверить / ревью → review
+- новая / открыть / вернуть → todo
+- в очередь / отложить / backlog → backlog
 
 Правила приоритета:
-- critical: срочно, ASAP, горит, немедленно, критично
-- high: важно, нужно сегодня, до конца дня
-- medium: обычная задача (default)
-- low: когда-нибудь, не срочно, при возможности
+- срочно / критично / горит / ASAP → critical
+- важно / высокий → high
+- обычный / средний → medium
+- не срочно / низкий / потом → low
 
-Правила дедлайна (дата):
-- "сегодня" → {today.isoformat()}
-- "завтра" → {tomorrow.isoformat()}
-- "в пятницу" / "до пятницы" → {friday.isoformat()}
-- "на следующей неделе" → {next_monday.isoformat()}
-- конкретная дата → преобразуй в YYYY-MM-DD
-- не указан → null
-
-Правила дедлайна (время):
-- "до 12" / "до 12:00" / "в 12" → "12:00"
-- "до 18" / "до 6 вечера" → "18:00"
-- "до обеда" → "13:00"
-- если время не указано → null
-- время НЕ дублируй в description, оно уже есть в deadline_time"""
+Правила дедлайна (только для create):
+- сегодня → {today.isoformat()}, завтра → {tomorrow.isoformat()}
+- в пятницу → {friday.isoformat()}, на следующей неделе → {next_monday.isoformat()}
+- "до 12" / "в 12" → deadline_time: "12:00"
+- до обеда → deadline_time: "13:00"
+- время не указано → deadline_time: null"""
 
     groq = _get_groq()
     response = await groq.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_tokens=256,
+        max_tokens=300,
     )
 
     raw = (response.choices[0].message.content or "").strip()
-
-    # Убираем ```json ... ``` если модель всё же добавила
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 
     if not raw:
-        logger.warning("LLM returned empty response")
-        return {
-            "title": text[:100],
-            "description": None,
-            "priority": "medium",
-            "deadline": None,
-        }
+        logger.warning("LLM returned empty response for: %s", text)
+        return _create_fallback(text)
 
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        logger.warning("LLM returned invalid JSON: %s", raw)
-        parsed = {
-            "title": text[:100],
-            "description": None,
-            "priority": "medium",
-            "deadline": None,
-        }
+        logger.warning("LLM invalid JSON: %s", raw)
+        return _create_fallback(text)
 
-    # Валидация приоритета
-    if parsed.get("priority") not in {"low", "medium", "high", "critical"}:
-        parsed["priority"] = "medium"
+    intent = parsed.get("intent")
 
-    return parsed
+    if intent == "create":
+        if parsed.get("priority") not in {"low", "medium", "high", "critical"}:
+            parsed["priority"] = "medium"
+        return parsed
+
+    if intent == "find":
+        if not parsed.get("search_query"):
+            parsed["search_query"] = text
+        return parsed
+
+    if intent == "update_status":
+        valid_statuses = {"todo", "in_progress", "review", "done", "backlog"}
+        if parsed.get("status") not in valid_statuses:
+            parsed["status"] = "done"
+        if not parsed.get("search_query"):
+            parsed["search_query"] = text
+        return parsed
+
+    if intent == "update_priority":
+        if parsed.get("priority") not in {"low", "medium", "high", "critical"}:
+            parsed["priority"] = "high"
+        if not parsed.get("search_query"):
+            parsed["search_query"] = text
+        return parsed
+
+    # Неизвестное намерение — fallback на create
+    return _create_fallback(text)
+
+
+def _create_fallback(text: str) -> dict:
+    return {
+        "intent": "create",
+        "title": text[:100],
+        "description": None,
+        "priority": "medium",
+        "deadline": None,
+        "deadline_time": None,
+    }
 
 
 async def process_voice_message(ogg_bytes: bytes) -> tuple[str, dict]:
-    """
-    Полный pipeline: байты голосового → (транскрипт, задача).
-    """
+    """Полный pipeline: байты → (транскрипт, распознанное намерение)."""
     transcript = await transcribe_voice(ogg_bytes)
-    task_data = await parse_task_from_text(transcript)
-    return transcript, task_data
+    intent_data = await parse_voice_intent(transcript)
+    return transcript, intent_data
