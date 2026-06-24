@@ -142,6 +142,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
             f'style="padding:6px 16px;background:#198754;color:#fff;border-radius:8px;'
             f'font-size:13px;text-decoration:none;">▶ Применить шаблон к проекту</a>'
         ),
+        "visibility": column_formatters["visibility"],
     }
 
     form_columns = [

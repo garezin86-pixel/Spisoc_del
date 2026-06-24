@@ -8,11 +8,13 @@ from src.bot.handlers.notification_actions import router as notification_actions
 from src.bot.handlers.trash import router as trash_router
 from src.bot.handlers.commands import router as commands_router
 from src.bot.handlers.projects import router as projects_router
+from src.bot.handlers.voice import router as voice_router
 
 
 def register_handlers(dp: Dispatcher):
     # commands_router первым — чтобы /done, /task и т.д. не перехватывались
     # хендлерами с Message(content_types=...) из tasks_router
+    dp.include_router(voice_router)  # голосовые — первым, до text-хендлеров
     dp.include_router(commands_router)
     dp.include_router(projects_router)
     dp.include_router(start_router)
