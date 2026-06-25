@@ -25,6 +25,9 @@ from src.models.user import UserRole
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.users_repository import UserRepository
 from src.repositories.groups_repository import GroupRepository
+from src.repositories.task_repository import TaskRepository
+from src.models.task import SpisokModel
+from src.services.task_service import TaskService
 from src.schemas.schemas_project import ProjectCreate
 from src.services.project_service import ProjectService
 from src.bot.keyboards.main import (
@@ -63,6 +66,8 @@ class ProjectMenu(StatesGroup):
     del_member_project = State()  # ввод ID проекта для удаления участника
     del_member_username = State()  # ввод @username участника
     delete_id = State()  # ввод ID проекта для удаления
+    assign_group_task_id = State()  # ввод ID задачи для назначения на группу
+    assign_group_id = State()  # ввод ID группы
 
 
 # ── хелперы ───────────────────────────────────────────────────────────────────
@@ -458,6 +463,139 @@ async def project_delete_do(message: Message, state: FSMContext):
 # ══════════════════════════════════════════════════════════════════════════════
 # Назад
 # ══════════════════════════════════════════════════════════════════════════════
+
+
+@router.message(ProjectMenu.browsing, F.text == "🔄 Назначить задачу на группу")
+async def assign_task_group_start(message: Message, state: FSMContext):
+    """Шаг 1 — спрашиваем ID задачи."""
+    await state.set_state(ProjectMenu.assign_group_task_id)
+    await message.answer(
+        "🔄 <b>Назначение задачи на группу</b>\n\n"
+        "Введите ID задачи которую хотите назначить на группу:\n"
+        "<i>(ID задачи указан в сообщении задачи как 🆔 ID: N)</i>",
+        parse_mode="HTML",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(ProjectMenu.assign_group_task_id, F.text == "❌ Отмена")
+async def assign_task_group_cancel_1(message: Message, state: FSMContext):
+    await state.set_state(ProjectMenu.browsing)
+
+    async with UnitOfWork(get_session_maker()) as uow:
+        assert message.from_user is not None
+        user = await uow.users.get_by_telegram_id(message.from_user.id)
+    kb = (
+        projects_admin_keyboard()
+        if user and _is_manager(user)
+        else projects_menu_keyboard()
+    )
+    await message.answer("❌ Отменено.", reply_markup=kb)
+
+
+@router.message(ProjectMenu.assign_group_task_id)
+async def assign_task_group_get_task_id(message: Message, state: FSMContext):
+    """Шаг 2 — получаем ID задачи, спрашиваем ID группы."""
+    text = (message.text or "").strip()
+    if not text.isdigit():
+        await message.answer("❌ Введите числовой ID задачи.")
+        return
+
+    task_id = int(text)
+    async with UnitOfWork(get_session_maker()) as uow:
+        task = await uow.session.get(SpisokModel, task_id)
+        if not task or task.deleted_at is not None:
+            await message.answer(f"❌ Задача #{task_id} не найдена.")
+            return
+
+        # Показываем список групп
+        from sqlalchemy import select as sa_select
+        from src.models.group import GroupModel
+
+        result = await uow.session.execute(sa_select(GroupModel).limit(20))
+        groups = list(result.scalars().all())
+
+    if not groups:
+        await message.answer("❌ В системе нет групп.")
+        return
+
+    await state.update_data(assign_task_id=task_id, task_title=task.title)
+    await state.set_state(ProjectMenu.assign_group_id)
+
+    lines = [f"📌 Задача: <b>{task.title}</b>\n", "👥 <b>Доступные группы:</b>"]
+    for g in groups:
+        lines.append(f"  • ID <code>{g.id}</code> — {g.name}")
+    lines.append("\nВведите ID группы:")
+
+    await message.answer(
+        "\n".join(lines), parse_mode="HTML", reply_markup=cancel_keyboard()
+    )
+
+
+@router.message(ProjectMenu.assign_group_id, F.text == "❌ Отмена")
+async def assign_task_group_cancel_2(message: Message, state: FSMContext):
+    await state.set_state(ProjectMenu.browsing)
+    async with UnitOfWork(get_session_maker()) as uow:
+        assert message.from_user is not None
+        user = await uow.users.get_by_telegram_id(message.from_user.id)
+    kb = (
+        projects_admin_keyboard()
+        if user and _is_manager(user)
+        else projects_menu_keyboard()
+    )
+    await message.answer("❌ Отменено.", reply_markup=kb)
+
+
+@router.message(ProjectMenu.assign_group_id)
+async def assign_task_group_finish(message: Message, state: FSMContext):
+    """Шаг 3 — назначаем задачу на группу."""
+    text = (message.text or "").strip()
+    if not text.isdigit():
+        await message.answer("❌ Введите числовой ID группы.")
+        return
+
+    group_id = int(text)
+    data = await state.get_data()
+    task_id: int = data["assign_task_id"]
+    task_title: str = data["task_title"]
+
+    async with UnitOfWork(get_session_maker()) as uow:
+        assert message.from_user is not None
+        user = await uow.users.get_by_telegram_id(message.from_user.id)
+        if not user:
+            await message.answer("❌ У вас нет доступа.")
+            return
+
+        svc = TaskService(
+            task_repo=TaskRepository(uow.session),
+            user_repo=UserRepository(uow.session),
+            group_repo=GroupRepository(uow.session),
+            session=uow.session,
+        )
+
+        try:
+            task = await svc.reassign_task(
+                task_id=task_id,
+                current_user=user,
+                user_id=None,
+                group_id=group_id,
+            )
+            await uow.commit()
+            group_name = task.group.name if task.group else f"#{group_id}"
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}")
+            await state.set_state(ProjectMenu.browsing)
+            return
+
+    await state.set_state(ProjectMenu.browsing)
+    kb = projects_admin_keyboard() if _is_manager(user) else projects_menu_keyboard()
+    await message.answer(
+        f"✅ <b>Задача назначена на группу!</b>\n\n"
+        f"📌 {task_title}\n"
+        f"👥 Группа: {group_name}",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
 
 
 @router.message(ProjectMenu.browsing, F.text == "🔙 Назад")
