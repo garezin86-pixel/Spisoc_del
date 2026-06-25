@@ -1,23 +1,11 @@
-import enum
+# import enum
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey, String, Text, DateTime, Integer
 from sqlalchemy import Enum as SAEnum
 from datetime import datetime, timezone
 from src.db import Base
-from src.models.task import TaskPriority
-
-
-class TemplateVisibility(str, enum.Enum):
-    private = "private"
-    group = "group"
-    global_ = "global"
-
-    @classmethod
-    def _missing_(cls, value):
-        if value == "global":
-            return cls.global_
-        return None
+from src.models.enums import TaskPriority
 
 
 class TaskTemplateModel(Base):
@@ -84,3 +72,6 @@ class TaskTemplateItemModel(Base):
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     template = relationship("TaskTemplateModel", back_populates="items")
+
+    def __str__(self):
+        return self.title

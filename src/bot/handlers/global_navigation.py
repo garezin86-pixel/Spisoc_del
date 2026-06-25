@@ -26,6 +26,7 @@ async def set_main_menu(bot):
             command="new", description="➕ Создать задачу: /new Название | дедлайн"
         ),
         BotCommand(command="find", description="🔎 Найти задачу: /find текст"),
+        BotCommand(command="voice", description="🎤 Голосовые команды — шпаргалка"),
         BotCommand(command="group", description="👥 Задачи группы: /group 3"),
     ]
 
