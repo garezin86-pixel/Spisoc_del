@@ -4,7 +4,10 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 def main_menu_user() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📋 Мои задачи")],
+            [
+                KeyboardButton(text="📋 Мои задачи"),
+                KeyboardButton(text="👤 Я автор"),
+            ],
             [
                 KeyboardButton(text="✅ Выполненные"),
                 KeyboardButton(text="⏳ Невыполненные"),
@@ -29,7 +32,10 @@ def main_menu_user() -> ReplyKeyboardMarkup:
 def main_menu_admin() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📋 Мои задачи")],
+            [
+                KeyboardButton(text="📋 Мои задачи"),
+                KeyboardButton(text="👤 Я автор"),
+            ],
             [
                 KeyboardButton(text="✅ Выполненные"),
                 KeyboardButton(text="⏳ Невыполненные"),
@@ -220,6 +226,7 @@ def projects_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📋 Мои проекты")],
             [KeyboardButton(text="🔍 Проект по ID")],
+            [KeyboardButton(text="🔄 Назначить задачу на группу")],
             [KeyboardButton(text="🔙 Назад")],
         ],
         resize_keyboard=True,
@@ -240,6 +247,7 @@ def projects_admin_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="➕ Добавить участника"),
                 KeyboardButton(text="➖ Удалить участника"),
             ],
+            [KeyboardButton(text="🔄 Назначить задачу на группу")],
             [KeyboardButton(text="🔙 Назад")],
         ],
         resize_keyboard=True,

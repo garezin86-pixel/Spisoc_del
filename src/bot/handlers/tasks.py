@@ -148,6 +148,60 @@ async def my_tasks(message: Message):
             )
 
 
+@router.message(F.text == "👤 Я автор")
+async def author_tasks(message: Message):
+    async with UnitOfWork(get_session_maker()) as uow:
+        assert message.from_user is not None
+        user = await uow.users.get_by_telegram_id(message.from_user.id)
+        if not user:
+            await message.answer("❌ У вас нет доступа.")
+            return
+        from sqlalchemy import select
+        from src.models.task import SpisokModel
+
+        result = await uow.session.execute(
+            select(SpisokModel)
+            .where(
+                SpisokModel.author_id == user.id,
+                SpisokModel.deleted_at.is_(None),
+            )
+            .order_by(SpisokModel.created_at.desc())
+            .limit(20)
+        )
+        tasks = list(result.scalars().all())
+
+    if not tasks:
+        await message.answer("📭 Вы не являетесь автором ни одной задачи.")
+        return
+
+    await message.answer(
+        f"👤 <b>Задачи где вы автор</b> (последние {len(tasks)}):", parse_mode="HTML"
+    )
+    for task in tasks:
+        status = _status_emoji(task)
+        deadline = to_local(task.deadline)
+        priority_emoji = (
+            "🔴"
+            if task.priority and task.priority.value == "critical"
+            else (
+                "🟠"
+                if task.priority and task.priority.value == "high"
+                else "🔵"
+                if task.priority and task.priority.value == "medium"
+                else "⚪"
+            )
+        )
+        assignee = f"\n👤 Исполнитель: {task.user.username}" if task.user else ""
+        await message.answer(
+            f"{status} <b>{task.title}</b>\n"
+            f"🎯 {priority_emoji} Приоритет\n"
+            f"📅 Дедлайн: {deadline}"
+            f"{assignee}\n"
+            f"🆔 ID: {task.id}",
+            parse_mode="HTML",
+        )
+
+
 @router.message(F.text == "✅ Выполненные")
 async def done_tasks(message: Message):
     async with UnitOfWork(get_session_maker()) as uow:

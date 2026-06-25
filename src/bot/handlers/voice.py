@@ -385,6 +385,7 @@ async def confirm_create(callback: CallbackQuery, state: FSMContext):
                 deadline = None
 
         async with UnitOfWork(get_session_maker()) as uow:
+            uow.session.info["audit_user_id"] = user_id
             task = SpisokModel(
                 title=task_data["title"],
                 description=task_data.get("description"),
@@ -436,6 +437,7 @@ async def confirm_status(callback: CallbackQuery, state: FSMContext):
 
     try:
         async with UnitOfWork(get_session_maker()) as uow:
+            uow.session.info["audit_user_id"] = data["user_id"]
             task = await uow.session.get(SpisokModel, task_id)
             if not task:
                 await callback.message.edit_text("❌ Задача не найдена.")
@@ -471,6 +473,7 @@ async def confirm_priority(callback: CallbackQuery, state: FSMContext):
 
     try:
         async with UnitOfWork(get_session_maker()) as uow:
+            uow.session.info["audit_user_id"] = data["user_id"]
             task = await uow.session.get(SpisokModel, task_id)
             if not task:
                 await callback.message.edit_text("❌ Задача не найдена.")
@@ -509,6 +512,7 @@ async def confirm_assign(callback: CallbackQuery, state: FSMContext):
 
     try:
         async with UnitOfWork(get_session_maker()) as uow:
+            uow.session.info["audit_user_id"] = data["user_id"]
             task = await uow.session.get(SpisokModel, task_id)
             assignee = await uow.session.get(UserModel, assignee_id)
             if not task or not assignee:
