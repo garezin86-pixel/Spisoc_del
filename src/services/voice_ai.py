@@ -100,6 +100,9 @@ async def parse_voice_intent(text: str) -> dict:
 4. ИЗМЕНИТЬ ПРИОРИТЕТ — пользователь хочет изменить приоритет задачи:
 {{"intent":"update_priority","search_query":"ключевые слова задачи","priority":"low|medium|high|critical"}}
 
+5. НАЗНАЧИТЬ ИСПОЛНИТЕЛЯ — пользователь хочет назначить/переназначить задачу кому-то:
+{{"intent":"assign","search_query":"ключевые слова задачи","assignee":"имя или username исполнителя"}}
+
 Правила статуса:
 - выполнена / сделана / готово / закрыть → done
 - в работе / начал / приступил / делаю → in_progress
@@ -167,6 +170,13 @@ async def parse_voice_intent(text: str) -> dict:
             parsed["priority"] = "high"
         if not parsed.get("search_query"):
             parsed["search_query"] = text
+        return parsed
+
+    if intent == "assign":
+        if not parsed.get("search_query"):
+            parsed["search_query"] = text
+        if not parsed.get("assignee"):
+            parsed["assignee"] = ""
         return parsed
 
     # Неизвестное намерение — fallback на create

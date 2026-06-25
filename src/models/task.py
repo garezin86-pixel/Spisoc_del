@@ -6,29 +6,11 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from src.db import Base
 from sqlalchemy import Enum as SAEnum
-from enum import Enum
+
+# from enum import Enum
 from src.models.audit import AuditMixin, SoftDeleteMixin
 from typing import TYPE_CHECKING
-
-
-class TaskPriority(str, Enum):
-    """Приоритет задачи. Используется для сортировки и фильтрации."""
-
-    low = "low"
-    medium = "medium"
-    high = "high"
-    critical = "critical"
-
-
-class TaskStatus(str, Enum):
-    """Статус задачи для канбан-доски."""
-
-    backlog = "backlog"  # Очередь
-    todo = "todo"  # Новые
-    in_progress = "in_progress"  # В работе
-    review = "review"  # На проверке
-    done = "done"  # Готово
-
+from src.models.enums import TaskPriority, TaskStatus
 
 if TYPE_CHECKING:
     from src.models.user import (

@@ -224,6 +224,39 @@ class StatusFilter:
         return query.filter(model.status == value)
 
 
+class ProjectFilter:
+    has_operator = False
+    title = "Назначено на проект"
+    parameter_name = "project"
+
+    def __init__(self, column=None, title=None, parameter_name=None):
+        self.column = column or SpisokModel.project_id
+
+        if title:
+            self.title = title
+        if parameter_name:
+            self.parameter_name = parameter_name
+
+    async def lookups(self, request, model, run_query):
+        projects = await run_query(
+            select(ProjectModel.id, ProjectModel.name).order_by(ProjectModel.name)
+        )
+
+        return [
+            ("", "Все"),
+            ("__null__", "Не назначено"),
+        ] + [(str(id), name) for id, name in projects]
+
+    async def get_filtered_query(self, query, value, model):
+        if value == "__null__":
+            return query.filter(self.column.is_(None))
+
+        if value:
+            return query.filter(self.column == int(value))
+
+        return query
+
+
 class TaskAdmin(ModelView, model=SpisokModel):
     identity = "spisok-model"
     name = "Задача"
@@ -249,13 +282,11 @@ class TaskAdmin(ModelView, model=SpisokModel):
         StatusFilter(),
         AssignmentFilter(),
         ForeignKeyFilter(
-            SpisokModel.user_id, UserModel.username, title="Назначено на пользователя"
-        ),
-        ForeignKeyFilter(
             SpisokModel.group_id, GroupModel.name, title="Назначено на группу"
         ),
+        ProjectFilter(),
         ForeignKeyFilter(
-            SpisokModel.project_id, ProjectModel.name, title="Назначено на проект"
+            SpisokModel.user_id, UserModel.username, title="Назначено на пользователя"
         ),
     ]
 
