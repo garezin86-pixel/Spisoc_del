@@ -226,7 +226,7 @@ def projects_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📋 Мои проекты")],
             [KeyboardButton(text="🔍 Проект по ID")],
-            [KeyboardButton(text="🔄 Назначить задачу на группу")],
+            [KeyboardButton(text="🔄 Назначить проект на группу")],
             [KeyboardButton(text="🔙 Назад")],
         ],
         resize_keyboard=True,
@@ -247,7 +247,7 @@ def projects_admin_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="➕ Добавить участника"),
                 KeyboardButton(text="➖ Удалить участника"),
             ],
-            [KeyboardButton(text="🔄 Назначить задачу на группу")],
+            [KeyboardButton(text="🔄 Назначить проект на группу")],
             [KeyboardButton(text="🔙 Назад")],
         ],
         resize_keyboard=True,

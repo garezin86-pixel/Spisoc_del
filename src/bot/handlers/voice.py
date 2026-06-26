@@ -29,6 +29,7 @@ from src.db.unit_of_work import UnitOfWork
 from src.models.task import SpisokModel, TaskPriority, TaskStatus
 from src.models.user import UserModel
 from src.services.voice_ai import process_voice_message
+from src.services.notifications import notify_task_assigned, notify_task_updated
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -401,6 +402,7 @@ async def confirm_create(callback: CallbackQuery, state: FSMContext):
             await uow.commit()
             await uow.session.refresh(task)
 
+        await notify_task_assigned(task.id)
         await state.clear()
         emoji = PRIORITY_EMOJI.get(priority.value, "🔵")
         dl_str = ""
@@ -445,6 +447,7 @@ async def confirm_status(callback: CallbackQuery, state: FSMContext):
             task.status = TaskStatus(new_status)
             await uow.commit()
 
+        await notify_task_updated(task_id, {"status": new_status})
         await state.clear()
         status_label = STATUS_LABEL.get(new_status, new_status)
         await callback.message.edit_text(
@@ -481,6 +484,7 @@ async def confirm_priority(callback: CallbackQuery, state: FSMContext):
             task.priority = TaskPriority(new_priority)
             await uow.commit()
 
+        await notify_task_updated(task_id, {"priority": new_priority})
         await state.clear()
         emoji = PRIORITY_EMOJI.get(new_priority, "🔵")
         label = PRIORITY_LABEL.get(new_priority, new_priority)
@@ -523,6 +527,7 @@ async def confirm_assign(callback: CallbackQuery, state: FSMContext):
             task.user_id = assignee_id
             await uow.commit()
 
+        await notify_task_assigned(task_id)
         await state.clear()
         await callback.message.edit_text(
             f"✅ <b>Исполнитель назначен!</b>\n\n"
