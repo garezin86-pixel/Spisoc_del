@@ -14,25 +14,25 @@
   🔙 Назад           — в главное меню
 """
 
-from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message, ReplyKeyboardMarkup
 
+from src.bot.keyboards.main import (
+    cancel_keyboard,
+    get_main_menu_keyboard,
+    projects_admin_keyboard,
+    projects_menu_keyboard,
+)
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.user import UserRole
+from src.repositories.groups_repository import GroupRepository
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.users_repository import UserRepository
-from src.repositories.groups_repository import GroupRepository
 from src.schemas.schemas_project import ProjectCreate
 from src.services.project_service import ProjectService
-from src.bot.keyboards.main import (
-    projects_menu_keyboard,
-    projects_admin_keyboard,
-    cancel_keyboard,
-    get_main_menu_keyboard,
-)
 
 router = Router()
 
@@ -79,9 +79,7 @@ def _fmt_project_short(p, idx: int) -> str:
     total = len(p.tasks)
     pct = round(done / total * 100) if total else 0
     return (
-        f"{idx}. <b>{p.name}</b> 🆔{p.id}\n"
-        f"   📋 Задач: {total}  ✅ {done} ({pct}%)\n"
-        f"   👥 Участников: {len(p.members)}"
+        f"{idx}. <b>{p.name}</b> 🆔{p.id}\n   📋 Задач: {total}  ✅ {done} ({pct}%)\n   👥 Участников: {len(p.members)}"
     )
 
 
@@ -122,7 +120,7 @@ def _fmt_project_full(p) -> str:
 
 
 def _skip_cancel_kb() -> ReplyKeyboardMarkup:
-    from src.bot.keyboards.main import ReplyKeyboardMarkup, KeyboardButton
+    from src.bot.keyboards.main import KeyboardButton, ReplyKeyboardMarkup
 
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -138,11 +136,7 @@ async def _back_to_projects(message: Message, state: FSMContext) -> None:
     assert message.from_user is not None
     async with UnitOfWork(get_session_maker()) as uow:
         user = await uow.users.get_by_telegram_id(message.from_user.id)
-    kb = (
-        projects_admin_keyboard()
-        if user and _is_manager(user)
-        else projects_menu_keyboard()
-    )
+    kb = projects_admin_keyboard() if user and _is_manager(user) else projects_menu_keyboard()
     await message.answer("📁 Выберите действие:", reply_markup=kb)
     await state.set_state(ProjectMenu.browsing)
 
@@ -162,9 +156,7 @@ async def projects_enter(message: Message, state: FSMContext):
             return
 
     kb = projects_admin_keyboard() if _is_manager(user) else projects_menu_keyboard()
-    await message.answer(
-        "📁 <b>Проекты</b>\nВыберите действие:", parse_mode="HTML", reply_markup=kb
-    )
+    await message.answer("📁 <b>Проекты</b>\nВыберите действие:", parse_mode="HTML", reply_markup=kb)
     await state.set_state(ProjectMenu.browsing)
 
 
@@ -181,9 +173,7 @@ async def projects_list(message: Message, state: FSMContext):
         if not user:
             await message.answer("❌ У вас нет доступа.")
             return
-        projects, total = await make_project_service(uow).get_projects(
-            user, offset=0, limit=PAGE_SIZE
-        )
+        projects, total = await make_project_service(uow).get_projects(user, offset=0, limit=PAGE_SIZE)
 
     if not projects:
         await message.answer("📭 У вас нет проектов.")
@@ -285,9 +275,7 @@ async def project_create_desc(message: Message, state: FSMContext):
             return
         try:
             project = await make_project_service(uow).create_project(
-                ProjectCreate(
-                    name=data["name"], description=description, group_id=None
-                ),
+                ProjectCreate(name=data["name"], description=description, group_id=None),
                 user,
             )
             await message.answer(
@@ -329,9 +317,7 @@ async def project_add_member_project_id(message: Message, state: FSMContext):
         await message.answer("❌ Введите корректный ID (число).")
         return
     await state.set_state(ProjectMenu.add_member_username)
-    await message.answer(
-        "Введите @username пользователя:", reply_markup=cancel_keyboard()
-    )
+    await message.answer("Введите @username пользователя:", reply_markup=cancel_keyboard())
 
 
 @router.message(ProjectMenu.add_member_username)
@@ -356,9 +342,7 @@ async def project_add_member_do(message: Message, state: FSMContext):
             await _back_to_projects(message, state)
             return
         try:
-            result = await make_project_service(uow).add_member(
-                data["project_id"], target.id, user
-            )
+            result = await make_project_service(uow).add_member(data["project_id"], target.id, user)
             await message.answer(f"✅ {result['message']}")
         except Exception as e:
             await message.answer(f"❌ {e}")
@@ -395,9 +379,7 @@ async def project_del_member_project_id(message: Message, state: FSMContext):
         await message.answer("❌ Введите корректный ID (число).")
         return
     await state.set_state(ProjectMenu.del_member_username)
-    await message.answer(
-        "Введите @username пользователя:", reply_markup=cancel_keyboard()
-    )
+    await message.answer("Введите @username пользователя:", reply_markup=cancel_keyboard())
 
 
 @router.message(ProjectMenu.del_member_username)
@@ -422,9 +404,7 @@ async def project_del_member_do(message: Message, state: FSMContext):
             await _back_to_projects(message, state)
             return
         try:
-            result = await make_project_service(uow).remove_member(
-                data["project_id"], target.id, user
-            )
+            result = await make_project_service(uow).remove_member(data["project_id"], target.id, user)
             await message.answer(f"✅ {result['message']}")
         except Exception as e:
             await message.answer(f"❌ {e}")
@@ -513,9 +493,7 @@ async def assign_project_group_start(message: Message, state: FSMContext):
         group_info = f" (группа: {p.group.name})" if p.group else " (без группы)"
         lines.append(f"  • ID <code>{p.id}</code> — {p.name}{group_info}")
     lines.append("\nВведите ID проекта:")
-    await message.answer(
-        "\n".join(lines), parse_mode="HTML", reply_markup=cancel_keyboard()
-    )
+    await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=cancel_keyboard())
 
 
 @router.message(ProjectMenu.assign_project_id, F.text == "❌ Отмена")
@@ -524,11 +502,7 @@ async def assign_project_group_cancel_1(message: Message, state: FSMContext):
     async with UnitOfWork(get_session_maker()) as uow:
         assert message.from_user is not None
         user = await uow.users.get_by_telegram_id(message.from_user.id)
-    kb = (
-        projects_admin_keyboard()
-        if user and _is_manager(user)
-        else projects_menu_keyboard()
-    )
+    kb = projects_admin_keyboard() if user and _is_manager(user) else projects_menu_keyboard()
     await message.answer("❌ Отменено.", reply_markup=kb)
 
 
@@ -559,6 +533,7 @@ async def assign_project_group_get_project(message: Message, state: FSMContext):
             return
 
         from sqlalchemy import select as sa_select
+
         from src.models.group import GroupModel
 
         result = await uow.session.execute(sa_select(GroupModel).limit(30))
@@ -571,9 +546,7 @@ async def assign_project_group_get_project(message: Message, state: FSMContext):
     await state.update_data(assign_project_id=project_id, project_name=project.name)
     await state.set_state(ProjectMenu.assign_group_id)
 
-    current = (
-        f" (сейчас: {project.group.name})" if project.group else " (сейчас: без группы)"
-    )
+    current = f" (сейчас: {project.group.name})" if project.group else " (сейчас: без группы)"
     lines = [
         f"📁 Проект: <b>{project.name}</b>{current}\n",
         "👥 <b>Доступные группы:</b>",
@@ -581,9 +554,7 @@ async def assign_project_group_get_project(message: Message, state: FSMContext):
     for g in groups:
         lines.append(f"  • ID <code>{g.id}</code> — {g.name}")
     lines += ["", "Введите ID группы (или <code>0</code> — снять группу):"]
-    await message.answer(
-        "\n".join(lines), parse_mode="HTML", reply_markup=cancel_keyboard()
-    )
+    await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=cancel_keyboard())
 
 
 @router.message(ProjectMenu.assign_group_id, F.text == "❌ Отмена")
@@ -592,11 +563,7 @@ async def assign_project_group_cancel_2(message: Message, state: FSMContext):
     async with UnitOfWork(get_session_maker()) as uow:
         assert message.from_user is not None
         user = await uow.users.get_by_telegram_id(message.from_user.id)
-    kb = (
-        projects_admin_keyboard()
-        if user and _is_manager(user)
-        else projects_menu_keyboard()
-    )
+    kb = projects_admin_keyboard() if user and _is_manager(user) else projects_menu_keyboard()
     await message.answer("❌ Отменено.", reply_markup=kb)
 
 
@@ -641,11 +608,7 @@ async def assign_project_group_finish(message: Message, state: FSMContext):
     if group_id is None:
         text_result = f"✅ <b>Группа снята с проекта</b>\n\n📁 {project_name}"
     else:
-        text_result = (
-            f"✅ <b>Проект назначен на группу!</b>\n\n"
-            f"📁 {project_name}\n"
-            f"👥 {group_name}"
-        )
+        text_result = f"✅ <b>Проект назначен на группу!</b>\n\n📁 {project_name}\n👥 {group_name}"
     await message.answer(text_result, parse_mode="HTML", reply_markup=kb)
 
 

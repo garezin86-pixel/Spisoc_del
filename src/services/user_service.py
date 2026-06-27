@@ -1,6 +1,3 @@
-from src.repositories.abstract import AbstractUserRepository
-from src.schemas.user import UserRegister, UserUpdate
-from src.models.user import UserModel
 from src.core.constants import NO_ACCESS, USER_ALREADY_EXISTS, USER_NOT_FOUND
 from src.core.exceptions import (
     current_admin,
@@ -9,6 +6,9 @@ from src.core.exceptions import (
     user_not_found,
 )
 from src.core.security import hash_password
+from src.models.user import UserModel
+from src.repositories.abstract import AbstractUserRepository
+from src.schemas.user import UserRegister, UserUpdate
 
 
 class UserService:
@@ -21,9 +21,7 @@ class UserService:
     def __init__(self, user_repo: AbstractUserRepository):
         self.user_repo = user_repo
 
-    async def create_user(
-        self, data: UserRegister, current_user: UserModel
-    ) -> UserModel:
+    async def create_user(self, data: UserRegister, current_user: UserModel) -> UserModel:
         """Создаёт нового пользователя.
 
         Зачем: создание учётных записей доступно только admin —
@@ -79,9 +77,7 @@ class UserService:
 
         return user
 
-    async def update_user(
-        self, user_id: int, data: UserUpdate, current_user: UserModel
-    ) -> UserModel:
+    async def update_user(self, user_id: int, data: UserUpdate, current_user: UserModel) -> UserModel:
         """Обновляет имя пользователя и/или пароль.
 
         Зачем: пользователь может менять только свои данные.

@@ -1,7 +1,8 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from datetime import datetime
 import html
 import re
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _sanitize(text: str) -> str:

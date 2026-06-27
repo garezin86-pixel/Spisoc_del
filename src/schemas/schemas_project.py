@@ -1,8 +1,9 @@
 # src/schemas/project.py
-from pydantic import BaseModel, ConfigDict, Field
+import zoneinfo
 from datetime import datetime, timezone
 from typing import Optional
-import zoneinfo
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.schemas.user import UserSchemaForTask
 
@@ -66,15 +67,8 @@ class ProjectSchema(BaseModel):
             name=project.name,
             description=project.description,
             owner=project.owner,
-            members=[
-                ProjectMemberSchema(id=u.id, username=u.username)
-                for u in (project.members or [])
-            ],
-            group=(
-                ProjectGroupSchema(id=project.group.id, name=project.group.name)
-                if project.group
-                else None
-            ),
+            members=[ProjectMemberSchema(id=u.id, username=u.username) for u in (project.members or [])],
+            group=(ProjectGroupSchema(id=project.group.id, name=project.group.name) if project.group else None),
             group_id=project.group_id,
             task_count=len(tasks),
             done_count=sum(1 for t in tasks if t.status and t.status.value == "done"),

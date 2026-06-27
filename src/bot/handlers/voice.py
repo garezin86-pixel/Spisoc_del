@@ -19,15 +19,15 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from sqlalchemy import select, or_, and_
+from sqlalchemy import and_, or_, select
 
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.task import SpisokModel, TaskPriority, TaskStatus
 from src.models.user import UserModel
-from src.services.voice_ai import process_voice_message
-from src.services.chat_memory import get_history, add_message
+from src.services.chat_memory import add_message, get_history
 from src.services.notifications import notify_task_assigned, notify_task_updated
+from src.services.voice_ai import process_voice_message
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -107,9 +107,7 @@ def _parse_deadline(deadline_str: str | None, time_str: str | None) -> datetime 
                 h, m = t.hour, t.minute
             except ValueError:
                 pass
-        return datetime.strptime(deadline_str, "%Y-%m-%d").replace(
-            hour=h, minute=m, tzinfo=LOCAL_TZ
-        )
+        return datetime.strptime(deadline_str, "%Y-%m-%d").replace(hour=h, minute=m, tzinfo=LOCAL_TZ)
     except ValueError:
         return None
 
@@ -117,10 +115,7 @@ def _parse_deadline(deadline_str: str | None, time_str: str | None) -> datetime 
 def _fmt_task(task: SpisokModel) -> str:
     priority = task.priority.value if task.priority else "medium"
     status = task.status.value if task.status else "todo"
-    return (
-        f"{PRIORITY_EMOJI.get(priority, '🔵')} <b>{task.title}</b> "
-        f"— {STATUS_LABEL.get(status, status)} [#{task.id}]"
-    )
+    return f"{PRIORITY_EMOJI.get(priority, '🔵')} <b>{task.title}</b> — {STATUS_LABEL.get(status, status)} [#{task.id}]"
 
 
 # ── Выполнение tool calls ─────────────────────────────────────────────────────
@@ -169,16 +164,15 @@ async def _execute_tool(
 
         emoji = PRIORITY_EMOJI.get(priority.value, "🔵")
         dl = f"\n📅 {args['deadline']}" if args.get("deadline") else ""
-        assignee_str = (
-            f"\n👤 → {args['assignee_username']}"
-            if args.get("assignee_username")
-            else ""
-        )
-        return f"✅ Создана: <b>{task.title}</b>\n{emoji} {PRIORITY_LABEL.get(priority.value, priority.value)}{dl}{assignee_str}"
+        assignee_str = f"\n👤 → {args['assignee_username']}" if args.get("assignee_username") else ""
+        return f"✅ Создана: <b>{task.title}</b>\n{emoji} {PRIORITY_LABEL.get(priority.value, priority.value)}{dl}{
+            assignee_str
+        }"
 
     if tool_name == "get_tasks":
-        from sqlalchemy import and_, or_
         from datetime import datetime, timezone
+
+        from sqlalchemy import and_, or_
 
         conditions = [
             SpisokModel.deleted_at.is_(None),
@@ -188,9 +182,7 @@ async def _execute_tool(
         if args.get("search"):
             words = [w for w in args["search"].split() if len(w) > 2]
             if words:
-                conditions.append(
-                    or_(*[SpisokModel.title.ilike(f"%{w}%") for w in words])
-                )
+                conditions.append(or_(*[SpisokModel.title.ilike(f"%{w}%") for w in words]))
 
         if args.get("status"):
             try:
@@ -200,9 +192,7 @@ async def _execute_tool(
 
         if args.get("priority"):
             try:
-                conditions.append(
-                    SpisokModel.priority == TaskPriority(args["priority"])
-                )
+                conditions.append(SpisokModel.priority == TaskPriority(args["priority"]))
             except ValueError:
                 pass
 
@@ -212,10 +202,7 @@ async def _execute_tool(
             conditions.append(SpisokModel.status != TaskStatus.done)
 
         result = await session.execute(
-            select(SpisokModel)
-            .where(and_(*conditions))
-            .order_by(SpisokModel.created_at.desc())
-            .limit(10)
+            select(SpisokModel).where(and_(*conditions)).order_by(SpisokModel.created_at.desc()).limit(10)
         )
         tasks = list(result.scalars().all())
 
@@ -326,9 +313,7 @@ async def handle_voice(message: Message, state: FSMContext, bot: Bot):
 
     except Exception as e:
         logger.exception("Voice processing error: %s", e)
-        await status_msg.edit_text(
-            "❌ Не удалось обработать голосовое. Попробуйте ещё раз."
-        )
+        await status_msg.edit_text("❌ Не удалось обработать голосовое. Попробуйте ещё раз.")
         return
 
     # Сохраняем запрос пользователя в память
@@ -353,10 +338,7 @@ async def handle_voice(message: Message, state: FSMContext, bot: Bot):
         args = tc["arguments"]
         if name == "create_task":
             priority = args.get("priority", "medium")
-            lines.append(
-                f"  ➕ Создать: <b>{args.get('title', '?')}</b> "
-                f"{PRIORITY_EMOJI.get(priority, '🔵')}"
-            )
+            lines.append(f"  ➕ Создать: <b>{args.get('title', '?')}</b> {PRIORITY_EMOJI.get(priority, '🔵')}")
         elif name == "get_tasks":
             lines.append(f"  🔍 Найти задачи: {args.get('search', 'все')}")
         elif name == "update_task_status":
@@ -367,24 +349,16 @@ async def handle_voice(message: Message, state: FSMContext, bot: Bot):
         elif name == "update_task_priority":
             p = args.get("priority", "?")
             lines.append(
-                f"  🎯 Приоритет «{args.get('search', '?')}» → "
-                f"{PRIORITY_EMOJI.get(p, '🔵')} {PRIORITY_LABEL.get(p, p)}"
+                f"  🎯 Приоритет «{args.get('search', '?')}» → {PRIORITY_EMOJI.get(p, '🔵')} {PRIORITY_LABEL.get(p, p)}"
             )
         elif name == "assign_task":
-            lines.append(
-                f"  👤 Назначить «{args.get('search', '?')}» → @{args.get('assignee_username', '?')}"
-            )
+            lines.append(f"  👤 Назначить «{args.get('search', '?')}» → @{args.get('assignee_username', '?')}")
 
         elif name == "update_task_description":
-            lines.append(
-                f"  📝 Описание «{args.get('search', '?')}» → "
-                f"{args.get('description', '?')[:50]}…"
-            )
+            lines.append(f"  📝 Описание «{args.get('search', '?')}» → {args.get('description', '?')[:50]}…")
 
     await state.set_state(VoiceConfirm.waiting)
-    await state.update_data(
-        tool_calls=tool_calls, user_id=user_id, transcript=transcript
-    )
+    await state.update_data(tool_calls=tool_calls, user_id=user_id, transcript=transcript)
 
     await status_msg.edit_text(
         "\n".join(lines),
@@ -410,9 +384,7 @@ async def confirm_execute(callback: CallbackQuery, state: FSMContext):
     try:
         async with UnitOfWork(get_session_maker()) as uow:
             for tc in tool_calls:
-                result = await _execute_tool(
-                    tc["name"], tc["arguments"], user_id, uow.session
-                )
+                result = await _execute_tool(tc["name"], tc["arguments"], user_id, uow.session)
                 results.append(result)
             await uow.commit()
     except Exception as e:

@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, Request
-from src.db import SessionDep
-from src.models.user import UserModel
-from src.schemas.comment import CommentCreate, CommentResponse
+
 from src.core.dependencies import get_current_user
 from src.core.limiter import limiter
-from src.services.comments_service import CommentService
-from src.repositories.task_repository import TaskRepository
+from src.db import SessionDep
+from src.models.user import UserModel
 from src.repositories.other_repositories import CommentRepository
-from src.schemas.pagination import PaginationParams, PaginatedResponse
+from src.repositories.task_repository import TaskRepository
+from src.schemas.comment import CommentCreate, CommentResponse
+from src.schemas.pagination import PaginatedResponse, PaginationParams
+from src.services.comments_service import CommentService
 
 router = APIRouter(prefix="/comments", tags=["Comments"])
 
@@ -95,6 +96,4 @@ async def get_comment_task(
         limit=pagination.size,
         user=current_user,
     )
-    return PaginatedResponse.create(
-        items=comments, total=total, page=pagination.page, size=pagination.size
-    )
+    return PaginatedResponse.create(items=comments, total=total, page=pagination.page, size=pagination.size)

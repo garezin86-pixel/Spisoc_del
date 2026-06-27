@@ -8,8 +8,9 @@ Create Date: 2026-03-19 17:28:11.047365
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "659c5fd2d985"
@@ -46,9 +47,7 @@ def upgrade() -> None:
         sa.Column("author_id", sa.Integer(), nullable=False),
         sa.Column("group_id", sa.Integer(), nullable=True),
         sa.Column("deadline", sa.DateTime(), nullable=True),
-        sa.Column(
-            "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False
-        ),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["author_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(

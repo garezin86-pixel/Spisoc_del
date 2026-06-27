@@ -1,15 +1,16 @@
-import sqlalchemy as sa
-from sqlalchemy import select, func, case
-from sqlalchemy.orm import selectinload
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List, Dict
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
+import sqlalchemy as sa
+from sqlalchemy import case, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from src.models import GroupModel, UserModel
 from src.models.comment import CommentModel
 from src.models.notification_log import NotificationLogModel
 from src.models.notification_settings import NotificationSettingsModel
 from src.models.task import SpisokModel, TaskStatus
-from src.models import UserModel, GroupModel
 from src.repositories.abstract.base_other_repositories import (
     AbstractCommentRepository,
     AbstractNotificationRepository,
@@ -40,23 +41,15 @@ class CommentRepository(AbstractCommentRepository):
         return list(result.scalars().all())
 
     async def select_query(self, task_id: int):
-        query = (
-            select(CommentModel)
-            .where(CommentModel.task_id == task_id)
-            .options(selectinload(CommentModel.user))
-        )
+        query = select(CommentModel).where(CommentModel.task_id == task_id).options(selectinload(CommentModel.user))
         return query
 
     async def get_total_tasks(self, query):
-        total = await self.session.scalar(
-            select(func.count()).select_from(query.subquery())
-        )
+        total = await self.session.scalar(select(func.count()).select_from(query.subquery()))
         return total
 
     async def get_by_task_offset_limit(self, query, offset, limit):
-        query = (
-            query.offset(offset).limit(limit).order_by(CommentModel.created_at.desc())
-        )
+        query = query.offset(offset).limit(limit).order_by(CommentModel.created_at.desc())
         result = await self.session.execute(query)
         comments = result.scalars().all()
         return comments
@@ -147,22 +140,16 @@ class NotificationRepository(AbstractNotificationRepository):
         """Returns aggregated notification statistics for the admin dashboard."""
         since = datetime.utcnow() - timedelta(days=days)
 
-        total = await self.session.scalar(
-            select(func.count()).select_from(NotificationLogModel)
-        )
+        total = await self.session.scalar(select(func.count()).select_from(NotificationLogModel))
         total_success = await self.session.scalar(
-            select(func.count())
-            .select_from(NotificationLogModel)
-            .where(NotificationLogModel.success.is_(True))
+            select(func.count()).select_from(NotificationLogModel).where(NotificationLogModel.success.is_(True))
         )
 
         type_stats = await self.session.execute(
             select(
                 NotificationLogModel.notification_type,
                 func.count().label("count"),
-                func.sum(func.cast(NotificationLogModel.success, sa.Integer)).label(
-                    "success_count"
-                ),
+                func.sum(func.cast(NotificationLogModel.success, sa.Integer)).label("success_count"),
             ).group_by(NotificationLogModel.notification_type)
         )
 
@@ -170,9 +157,7 @@ class NotificationRepository(AbstractNotificationRepository):
             select(
                 func.date(NotificationLogModel.sent_at).label("date"),
                 func.count().label("count"),
-                func.sum(func.cast(NotificationLogModel.success, sa.Integer)).label(
-                    "success_count"
-                ),
+                func.sum(func.cast(NotificationLogModel.success, sa.Integer)).label("success_count"),
             )
             .where(NotificationLogModel.sent_at >= since)
             .group_by(func.date(NotificationLogModel.sent_at))
@@ -184,9 +169,7 @@ class NotificationRepository(AbstractNotificationRepository):
                 UserModel.username,
                 UserModel.telegram_id,
                 func.count(NotificationLogModel.id).label("total"),
-                func.sum(func.cast(NotificationLogModel.success, sa.Integer)).label(
-                    "success"
-                ),
+                func.sum(func.cast(NotificationLogModel.success, sa.Integer)).label("success"),
             )
             .join(NotificationLogModel.user)
             .group_by(UserModel.id, UserModel.username, UserModel.telegram_id)
@@ -202,9 +185,7 @@ class NotificationRepository(AbstractNotificationRepository):
             "top_users": top_users.all(),
         }
 
-    async def get_tasks_by_deadline_window(
-        self, start: datetime, end: datetime, user_id: Optional[int] = None
-    ):
+    async def get_tasks_by_deadline_window(self, start: datetime, end: datetime, user_id: Optional[int] = None):
         """Поиск задач по окну дедлайна"""
         query = select(SpisokModel).where(SpisokModel.deadline.between(start, end))
 
@@ -216,9 +197,7 @@ class NotificationRepository(AbstractNotificationRepository):
 
     async def get_overdue_tasks(self, now: datetime, user_id: Optional[int] = None):
         """Поиск просроченных задач"""
-        query = select(SpisokModel).where(
-            SpisokModel.deadline < now, SpisokModel.status != TaskStatus.done
-        )
+        query = select(SpisokModel).where(SpisokModel.deadline < now, SpisokModel.status != TaskStatus.done)
 
         if user_id:
             query = query.where(SpisokModel.user_id == user_id)
@@ -243,9 +222,7 @@ class NotificationSettingsRepository:
         Returns:
             Настройки уведомлений или None, если не найдены
         """
-        query = select(NotificationSettingsModel).where(
-            NotificationSettingsModel.user_id == user_id
-        )
+        query = select(NotificationSettingsModel).where(NotificationSettingsModel.user_id == user_id)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
@@ -332,9 +309,7 @@ class NotificationSettingsRepository:
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def get_by_user_ids(
-        self, user_ids: List[int]
-    ) -> Dict[int, NotificationSettingsModel]:
+    async def get_by_user_ids(self, user_ids: List[int]) -> Dict[int, NotificationSettingsModel]:
         """
         Получить настройки для нескольких пользователей одним запросом.
         Используется для оптимизации (решение проблемы N+1).
@@ -348,17 +323,13 @@ class NotificationSettingsRepository:
         if not user_ids:
             return {}
 
-        query = select(NotificationSettingsModel).where(
-            NotificationSettingsModel.user_id.in_(user_ids)
-        )
+        query = select(NotificationSettingsModel).where(NotificationSettingsModel.user_id.in_(user_ids))
         result = await self.session.execute(query)
         settings_list = result.scalars().all()
 
         return {settings.user_id: settings for settings in settings_list}
 
-    async def create_or_update(
-        self, user_id: int, **kwargs
-    ) -> NotificationSettingsModel:
+    async def create_or_update(self, user_id: int, **kwargs) -> NotificationSettingsModel:
         """
         Создать или обновить настройки уведомлений для пользователя.
 
@@ -390,15 +361,11 @@ class NotificationSettingsRepository:
         """Выключить еженедельную сводку для пользователя"""
         return await self.create_or_update(user_id, weekly_report_enabled=False)
 
-    async def enable_group_notifications(
-        self, user_id: int
-    ) -> NotificationSettingsModel:
+    async def enable_group_notifications(self, user_id: int) -> NotificationSettingsModel:
         """Включить уведомления о назначении на группу для пользователя"""
         return await self.create_or_update(user_id, notify_group_assigned=True)
 
-    async def disable_group_notifications(
-        self, user_id: int
-    ) -> NotificationSettingsModel:
+    async def disable_group_notifications(self, user_id: int) -> NotificationSettingsModel:
         """Выключить уведомления о назначении на группу для пользователя"""
         return await self.create_or_update(user_id, notify_group_assigned=False)
 
@@ -416,9 +383,7 @@ class NotificationSettingsRepository:
             notify_comment=True,
         )
 
-    async def disable_all_notifications(
-        self, user_id: int
-    ) -> NotificationSettingsModel:
+    async def disable_all_notifications(self, user_id: int) -> NotificationSettingsModel:
         """Выключить все типы уведомлений для пользователя"""
         return await self.create_or_update(
             user_id,
@@ -484,12 +449,8 @@ class StatsRepository(AbstractStatsRepository):
         result = await self.session.execute(
             select(
                 func.count(UserModel.id).label("total_users"),
-                func.sum(case((UserModel.is_active.is_(True), 1), else_=0)).label(
-                    "active_users"
-                ),
-                func.sum(case((UserModel.role == "admin", 1), else_=0)).label(
-                    "admin_users"
-                ),
+                func.sum(case((UserModel.is_active.is_(True), 1), else_=0)).label("active_users"),
+                func.sum(case((UserModel.role == "admin", 1), else_=0)).label("admin_users"),
             )
         )
         row = result.one()
@@ -503,12 +464,8 @@ class StatsRepository(AbstractStatsRepository):
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total_tasks"),
-                func.sum(
-                    case((SpisokModel.status == TaskStatus.done, 1), else_=0)
-                ).label("done_tasks"),
-                func.sum(
-                    case((SpisokModel.status != TaskStatus.done, 1), else_=0)
-                ).label("pending_tasks"),
+                func.sum(case((SpisokModel.status == TaskStatus.done, 1), else_=0)).label("done_tasks"),
+                func.sum(case((SpisokModel.status != TaskStatus.done, 1), else_=0)).label("pending_tasks"),
             )
         )
         return result.one()

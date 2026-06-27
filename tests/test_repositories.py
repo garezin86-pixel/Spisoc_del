@@ -3,17 +3,18 @@
 Никакой БД не нужно — всё в памяти.
 """
 
-import pytest
 from unittest.mock import MagicMock
 
-from src.models.user import UserModel
-from src.models.task import SpisokModel, TaskStatus
+import pytest
+
 from src.models.group import GroupModel
+from src.models.task import SpisokModel, TaskStatus
+from src.models.user import UserModel
 from src.repositories.mock_repositories import (
-    MockUserRepository,
-    MockTaskRepository,
     MockGroupRepository,
     MockStatsRepository,
+    MockTaskRepository,
+    MockUserRepository,
 )
 
 # ---------------------------------------------------------------------------
@@ -21,9 +22,7 @@ from src.repositories.mock_repositories import (
 # ---------------------------------------------------------------------------
 
 
-def make_user(
-    id: int, username: str, role: str = "user", is_active: bool = True
-) -> UserModel:
+def make_user(id: int, username: str, role: str = "user", is_active: bool = True) -> UserModel:
     u = MagicMock(spec=UserModel)
     u.id = id
     u.username = username

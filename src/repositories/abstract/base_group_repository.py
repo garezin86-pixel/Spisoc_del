@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 from sqlalchemy import Select
+
 from src.models.group import GroupModel
 from src.models.user import UserModel
 
@@ -74,7 +75,5 @@ class AbstractGroupRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_group_users_with_telegram(
-        self, group_id: int, exclude_user_id: int | None = None
-    ):
+    async def get_group_users_with_telegram(self, group_id: int, exclude_user_id: int | None = None):
         raise NotImplementedError

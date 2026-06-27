@@ -9,16 +9,16 @@ from src.models.comment import CommentModel
 from src.models.group import GroupModel
 from src.models.task import SpisokModel, TaskStatus
 from src.models.user import UserModel
-from src.repositories.abstract.base_user_repository import AbstractUserRepository
-from src.repositories.abstract.base_task_repository import AbstractTaskRepository
 from src.repositories.abstract.base_group_repository import AbstractGroupRepository
 from src.repositories.abstract.base_other_repositories import (
     AbstractCommentRepository,
     AbstractNotificationRepository,
     AbstractStatsRepository,
 )
-from src.schemas.stats import UsersStats as _UsersStats
+from src.repositories.abstract.base_task_repository import AbstractTaskRepository
+from src.repositories.abstract.base_user_repository import AbstractUserRepository
 from src.schemas.stats import TasksStats as _TasksStats
+from src.schemas.stats import UsersStats as _UsersStats
 
 # ---------------------------------------------------------------------------
 # User
@@ -93,9 +93,7 @@ class MockUserRepository(AbstractUserRepository):
 # Task
 # ---------------------------------------------------------------------------
 
-TaskStats = namedtuple(
-    "TaskStats", ["total", "done", "backlog", "todo", "in_progress", "review"]
-)
+TaskStats = namedtuple("TaskStats", ["total", "done", "backlog", "todo", "in_progress", "review"])
 _CreatedStats = namedtuple("CreatedStats", ["total", "done"])
 
 
@@ -130,15 +128,11 @@ class MockTaskRepository(AbstractTaskRepository):
         """Название параметра должно быть base_query!"""
         return len(self._tasks)
 
-    async def filter_tasks_paginated(
-        self, query, limit: int = 20, offset: int = 0, **kwargs
-    ):
+    async def filter_tasks_paginated(self, query, limit: int = 20, offset: int = 0, **kwargs):
         return self._tasks[offset : offset + limit]
 
     # Старые методы (для совместимости)
-    async def get_tasks_limit(
-        self, query, limit: int, offset: int
-    ) -> list[SpisokModel]:
+    async def get_tasks_limit(self, query, limit: int, offset: int) -> list[SpisokModel]:
         return self._tasks[offset : offset + limit]
 
     async def get_user_tasks(self, user_id: int) -> list[SpisokModel]:
@@ -177,13 +171,9 @@ class MockTaskRepository(AbstractTaskRepository):
 
     async def get_last_appointed_tasks(self, pk: int) -> list[SpisokModel]:
         user_tasks = [t for t in self._tasks if t.user_id == pk]
-        return sorted(
-            user_tasks, key=lambda t: getattr(t, "created_at", 0), reverse=True
-        )[:10]
+        return sorted(user_tasks, key=lambda t: getattr(t, "created_at", 0), reverse=True)[:10]
 
-    async def add_comment(
-        self, task_id: int, user_id: int, content: str
-    ) -> CommentModel:
+    async def add_comment(self, task_id: int, user_id: int, content: str) -> CommentModel:
         comment = CommentModel(
             id=self._next_comment_id,
             task_id=task_id,
@@ -233,9 +223,7 @@ class MockTaskRepository(AbstractTaskRepository):
     async def get_tasks_for_reminder(self, start_time, end_time) -> list[SpisokModel]:
         return list(self._tasks)
 
-    async def get_tasks_by_deadline_window(
-        self, start, end, user_id: int | None = None
-    ) -> list[SpisokModel]:
+    async def get_tasks_by_deadline_window(self, start, end, user_id: int | None = None) -> list[SpisokModel]:
         tasks = self._tasks
         if user_id is not None:
             tasks = [task for task in tasks if task.user_id == user_id]
@@ -344,11 +332,7 @@ class MockGroupRepository(AbstractGroupRepository):
         return group.users if group and hasattr(group, "users") else []
 
     async def get_user_groups(self, user_id: int) -> list[GroupModel]:
-        return [
-            g
-            for g in self._groups
-            if hasattr(g, "users") and any(u.id == user_id for u in g.users)
-        ]
+        return [g for g in self._groups if hasattr(g, "users") and any(u.id == user_id for u in g.users)]
 
     # === Методы пагинации — ТОЧНО по сигнатуре Abstract ===
     async def get_groups_paginated_total(self, query):
@@ -362,6 +346,7 @@ class MockGroupRepository(AbstractGroupRepository):
     def get_groups_paginated_for_user(self, query, user_id: int):
         """Синхронный метод, возвращающий Select"""
         from sqlalchemy import select
+
         from src.models.group import GroupModel
 
         return select(GroupModel)  # dummy
@@ -380,16 +365,11 @@ class MockGroupRepository(AbstractGroupRepository):
         groups = self._groups
         if not unrestricted:
             groups = [
-                group
-                for group in groups
-                if hasattr(group, "users")
-                and any(user.id == user_id for user in group.users)
+                group for group in groups if hasattr(group, "users") and any(user.id == user_id for user in group.users)
             ]
         return groups[offset : offset + limit], len(groups)
 
-    async def get_group_users_with_telegram(
-        self, group_id: int, exclude_user_id: int | None = None
-    ):
+    async def get_group_users_with_telegram(self, group_id: int, exclude_user_id: int | None = None):
         users = await self.get_group_users(group_id)
         if exclude_user_id is not None:
             users = [user for user in users if user.id != exclude_user_id]
@@ -511,12 +491,8 @@ class MockStatsRepository(AbstractStatsRepository):
     async def get_tasks_stats(self) -> _TasksStats:
         return _TasksStats(
             total_tasks=len(self._tasks),
-            done_tasks=sum(
-                1 for t in self._tasks if t.status and t.status.value == "done"
-            ),
-            pending_tasks=sum(
-                1 for t in self._tasks if not t.status or t.status.value != "done"
-            ),
+            done_tasks=sum(1 for t in self._tasks if t.status and t.status.value == "done"),
+            pending_tasks=sum(1 for t in self._tasks if not t.status or t.status.value != "done"),
         )
 
     async def get_groups_count(self) -> int:

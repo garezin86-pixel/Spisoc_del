@@ -13,33 +13,35 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import sqlalchemy as sa
 from sqlalchemy import (
+    JSON,
     BigInteger,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
     event,
-    inspect as sa_inspect,
     text,
 )
-
-from sqlalchemy import JSON
+from sqlalchemy import (
+    Enum as SAEnum,
+)
+from sqlalchemy import (
+    inspect as sa_inspect,
+)
 from sqlalchemy.dialects.postgresql import JSONB
-import sqlalchemy as sa
-
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
+
 from src.db import Base
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.models.user import (
         UserModel,
-    )  # 👈 только для линтера, не создаёт циклического импорта
+    )
 
 
 # Универсальный тип: JSONB на PostgreSQL, JSON на SQLite
@@ -81,29 +83,21 @@ class AuditLog(Base):
     )
 
     # NULL — для фоновых задач (Telegram-бот, планировщик)
-    user_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Имя таблицы: "spisok_del", "comments", "users", ...
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    action: Mapped[AuditAction] = mapped_column(
-        SAEnum(AuditAction, name="audit_action_enum"), nullable=False
-    )
+    action: Mapped[AuditAction] = mapped_column(SAEnum(AuditAction, name="audit_action_enum"), nullable=False)
 
     # Только изменившиеся поля (не весь объект)
     # old_values: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # new_values: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Стало
 
-    old_values: Mapped[dict | None] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=True
-    )
-    new_values: Mapped[dict | None] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=True
-    )
+    old_values: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
+    new_values: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
 
     # changed_at: Mapped[datetime] = mapped_column(
     #     DateTime(timezone=True),
@@ -125,10 +119,7 @@ class AuditLog(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<AuditLog {self.entity_type}#{self.entity_id} "
-            f"action={self.action} user={self.user_id}>"
-        )
+        return f"<AuditLog {self.entity_type}#{self.entity_id} action={self.action} user={self.user_id}>"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -156,9 +147,7 @@ class SoftDeleteMixin:
         select(SpisokModel).where(SpisokModel.deleted_at.isnot(None))
     """
 
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, default=None
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
 
     @property
     def is_deleted(self) -> bool:

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
+
 from src.models.comment import CommentModel
 from src.models.notification_log import NotificationLogModel
 from src.models.task import SpisokModel

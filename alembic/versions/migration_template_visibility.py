@@ -5,9 +5,10 @@ Revises: add_task_templates
 Create Date: 2026-06-23
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
+
+from alembic import op
 
 revision = "add_template_visibility"
 down_revision = "add_task_templates"

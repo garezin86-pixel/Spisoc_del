@@ -1,22 +1,21 @@
-from aiogram import Router, F
-from aiogram.types import Message
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-
-from src.db import get_session_maker
-from src.db.unit_of_work import UnitOfWork
-from src.models.user import UserRole
-from src.repositories.task_repository import TaskRepository
-from src.repositories.users_repository import UserRepository
-from src.repositories.groups_repository import GroupRepository
-from src.services.task_service import TaskService
-from src.utils.datetime_utils import to_local
+from aiogram.types import Message
 
 from src.bot.keyboards.main import (
     main_menu_admin,
     main_menu_user,
     trash_keyboard,
 )
+from src.db import get_session_maker
+from src.db.unit_of_work import UnitOfWork
+from src.models.user import UserRole
+from src.repositories.groups_repository import GroupRepository
+from src.repositories.task_repository import TaskRepository
+from src.repositories.users_repository import UserRepository
+from src.services.task_service import TaskService
+from src.utils.datetime_utils import to_local
 
 router = Router()
 
@@ -63,13 +62,8 @@ async def trash_list(message: Message, state: FSMContext):
     else:
         lines = [f"🗑 <b>Корзина</b> (всего: {total})\n"]
         for t in tasks:
-            lines.append(
-                f"🆔 {t.id} — <b>{t.title}</b>\n"
-                f"   🕒 Удалено: {to_local(t.deleted_at)}\n"
-            )
-        await message.answer(
-            "\n".join(lines), parse_mode="HTML", reply_markup=trash_keyboard(is_admin)
-        )
+            lines.append(f"🆔 {t.id} — <b>{t.title}</b>\n   🕒 Удалено: {to_local(t.deleted_at)}\n")
+        await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=trash_keyboard(is_admin))
 
     await state.set_state(TrashMenu.browsing)
 
@@ -113,9 +107,7 @@ async def trash_restore_confirm(message: Message, state: FSMContext):
             await message.answer(
                 f"♻️ Задача <b>{task.title}</b> восстановлена!",
                 parse_mode="HTML",
-                reply_markup=trash_keyboard(
-                    user.role in (UserRole.admin, UserRole.manager)
-                ),
+                reply_markup=trash_keyboard(user.role in (UserRole.admin, UserRole.manager)),
             )
         except Exception as e:
             await message.answer(f"❌ {e}")
@@ -189,9 +181,5 @@ async def trash_back(message: Message, state: FSMContext):
     async with UnitOfWork(get_session_maker()) as uow:
         user = await uow.users.get_by_telegram_id(message.from_user.id)
 
-    keyboard = (
-        main_menu_admin()
-        if user and user.role in (UserRole.admin, UserRole.manager)
-        else main_menu_user()
-    )
+    keyboard = main_menu_admin() if user and user.role in (UserRole.admin, UserRole.manager) else main_menu_user()
     await message.answer("🏠 Главное меню", reply_markup=keyboard)

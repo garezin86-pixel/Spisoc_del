@@ -1,21 +1,20 @@
 from sqladmin import Admin
-from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from starlette.middleware.sessions import SessionMiddleware
 
 from src.admin.views.admin_auth import AdminAuth
 from src.admin.views.comment_admin import CommentAdmin
 from src.admin.views.group_admin import GroupAdmin
+from src.admin.views.notification_stats_view import NotificationStatsView
 from src.admin.views.notification_view import NotificationLogAdmin
-from src.admin.views.task_admin import TaskAdmin
-from src.admin.views.trash_admin import TrashTaskAdmin
-from src.admin.views.user_admin import UserAdmin
 from src.admin.views.project_admin import ProjectAdmin
-from src.admin.views.template_admin import TaskTemplateAdmin, TaskTemplateItemAdmin
-from src.core.config import ADMIN_SECRET_KEY
 from src.admin.views.stats_view import StatsView
 from src.admin.views.status_view import StatusView
-from src.admin.views.notification_stats_view import NotificationStatsView
-
+from src.admin.views.task_admin import TaskAdmin
+from src.admin.views.template_admin import TaskTemplateAdmin, TaskTemplateItemAdmin
+from src.admin.views.trash_admin import TrashTaskAdmin
+from src.admin.views.user_admin import UserAdmin
+from src.core.config import ADMIN_SECRET_KEY
 from src.db import get_session_maker
 
 
@@ -29,9 +28,7 @@ def setup_admin(app, engine):
         app,
         engine,
         title="Список дел — Админка",
-        authentication_backend=AdminAuth(
-            secret_key=ADMIN_SECRET_KEY, session_maker=session_maker
-        ),
+        authentication_backend=AdminAuth(secret_key=ADMIN_SECRET_KEY, session_maker=session_maker),
         templates_dir="src/templates",
     )
 

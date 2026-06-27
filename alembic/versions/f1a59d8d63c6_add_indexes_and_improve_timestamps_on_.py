@@ -26,9 +26,7 @@ def upgrade() -> None:
         ["author_id", "is_done"],
         unique=False,
     )
-    op.create_index(
-        "ix_spisok_del_author_id", "spisok_del", ["author_id"], unique=False
-    )
+    op.create_index("ix_spisok_del_author_id", "spisok_del", ["author_id"], unique=False)
     op.create_index("ix_spisok_del_deadline", "spisok_del", ["deadline"], unique=False)
     op.create_index(
         "ix_spisok_del_deadline_user",
@@ -36,14 +34,10 @@ def upgrade() -> None:
         ["deadline", "user_id"],
         unique=False,
     )
-    op.create_index(
-        "ix_spisok_del_group_done", "spisok_del", ["group_id", "is_done"], unique=False
-    )
+    op.create_index("ix_spisok_del_group_done", "spisok_del", ["group_id", "is_done"], unique=False)
     op.create_index("ix_spisok_del_group_id", "spisok_del", ["group_id"], unique=False)
     op.create_index("ix_spisok_del_is_done", "spisok_del", ["is_done"], unique=False)
-    op.create_index(
-        "ix_spisok_del_user_done", "spisok_del", ["user_id", "is_done"], unique=False
-    )
+    op.create_index("ix_spisok_del_user_done", "spisok_del", ["user_id", "is_done"], unique=False)
     op.create_index("ix_spisok_del_user_id", "spisok_del", ["user_id"], unique=False)
     # ### end Alembic commands ###
 

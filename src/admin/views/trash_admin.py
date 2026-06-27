@@ -1,15 +1,17 @@
 from __future__ import annotations
+
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from sqladmin import ModelView, action
 from sqladmin.helpers import get_object_identifier
-from starlette.datastructures import URL
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload, registry as _sa_registry
+from sqlalchemy.orm import registry as _sa_registry
+from sqlalchemy.orm import selectinload
+from starlette.datastructures import URL
 
+from src.admin.views.task_admin import _fetch_audit_entries, _render_audit_history
 from src.models import SpisokModel
 from src.models import SpisokModel as _RealModel
-from src.admin.views.task_admin import _fetch_audit_entries, _render_audit_history
 from src.services.task_admin_service import task_admin_service
 from src.utils.datetime_utils import to_local
 
@@ -45,9 +47,7 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         )
 
     column_formatters = {
-        "deleted_at": lambda m, a: (
-            to_local(m.deleted_at) if getattr(m, "deleted_at", None) else "—"
-        ),
+        "deleted_at": lambda m, a: to_local(m.deleted_at) if getattr(m, "deleted_at", None) else "—",
     }
 
     column_list = ["id", "title", "status", "deleted_at"]
@@ -79,18 +79,10 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
     }
 
     column_formatters_detail = {
-        "deleted_at": lambda m, a: (
-            to_local(m.deleted_at) if getattr(m, "deleted_at", None) else "—"
-        ),
-        "deadline": lambda m, a: (
-            to_local(m.deadline) if getattr(m, "deadline", None) else "—"
-        ),
-        "created_at": lambda m, a: (
-            to_local(m.created_at) if getattr(m, "created_at", None) else "—"
-        ),
-        "updated_at": lambda m, a: (
-            to_local(m.updated_at) if getattr(m, "updated_at", None) else "—"
-        ),
+        "deleted_at": lambda m, a: to_local(m.deleted_at) if getattr(m, "deleted_at", None) else "—",
+        "deadline": lambda m, a: to_local(m.deadline) if getattr(m, "deadline", None) else "—",
+        "created_at": lambda m, a: to_local(m.created_at) if getattr(m, "created_at", None) else "—",
+        "updated_at": lambda m, a: to_local(m.updated_at) if getattr(m, "updated_at", None) else "—",
     }
 
     def list_query(self, request: Request):
@@ -136,9 +128,7 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         pks = [int(pk.strip()) for pk in pks_raw.split(",") if pk.strip()]
         admin_id = request.session.get("admin_id")
         await task_admin_service.bulk_restore(pks, admin_id)  # 👈 сервис
-        return RedirectResponse(
-            request.url_for("admin:list", identity="trash"), status_code=302
-        )
+        return RedirectResponse(request.url_for("admin:list", identity="trash"), status_code=302)
 
     @action(
         name="hard-delete",
@@ -152,6 +142,4 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         pks = [int(pk.strip()) for pk in pks_raw.split(",") if pk.strip()]
         admin_id = request.session.get("admin_id")
         await task_admin_service.bulk_hard_delete(pks, admin_id)  # 👈 сервис
-        return RedirectResponse(
-            request.url_for("admin:list", identity="trash"), status_code=302
-        )
+        return RedirectResponse(request.url_for("admin:list", identity="trash"), status_code=302)

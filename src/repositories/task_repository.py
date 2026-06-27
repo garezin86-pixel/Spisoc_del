@@ -1,8 +1,9 @@
 from datetime import date, datetime, time
 from typing import Optional
+
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, func, case, and_
 
 from src.models.comment import CommentModel
 from src.models.task import SpisokModel, TaskStatus
@@ -59,9 +60,7 @@ class TaskRepository(AbstractTaskRepository):
         await self.session.refresh(task)
         return task
 
-    async def get_tasks_limit(
-        self, query, limit: int, offset: int
-    ) -> list[SpisokModel]:
+    async def get_tasks_limit(self, query, limit: int, offset: int) -> list[SpisokModel]:
         result = await self.session.execute(query.limit(limit).offset(offset))
         return list(result.scalars().all())
 
@@ -69,9 +68,7 @@ class TaskRepository(AbstractTaskRepository):
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total"),
-                func.sum(
-                    case((SpisokModel.status == TaskStatus.done, 1), else_=0)
-                ).label("done"),
+                func.sum(case((SpisokModel.status == TaskStatus.done, 1), else_=0)).label("done"),
                 func.sum(
                     case(
                         (
@@ -95,25 +92,18 @@ class TaskRepository(AbstractTaskRepository):
         result = await self.session.execute(
             select(
                 func.count(SpisokModel.id).label("total"),
-                func.sum(
-                    case((SpisokModel.status == TaskStatus.done, 1), else_=0)
-                ).label("done"),
+                func.sum(case((SpisokModel.status == TaskStatus.done, 1), else_=0)).label("done"),
             ).where(SpisokModel.author_id == pk)
         )
         return result.one()
 
     async def get_last_appointed_tasks(self, pk: int) -> list[SpisokModel]:
         result = await self.session.execute(
-            select(SpisokModel)
-            .where(SpisokModel.user_id == pk)
-            .order_by(SpisokModel.created_at.desc())
-            .limit(10)
+            select(SpisokModel).where(SpisokModel.user_id == pk).order_by(SpisokModel.created_at.desc()).limit(10)
         )
         return list(result.scalars().all())
 
-    async def add_comment(
-        self, task_id: int, user_id: int, content: str
-    ) -> CommentModel:
+    async def add_comment(self, task_id: int, user_id: int, content: str) -> CommentModel:
         comment = CommentModel(
             task_id=int(task_id),
             user_id=int(user_id),
@@ -126,9 +116,7 @@ class TaskRepository(AbstractTaskRepository):
 
     async def get_user_tasks(self, user_id: int) -> list[SpisokModel]:
         result = await self.session.execute(
-            select(SpisokModel)
-            .where(SpisokModel.user_id == user_id)
-            .order_by(SpisokModel.created_at.desc())
+            select(SpisokModel).where(SpisokModel.user_id == user_id).order_by(SpisokModel.created_at.desc())
         )
         return list(result.scalars().all())
 
@@ -147,16 +135,12 @@ class TaskRepository(AbstractTaskRepository):
         if exclude_status is not None:
             query = query.where(SpisokModel.status != exclude_status)
 
-        result = await self.session.execute(
-            query.order_by(SpisokModel.created_at.desc())
-        )
+        result = await self.session.execute(query.order_by(SpisokModel.created_at.desc()))
 
         return list(result.scalars().all())
 
     async def filter_tasks_paginated_total(self, base_query) -> int:
-        total = await self.session.scalar(
-            select(func.count()).select_from(base_query.subquery())
-        )
+        total = await self.session.scalar(select(func.count()).select_from(base_query.subquery()))
         return total if total is not None else 0
 
     def _build_filtered_tasks_query(
@@ -245,9 +229,7 @@ class TaskRepository(AbstractTaskRepository):
             )
             .where(SpisokModel.deleted_at.is_not(None))
             # Пользователь видит только свои удалённые задачи
-            .where(
-                (SpisokModel.author_id == user_id) | (SpisokModel.user_id == user_id)
-            )
+            .where((SpisokModel.author_id == user_id) | (SpisokModel.user_id == user_id))
         )
         if search:
             query = query.where(SpisokModel.title.ilike(f"%{search}%"))
@@ -276,11 +258,7 @@ class TaskRepository(AbstractTaskRepository):
         limit: int,
         search: str | None = None,
     ):
-        query = (
-            self._build_trash_query_admin(search)
-            if is_admin
-            else self._build_trash_query(user_id, search)
-        )
+        query = self._build_trash_query_admin(search) if is_admin else self._build_trash_query(user_id, search)
         total = await self.filter_tasks_paginated_total(query)
         tasks = await self.get_tasks_limit(query, limit, offset)
         return tasks, total
@@ -361,9 +339,7 @@ class TaskRepository(AbstractTaskRepository):
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def get_tasks_by_deadline_window(
-        self, start: datetime, end: datetime, user_id: Optional[int] = None
-    ):
+    async def get_tasks_by_deadline_window(self, start: datetime, end: datetime, user_id: Optional[int] = None):
         query = select(SpisokModel).where(
             and_(
                 SpisokModel.deadline >= start,
@@ -378,9 +354,7 @@ class TaskRepository(AbstractTaskRepository):
         return result.scalars().all()
 
     async def get_overdue_tasks(self, now: datetime, user_id: Optional[int] = None):
-        query = select(SpisokModel).where(
-            and_(SpisokModel.deadline < now, SpisokModel.status != TaskStatus.done)
-        )
+        query = select(SpisokModel).where(and_(SpisokModel.deadline < now, SpisokModel.status != TaskStatus.done))
         if user_id is not None:
             query = query.where(SpisokModel.user_id == user_id)
         query = query.order_by(SpisokModel.deadline.asc())
@@ -430,9 +404,7 @@ class TaskRepository(AbstractTaskRepository):
             query = query.where(SpisokModel.author_id == user_id)
         else:
             # Показываем задачи где пользователь — автор или исполнитель
-            query = query.where(
-                (SpisokModel.author_id == user_id) | (SpisokModel.user_id == user_id)
-            )
+            query = query.where((SpisokModel.author_id == user_id) | (SpisokModel.user_id == user_id))
 
         query = query.order_by(SpisokModel.created_at.desc())
         result = await self.session.execute(query)

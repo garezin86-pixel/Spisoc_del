@@ -1,4 +1,5 @@
 from sqladmin import ModelView
+
 from src.models import ProjectModel
 from src.utils.datetime_utils import to_local
 

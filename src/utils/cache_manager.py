@@ -1,9 +1,10 @@
 # src/utils/cache_manager.py
-import os
 import asyncio
 import logging
-import structlog
+import os
 from typing import Optional
+
+import structlog
 from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,7 @@ class CacheManager:
                 error="redis_connection_error",
                 pattern=pattern,
             )
-            logger.warning(
-                f"Redis connection error during cache invalidation for {pattern}"
-            )
+            logger.warning(f"Redis connection error during cache invalidation for {pattern}")
         except Exception as e:
             await event_logger.aerror("cache_error", error=str(e), pattern=pattern)
             logger.error(f"Unexpected error during cache invalidation: {e}")

@@ -1,16 +1,16 @@
 from markupsafe import Markup
-from sqladmin.filters import ForeignKeyFilter
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqladmin import ModelView, expose
+from sqladmin.filters import ForeignKeyFilter
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from wtforms import SelectField
 
 from src.admin.utils.url_helpers import URLS
-from src.models.template import TaskTemplateModel, TaskTemplateItemModel
 from src.models.project import ProjectModel
-from src.models.task import TaskPriority, TaskStatus, SpisokModel
+from src.models.task import SpisokModel, TaskPriority, TaskStatus
+from src.models.template import TaskTemplateItemModel, TaskTemplateModel
 from src.utils.datetime_utils import to_local
 
 PRIORITY_LABELS = {
@@ -35,17 +35,13 @@ VISIBILITY_TEMPLATE = {
 
 
 def _priority_val(item) -> str:
-    return (
-        item.priority.value if hasattr(item.priority, "value") else str(item.priority)
-    )
+    return item.priority.value if hasattr(item.priority, "value") else str(item.priority)
 
 
 def _render_items(model, attr) -> Markup:  # type: ignore[override]
     items = sorted(model.items, key=lambda x: x.order_index) if model.items else []
     if not items:
-        return Markup(
-            '<span style="color:#6c757d; font-style:italic;">Нет задач</span>'
-        )
+        return Markup('<span style="color:#6c757d; font-style:italic;">Нет задач</span>')
 
     rows = "".join(
         f"<tr>"
@@ -187,9 +183,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
 
         async with self._session_maker() as session:
             # Загружаем шаблон
-            result = await session.execute(
-                select(TaskTemplateModel).where(TaskTemplateModel.id == pk)
-            )
+            result = await session.execute(select(TaskTemplateModel).where(TaskTemplateModel.id == pk))
             template = result.unique().scalar_one_or_none()
             if not template:
                 return RedirectResponse(URLS["template"]["list"], status_code=303)
@@ -236,9 +230,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
         items_ctx = [
             {
                 "title": item.title,
-                "priority_label": PRIORITY_LABELS.get(
-                    _priority_val(item), _priority_val(item)
-                ),
+                "priority_label": PRIORITY_LABELS.get(_priority_val(item), _priority_val(item)),
                 "priority_color": PRIORITY_COLORS.get(_priority_val(item), "#333"),
             }
             for item in items
@@ -305,9 +297,7 @@ class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
     }
 
     column_formatters = {
-        "priority": lambda m, a: PRIORITY_LABELS.get(
-            _priority_val(m), _priority_val(m)
-        ),
+        "priority": lambda m, a: PRIORITY_LABELS.get(_priority_val(m), _priority_val(m)),
     }
     column_formatters_detail = column_formatters
 

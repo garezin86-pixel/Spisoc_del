@@ -2,22 +2,24 @@
 Фикстуры для тестов.
 """
 
-import sys
-import os
-import uuid
-import pytest
 import asyncio
+import os
+import sys
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from src.utils.cache_manager import cache_manager
-from unittest.mock import AsyncMock, patch, MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.db import Base
-from src.models import UserModel, SpisokModel, GroupModel, CommentModel  # noqa: F401
 from src.core.security import hash_password
+from src.db import Base
+from src.models import CommentModel, GroupModel, SpisokModel, UserModel  # noqa: F401
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -39,9 +41,7 @@ async def engine():
 
 @pytest_asyncio.fixture
 async def session(engine):
-    async_session = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with async_session() as sess:
         yield sess
 
@@ -78,9 +78,7 @@ async def make_task(
     user_id: int = None,
     is_done: bool = False,
 ) -> SpisokModel:
-    task = SpisokModel(
-        title=title, is_done=is_done, author_id=author_id, user_id=user_id
-    )
+    task = SpisokModel(title=title, is_done=is_done, author_id=author_id, user_id=user_id)
     session.add(task)
     await session.commit()
     await session.refresh(task)
@@ -102,15 +100,16 @@ _disable_rate_limits()
 @pytest_asyncio.fixture
 async def client(engine):
     from fastapi import FastAPI
+
+    from src.db import get_session
     from src.routers import (
         api_router,
         auth_router,
-        users_router,
-        tasks_router,
-        group_router,
         comments_router,
+        group_router,
+        tasks_router,
+        users_router,
     )
-    from src.db import get_session
 
     app = FastAPI()
     app.include_router(api_router)
@@ -120,9 +119,7 @@ async def client(engine):
     app.include_router(group_router)
     app.include_router(comments_router)
 
-    async_session = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     async def override_get_session():
         async with async_session() as sess:
@@ -140,18 +137,14 @@ async def client(engine):
 
 @pytest_asyncio.fixture
 async def auth_client(engine, client):
-    async_session = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     username = unique("auth_user")
     password = "pass123456"  # ← минимум 6 символов
 
     async with async_session() as sess:
         user = await make_user(sess, username=username, password=password)
 
-    resp = await client.post(
-        "/auth/login", json={"username": username, "password": password}
-    )
+    resp = await client.post("/auth/login", json={"username": username, "password": password})
     assert resp.status_code == 200, f"Login failed: {resp.text}"
     client.headers.update({"Authorization": f"Bearer {resp.json()['access_token']}"})
     return client, user
@@ -159,20 +152,14 @@ async def auth_client(engine, client):
 
 @pytest_asyncio.fixture
 async def admin_client(engine, client):
-    async_session = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     username = unique("admin_user")
     password = "adminpass123"  # ← минимум 6 символов
 
     async with async_session() as sess:
-        admin = await make_user(
-            sess, username=username, password=password, role="admin"
-        )
+        admin = await make_user(sess, username=username, password=password, role="admin")
 
-    resp = await client.post(
-        "/auth/login", json={"username": username, "password": password}
-    )
+    resp = await client.post("/auth/login", json={"username": username, "password": password})
     assert resp.status_code == 200, f"Admin login failed: {resp.text}"
     client.headers.update({"Authorization": f"Bearer {resp.json()['access_token']}"})
     return client, admin
@@ -237,9 +224,7 @@ def mock_get_bot():
 @pytest_asyncio.fixture
 async def notification_session(engine):
     """Отдельная сессия для сервисов уведомлений (без транзакции)"""
-    async_session = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with async_session() as sess:
         yield sess
 

@@ -11,9 +11,10 @@ Create Date: 2026-06-15
 3. alembic upgrade head
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "add_task_status_kanban"
 down_revision = "d5e6f7a8b9c0"  # ← ЗАМЕНИ ЗДЕСЬ
@@ -59,9 +60,7 @@ def upgrade() -> None:
     # 4. Индексы для канбан-запросов
     op.create_index("ix_spisok_del_status", "spisok_del", ["status"])
     op.create_index("ix_spisok_del_user_status", "spisok_del", ["user_id", "status"])
-    op.create_index(
-        "ix_spisok_del_project_status", "spisok_del", ["project_id", "status"]
-    )
+    op.create_index("ix_spisok_del_project_status", "spisok_del", ["project_id", "status"])
 
 
 def downgrade() -> None:

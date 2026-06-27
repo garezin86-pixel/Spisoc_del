@@ -1,9 +1,10 @@
-from sqladmin import BaseView, expose
-from fastapi import Request
-from sqlalchemy.ext.asyncio import async_sessionmaker
 import platform
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from fastapi import Request
+from sqladmin import BaseView, expose
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.repositories.other_repositories import StatsRepository
 
@@ -78,8 +79,6 @@ class StatusView(BaseView):
                 "system_info": system_info,
                 "db_status": db_status,
                 "bot_status": bot_status,
-                "datetime_now": datetime.now(ZoneInfo("Europe/Kyiv")).strftime(
-                    "%d.%m.%Y %H:%M:%S"
-                ),
+                "datetime_now": datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%d.%m.%Y %H:%M:%S"),
             },
         )

@@ -19,23 +19,17 @@ class GroupRepository(AbstractGroupRepository):
         return groups
 
     async def get_by_id(self, group_id: int) -> GroupModel | None:
-        result = await self.session.execute(
-            select(GroupModel).where(GroupModel.id == group_id)
-        )
+        result = await self.session.execute(select(GroupModel).where(GroupModel.id == group_id))
         return result.scalar_one_or_none()
 
     async def get_by_id_users_in_group(self, group_id: int) -> GroupModel | None:
         result = await self.session.execute(
-            select(GroupModel)
-            .options(selectinload(GroupModel.users))
-            .where(GroupModel.id == group_id)
+            select(GroupModel).options(selectinload(GroupModel.users)).where(GroupModel.id == group_id)
         )
         return result.scalar_one_or_none()
 
     async def get_id_group_for_name(self, name: str) -> GroupModel | None:
-        return await self.session.scalar(
-            select(GroupModel).where(GroupModel.name == name)
-        )
+        return await self.session.scalar(select(GroupModel).where(GroupModel.name == name))
 
     async def create(self, group: GroupModel) -> GroupModel:
         self.session.add(group)
@@ -79,9 +73,7 @@ class GroupRepository(AbstractGroupRepository):
         return result
 
     async def get_groups_paginated_total(self, query):
-        result = await self.session.scalar(
-            select(func.count()).select_from(query.subquery())
-        )
+        result = await self.session.scalar(select(func.count()).select_from(query.subquery()))
         return result
 
     async def get_groups_offset_limit(self, query, offset, limit):
@@ -107,18 +99,12 @@ class GroupRepository(AbstractGroupRepository):
         return groups, total
 
     async def get_user_group(self, group_id):
-        groups = (
-            select(UserModel).join(UserModel.groups).where(GroupModel.id == group_id)
-        )
+        groups = select(UserModel).join(UserModel.groups).where(GroupModel.id == group_id)
         return groups
 
-    async def get_group_users_with_telegram(
-        self, group_id: int, exclude_user_id: Optional[int] = None
-    ):
+    async def get_group_users_with_telegram(self, group_id: int, exclude_user_id: Optional[int] = None):
         """Возвращает пользователей группы, у которых есть telegram_id."""
-        query = (
-            select(UserModel).join(UserModel.groups).where(GroupModel.id == group_id)
-        )
+        query = select(UserModel).join(UserModel.groups).where(GroupModel.id == group_id)
         if exclude_user_id is not None:
             query = query.where(UserModel.id != exclude_user_id)
         # Добавляем фильтр по наличию telegram_id

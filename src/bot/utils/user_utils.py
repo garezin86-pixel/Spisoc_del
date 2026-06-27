@@ -1,13 +1,13 @@
-from src.models.user import UserModel
-from src.repositories.users_repository import UserRepository
-from src.db import get_session_maker
 from src.bot.keyboards.main import (
     main_menu_admin,
+    main_menu_manager,
     main_menu_user,
     task_edit_keyboard,
-    main_menu_manager,
     task_edit_manager_keyboard,
 )
+from src.db import get_session_maker
+from src.models.user import UserModel
+from src.repositories.users_repository import UserRepository
 
 
 async def get_user_by_telegram_id(telegram_id: int) -> UserModel | None:

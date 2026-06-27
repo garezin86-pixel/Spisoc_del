@@ -1,45 +1,43 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+import structlog
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-from slowapi.middleware import SlowAPIMiddleware
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+from prometheus_fastapi_instrumentator import Instrumentator
+from redis.asyncio import Redis
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
-from src.routers.health_router import router as health_router
-from src.db import get_engine
 from src.admin.setup import setup_admin
-from src.routers import api_router
-from src.core.limiter import limiter
 from src.core.config import (
+    FRONTEND_URL,
     REDIS_DB,
     REDIS_HOST,
     REDIS_PASSWORD,
     REDIS_PORT,
-    FRONTEND_URL,
 )
-
-from redis.asyncio import Redis
-from fastapi_cache import FastAPICache
-from fastapi_cache.backends.redis import RedisBackend
+from src.core.limiter import limiter
+from src.core.logging import setup_logging
+from src.core.sentry import setup_sentry
+from src.db import get_engine
+from src.routers import api_router
+from src.routers.health_router import router as health_router
 from src.utils.cache_manager import cache_manager
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.triggers.cron import CronTrigger
 from src.utils.reminders import (
-    remind_deadline_24h,
-    remind_deadline_1h,
     notify_overdue,
+    remind_deadline_1h,
+    remind_deadline_24h,
     send_weekly_report,
 )
-
-import structlog
-from src.core.sentry import setup_sentry
-from src.core.logging import setup_logging
-from prometheus_fastapi_instrumentator import Instrumentator
 
 setup_sentry()
 setup_logging()
@@ -86,9 +84,7 @@ async def lifespan(app: FastAPI):
         id="deadline_1h",
         replace_existing=True,
     )
-    scheduler.add_job(
-        notify_overdue, IntervalTrigger(hours=1), id="overdue", replace_existing=True
-    )
+    scheduler.add_job(notify_overdue, IntervalTrigger(hours=1), id="overdue", replace_existing=True)
     scheduler.add_job(
         send_weekly_report,
         CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="UTC"),

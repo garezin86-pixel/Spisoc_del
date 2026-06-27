@@ -1,28 +1,26 @@
-from markupsafe import Markup
 import structlog
-from sqladmin import ModelView
 import wtforms
-from wtforms.validators import Optional, Length, EqualTo
-from sqladmin import expose
+from fastapi import Request
 from fastapi.responses import RedirectResponse
+from markupsafe import Markup
+from sqladmin import ModelView, expose
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from wtforms.validators import EqualTo, Length, Optional
 
-from src.admin.utils.url_helpers import user_urls, task_urls
-from src.admin.utils.url_helpers import URLS
 from src.admin.utils.formatters import active_badge
+from src.admin.utils.url_helpers import URLS, task_urls, user_urls
 from src.core.exceptions import (
     incorrect_request,
     invalid_id_response,
     user_not_found_response,
 )
+from src.core.metrics import users_registered
 from src.models import UserModel
 from src.models.user import UserRole
-from src.repositories.users_repository import UserRepository
-from src.repositories.task_repository import TaskRepository
 from src.repositories.groups_repository import GroupRepository
+from src.repositories.task_repository import TaskRepository
+from src.repositories.users_repository import UserRepository
 from src.services.task_service import TaskService
-from fastapi import Request
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from src.core.metrics import users_registered
 
 logger = structlog.get_logger()
 
@@ -137,18 +135,14 @@ class UserAdmin(ModelView, model=UserModel):
 
     async def scaffold_form(self, rules=None):
         form_class = await super().scaffold_form(rules)
-        form_class.password = wtforms.PasswordField(
-            "Пароль", validators=[Optional(), Length(min=6)]
-        )
+        form_class.password = wtforms.PasswordField("Пароль", validators=[Optional(), Length(min=6)])
         form_class.password_confirm = wtforms.PasswordField(
             "Повторите пароль",
             validators=[Optional(), EqualTo("password", message="Пароли не совпадают")],
         )
         return form_class
 
-    async def on_model_change(
-        self, data: dict, model: UserModel, is_created: bool, request
-    ):
+    async def on_model_change(self, data: dict, model: UserModel, is_created: bool, request):
         password = data.pop("password", None)
         password_confirm = data.pop("password_confirm", None)
 
@@ -161,9 +155,7 @@ class UserAdmin(ModelView, model=UserModel):
         elif is_created:
             raise ValueError("Пароль обязателен при создании пользователя")
 
-    async def after_model_change(
-        self, data: dict, model: UserModel, is_created: bool, request
-    ):
+    async def after_model_change(self, data: dict, model: UserModel, is_created: bool, request):
         await logger.ainfo(
             "user_created" if is_created else "user_updated",
             user_id=model.id,

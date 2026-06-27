@@ -2,9 +2,10 @@
 Интеграционные тесты: /tasks эндпоинты.
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.conftest import make_user
 
@@ -43,9 +44,7 @@ class TestTasksCreate:
     async def test_create_task_user_and_group_returns_422(self, auth_client, engine):
         """user_id + group_id одновременно — Pydantic возвращает 422."""
         client, user = auth_client
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
             from src.models.group import GroupModel
 
@@ -108,9 +107,7 @@ class TestTasksGet:
         client, _ = auth_client
         await client.post("/tasks/", json={"title": "Done task", "status": "done"})
         await client.post("/tasks/", json={"title": "Todo task", "status": "todo"})
-        await client.post(
-            "/tasks/", json={"title": "In progress task", "status": "in_progress"}
-        )
+        await client.post("/tasks/", json={"title": "In progress task", "status": "in_progress"})
         await client.post("/tasks/", json={"title": "Review task", "status": "review"})
 
         resp = await client.get("/tasks/filter?status=done")
@@ -129,9 +126,7 @@ class TestTasksGet:
 
         data = resp.json()
         assert isinstance(data, dict) and "items" in data
-        assert (
-            len(data["items"]) <= 2
-        ), f"Expected <=2 items, got {len(data['items'])}"  # ← data["items"]
+        assert len(data["items"]) <= 2, f"Expected <=2 items, got {len(data['items'])}"  # ← data["items"]
 
     @pytest.mark.asyncio
     async def test_filter_my_tasks(self, auth_client):
@@ -161,16 +156,12 @@ class TestTasksUpdate:
 
     @pytest.mark.asyncio
     async def test_other_user_cannot_update_task(self, client, engine):
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
         async with async_session() as sess:
             await make_user(sess, username="task_owner", password="pass123")
 
-        resp1 = await client.post(
-            "/auth/login", json={"username": "task_owner", "password": "pass123"}
-        )
+        resp1 = await client.post("/auth/login", json={"username": "task_owner", "password": "pass123"})
         token1 = resp1.json()["access_token"]
 
         create_resp = await client.post(
@@ -183,9 +174,7 @@ class TestTasksUpdate:
         async with async_session() as sess:
             await make_user(sess, username="task_intruder", password="pass123")
 
-        resp2 = await client.post(
-            "/auth/login", json={"username": "task_intruder", "password": "pass123"}
-        )
+        resp2 = await client.post("/auth/login", json={"username": "task_intruder", "password": "pass123"})
         token2 = resp2.json()["access_token"]
 
         resp = await client.patch(
@@ -221,16 +210,12 @@ class TestTasksDelete:
 
     @pytest.mark.asyncio
     async def test_other_user_cannot_delete_task(self, client, engine):
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
         async with async_session() as sess:
             await make_user(sess, username="del_owner", password="pass123")
 
-        resp1 = await client.post(
-            "/auth/login", json={"username": "del_owner", "password": "pass123"}
-        )
+        resp1 = await client.post("/auth/login", json={"username": "del_owner", "password": "pass123"})
         token1 = resp1.json()["access_token"]
 
         create_resp = await client.post(
@@ -243,14 +228,10 @@ class TestTasksDelete:
         async with async_session() as sess:
             await make_user(sess, username="del_attacker", password="pass123")
 
-        resp2 = await client.post(
-            "/auth/login", json={"username": "del_attacker", "password": "pass123"}
-        )
+        resp2 = await client.post("/auth/login", json={"username": "del_attacker", "password": "pass123"})
         token2 = resp2.json()["access_token"]
 
-        resp = await client.delete(
-            f"/tasks/{task_id}", headers={"Authorization": f"Bearer {token2}"}
-        )
+        resp = await client.delete(f"/tasks/{task_id}", headers={"Authorization": f"Bearer {token2}"})
         assert resp.status_code in (401, 403)
 
 
@@ -258,13 +239,9 @@ class TestTasksReassign:
     @pytest.mark.asyncio
     async def test_author_can_reassign_to_user(self, auth_client, engine):
         client, user = auth_client
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
-            target = await make_user(
-                sess, username="reassign_target", password="pass123"
-            )
+            target = await make_user(sess, username="reassign_target", password="pass123")
 
         create_resp = await client.post("/tasks/", json={"title": "To reassign"})
         task_id = create_resp.json()["id"]
@@ -275,9 +252,7 @@ class TestTasksReassign:
     @pytest.mark.asyncio
     async def test_reassign_both_user_and_group_returns_400(self, auth_client, engine):
         client, user = auth_client
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
             target = await make_user(sess, username="reassign_both", password="pass123")
             from src.models.group import GroupModel
@@ -289,7 +264,5 @@ class TestTasksReassign:
 
         create_resp = await client.post("/tasks/", json={"title": "Conflict reassign"})
         task_id = create_resp.json()["id"]
-        resp = await client.patch(
-            f"/tasks/{task_id}/reassign?user_id={target.id}&group_id={group.id}"
-        )
+        resp = await client.patch(f"/tasks/{task_id}/reassign?user_id={target.id}&group_id={group.id}")
         assert resp.status_code == 400

@@ -1,21 +1,22 @@
-from aiogram import Router, F
+import logging
+from datetime import datetime, timedelta, timezone
+
+from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
     Message,
 )
-from aiogram.fsm.context import FSMContext
 
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.task import TaskStatus
+from src.repositories.groups_repository import GroupRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
-from src.repositories.groups_repository import GroupRepository
 from src.schemas.task import SpisokUpdate
-from src.services.task_service import TaskService
 from src.services.notifications import notify_task_updated
-from datetime import datetime, timezone, timedelta
-import logging
+from src.services.task_service import TaskService
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +53,13 @@ async def notif_done_callback(callback: CallbackQuery):
             return
 
         try:
-            await make_task_service(uow).update_task_status(
-                task_id, TaskStatus.done, user
-            )
+            await make_task_service(uow).update_task_status(task_id, TaskStatus.done, user)
             await uow.commit()
         except Exception as e:
             await callback.message.answer(f"❌ Ошибка: {e}")
             return
 
-    await notify_task_updated(
-        task_id, {"status": "done"}, editor_telegram_id=callback.from_user.id
-    )
+    await notify_task_updated(task_id, {"status": "done"}, editor_telegram_id=callback.from_user.id)
 
     if isinstance(callback.message, Message):
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -90,26 +87,20 @@ async def notif_snooze_callback(callback: CallbackQuery):
             return
 
         try:
-            await make_task_service(uow).update_task(
-                task_id, SpisokUpdate(deadline=new_deadline), user
-            )
+            await make_task_service(uow).update_task(task_id, SpisokUpdate(deadline=new_deadline), user)
             await uow.commit()
         except Exception as e:
             await callback.message.answer(f"❌ Ошибка: {e}")
             return
 
-    await notify_task_updated(
-        task_id, {"deadline": new_deadline}, editor_telegram_id=callback.from_user.id
-    )
+    await notify_task_updated(task_id, {"deadline": new_deadline}, editor_telegram_id=callback.from_user.id)
 
     deadline_str = new_deadline.strftime("%d.%m.%Y %H:%M")
 
     if isinstance(callback.message, Message):
         await callback.message.edit_reply_markup(reply_markup=None)
 
-    await callback.message.answer(
-        f"⏳ Задача #{task_id} отложена. Новый дедлайн: {deadline_str} UTC"
-    )
+    await callback.message.answer(f"⏳ Задача #{task_id} отложена. Новый дедлайн: {deadline_str} UTC")
 
 
 # ── 💬 Комментировать ────────────────────────────────────────────────────────

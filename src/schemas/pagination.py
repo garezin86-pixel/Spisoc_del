@@ -9,9 +9,7 @@ class PaginationParams(BaseModel):
     """Параметры пагинации"""
 
     page: int = Field(default=1, ge=1, description="Номер страницы")
-    size: int = Field(
-        default=20, ge=1, le=100, description="Размер страницы (макс. 100)"
-    )
+    size: int = Field(default=20, ge=1, le=100, description="Размер страницы (макс. 100)")
 
     @property
     def offset(self) -> int:

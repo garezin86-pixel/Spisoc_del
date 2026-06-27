@@ -13,22 +13,21 @@
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import get_session
 from src.core.redis import get_redis
-from src.repositories.users_repository import UserRepository
-from src.repositories.task_repository import TaskRepository
+from src.db import get_session
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.other_repositories import (
     CommentRepository,
     NotificationRepository,
     StatsRepository,
 )
-
+from src.repositories.task_repository import TaskRepository
+from src.repositories.users_repository import UserRepository
 from src.services.auth_service import AuthService
-from src.services.user_service import UserService
-from src.services.task_service import TaskService
-from src.services.group_service import GroupService
 from src.services.comments_service import CommentService
+from src.services.group_service import GroupService
+from src.services.task_service import TaskService
+from src.services.user_service import UserService
 
 # ── Репозитории ──────────────────────────────────────────────────────────────
 

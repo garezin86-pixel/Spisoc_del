@@ -1,7 +1,7 @@
 # src/repositories/project_repository.py
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, func
 
 from src.models.project import ProjectModel, project_member
 from src.models.task import SpisokModel
@@ -38,9 +38,7 @@ class ProjectRepository:
         )
         # Подзапрос: проекты где user является участником
         member_projects = (
-            select(project_member.c.project_id)
-            .where(project_member.c.user_id == user_id)
-            .scalar_subquery()
+            select(project_member.c.project_id).where(project_member.c.user_id == user_id).scalar_subquery()
         )
         return query.where(
             (ProjectModel.owner_id == user_id)
@@ -56,20 +54,12 @@ class ProjectRepository:
         if not is_admin:
             query = self._visible_for_user(query, user_id)
 
-        total = await self.session.scalar(
-            select(func.count()).select_from(query.subquery())
-        )
-        projects = list(
-            (await self.session.execute(query.offset(offset).limit(limit)))
-            .scalars()
-            .all()
-        )
+        total = await self.session.scalar(select(func.count()).select_from(query.subquery()))
+        projects = list((await self.session.execute(query.offset(offset).limit(limit))).scalars().all())
         return projects, total or 0
 
     async def get_by_id(self, project_id: int) -> ProjectModel | None:
-        result = await self.session.execute(
-            self._base_query().where(ProjectModel.id == project_id)
-        )
+        result = await self.session.execute(self._base_query().where(ProjectModel.id == project_id))
         return result.scalar_one_or_none()
 
     async def create(self, project: ProjectModel) -> ProjectModel:

@@ -1,8 +1,9 @@
 from typing import Any
+
 import structlog
 
 from src.bot.keyboards.notification_keyboard import task_action_keyboard
-from src.core.metrics import notifications_sent, notifications_failed
+from src.core.metrics import notifications_failed, notifications_sent
 
 logger = structlog.get_logger()
 

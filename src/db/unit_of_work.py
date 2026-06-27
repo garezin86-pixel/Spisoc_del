@@ -1,14 +1,14 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from src.repositories.users_repository import UserRepository
-from src.repositories.task_repository import TaskRepository
+from src.repositories.audit_repository import AuditRepository
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.other_repositories import (
     CommentRepository,
     NotificationRepository,
+    NotificationSettingsRepository,  # НОВЫЙ
 )
-from src.repositories.other_repositories import NotificationSettingsRepository  # НОВЫЙ
-from src.repositories.audit_repository import AuditRepository
+from src.repositories.task_repository import TaskRepository
+from src.repositories.users_repository import UserRepository
 
 
 class UnitOfWork:

@@ -5,14 +5,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import logging
+
 from sqlalchemy import select
+
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
-from src.models.user import UserModel as User
 from src.models.notification_settings import (
     NotificationSettingsModel as NotificationSettings,
 )
-import logging
+from src.models.user import UserModel as User
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,9 +33,7 @@ async def add_settings_for_existing_users():
         for user in users:
             # Проверяем, есть ли настройки
             result = await uow.session.execute(
-                select(NotificationSettings).where(
-                    NotificationSettings.user_id == user.id
-                )
+                select(NotificationSettings).where(NotificationSettings.user_id == user.id)
             )
             settings = result.scalar_one_or_none()
 

@@ -1,15 +1,16 @@
+import zoneinfo
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional
+
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    field_validator,
     field_serializer,
+    field_validator,
     model_validator,
 )
-from typing import Optional
-from enum import Enum
-from datetime import datetime, timezone
-import zoneinfo
 
 from src.models.task import TaskPriority, TaskStatus
 from src.schemas.group import GroupSchema

@@ -1,23 +1,24 @@
 # src/models/task.py
-from typing import Optional
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, Index, DateTime
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Optional
+
 import sqlalchemy as sa
-from src.db import Base
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.db import Base
 
 # from enum import Enum
 from src.models.audit import AuditMixin, SoftDeleteMixin
-from typing import TYPE_CHECKING
 from src.models.enums import TaskPriority, TaskStatus
 
 if TYPE_CHECKING:
-    from src.models.user import (
-        UserModel,
-    )  # 👈 только для линтера, не создаёт циклического импорта
     from src.models.group import GroupModel
     from src.models.project import ProjectModel
+    from src.models.user import (
+        UserModel,
+    )
 
 
 class TimestampMixin:
@@ -43,16 +44,10 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
     description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    author_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
-    deadline: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    reminder_sent: Mapped[bool] = mapped_column(
-        default=False, server_default=sa.false(), nullable=False
-    )
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reminder_sent: Mapped[bool] = mapped_column(default=False, server_default=sa.false(), nullable=False)
     priority: Mapped[TaskPriority] = mapped_column(
         SAEnum(TaskPriority, name="taskpriority"),
         default=TaskPriority.medium,
@@ -60,9 +55,7 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         nullable=False,
     )
 
-    project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
-    )
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[TaskStatus] = mapped_column(
         SAEnum(TaskStatus, name="taskstatus"),
         default=TaskStatus.todo,
@@ -82,9 +75,7 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         back_populates="authored_tasks",
         lazy="selectin",
     )
-    group: Mapped["GroupModel"] = relationship(
-        "GroupModel", back_populates="tasks", lazy="selectin"
-    )
+    group: Mapped["GroupModel"] = relationship("GroupModel", back_populates="tasks", lazy="selectin")
     project: Mapped[Optional["ProjectModel"]] = relationship(
         "ProjectModel",
         back_populates="tasks",
@@ -96,9 +87,7 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    notification_logs = relationship(
-        "NotificationLogModel", back_populates="task", cascade="all, delete-orphan"
-    )
+    notification_logs = relationship("NotificationLogModel", back_populates="task", cascade="all, delete-orphan")
 
     __table_args__ = (
         # Простые индексы
@@ -118,9 +107,7 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         Index(
             "ix_spisok_del_reminder_pending",
             "deadline",
-            postgresql_where=sa.text(
-                "reminder_sent = false AND status != 'done' AND user_id IS NOT NULL"
-            ),
+            postgresql_where=sa.text("reminder_sent = false AND status != 'done' AND user_id IS NOT NULL"),
         ),
         Index(
             "ix_spisok_del_not_deleted",

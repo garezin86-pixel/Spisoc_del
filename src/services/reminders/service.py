@@ -1,6 +1,7 @@
 import logging
-import structlog
 from datetime import datetime, timedelta, timezone
+
+import structlog
 
 from src.bot.setup import get_bot
 from src.db import get_session_maker
@@ -239,9 +240,7 @@ async def send_weekly_report() -> None:
 
 
 async def notify_group_assigned(user_id: int, group_id: int, group_name: str) -> None:
-    logger.info(
-        "Уведомление о назначении на группу: user=%s, group=%s", user_id, group_id
-    )
+    logger.info("Уведомление о назначении на группу: user=%s, group=%s", user_id, group_id)
     session_maker = get_session_maker()
     sender = NotificationSender(get_bot())
 

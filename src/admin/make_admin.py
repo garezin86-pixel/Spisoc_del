@@ -10,10 +10,10 @@
 
 import asyncio
 import sys
-from src.db import SessionDep
-from src.repositories.users_repository import UserRepository
+
+from src.db import SessionDep, get_session_maker
 from src.db.unit_of_work import UnitOfWork
-from src.db import get_session_maker
+from src.repositories.users_repository import UserRepository
 
 
 async def make_admin(username: str, session: SessionDep):

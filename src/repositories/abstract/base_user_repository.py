@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 from sqlalchemy import Select
+
 from src.models.user import UserModel
 
 

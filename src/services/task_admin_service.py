@@ -1,8 +1,9 @@
-from src.db.unit_of_work import UnitOfWork
-from src.db import get_session_maker
-from src.models.audit import AuditLog
-from src.core.metrics import tasks_deleted, tasks_restored, tasks_hard_deleted
 import structlog
+
+from src.core.metrics import tasks_deleted, tasks_hard_deleted, tasks_restored
+from src.db import get_session_maker
+from src.db.unit_of_work import UnitOfWork
+from src.models.audit import AuditLog
 
 logger = structlog.get_logger()
 
@@ -56,14 +57,13 @@ class TaskAdminService:
         async with UnitOfWork(get_session_maker()) as uow:
             from sqlalchemy import select
             from sqlalchemy.orm import selectinload
+
             from src.models.task import SpisokModel
 
             count = 0
             for pk in pks:
                 result = await uow.session.execute(
-                    select(SpisokModel)
-                    .where(SpisokModel.id == pk)
-                    .options(selectinload(SpisokModel.comments))
+                    select(SpisokModel).where(SpisokModel.id == pk).options(selectinload(SpisokModel.comments))
                 )
                 obj = result.scalar_one_or_none()
                 if obj:
@@ -74,9 +74,7 @@ class TaskAdminService:
                         action="delete",
                         old_values={
                             "hard_delete": True,
-                            "deleted_at": (
-                                obj.deleted_at.isoformat() if obj.deleted_at else None
-                            ),
+                            "deleted_at": (obj.deleted_at.isoformat() if obj.deleted_at else None),
                         },
                         new_values=None,
                     )

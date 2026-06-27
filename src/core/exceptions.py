@@ -1,6 +1,7 @@
+from typing import NoReturn
+
 from fastapi import HTTPException, status
 from fastapi.responses import HTMLResponse
-from typing import NoReturn
 
 
 def not_found(detail: str = "Not found") -> NoReturn:
@@ -28,9 +29,7 @@ def user_already_exists(detail: str = "User already exists"):
 
 
 def current_admin(detail: str = "For administrator only"):
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN, detail="For administrator only"
-    )
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="For administrator only")
 
 
 def no_access(detail: str = "No access"):

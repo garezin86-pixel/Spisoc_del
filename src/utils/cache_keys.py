@@ -18,9 +18,7 @@ def user_scoped_key_builder(
     user_id = getattr(user, "id", "anonymous")
 
     if request is not None:
-        raw_key = (
-            f"{request.method}:{request.url.path}?{request.url.query}:user={user_id}"
-        )
+        raw_key = f"{request.method}:{request.url.path}?{request.url.query}:user={user_id}"
     else:
         raw_key = f"{func.__module__}:{func.__name__}:user={user_id}:{kwargs}"
 

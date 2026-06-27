@@ -1,12 +1,13 @@
 # src/services/project_service.py
 import structlog
-from src.repositories.project_repository import ProjectRepository
-from src.repositories.users_repository import UserRepository
-from src.repositories.groups_repository import GroupRepository
+from fastapi import HTTPException
+
 from src.models.project import ProjectModel
 from src.models.user import UserModel, UserRole
+from src.repositories.groups_repository import GroupRepository
+from src.repositories.project_repository import ProjectRepository
+from src.repositories.users_repository import UserRepository
 from src.schemas.schemas_project import ProjectCreate, ProjectUpdate
-from fastapi import HTTPException
 
 logger = structlog.get_logger()
 
@@ -39,13 +40,9 @@ class ProjectService:
         if user.role == UserRole.admin:
             return
         if project.owner_id != user.id:
-            raise HTTPException(
-                403, "Только владелец или admin может выполнить это действие"
-            )
+            raise HTTPException(403, "Только владелец или admin может выполнить это действие")
 
-    async def create_project(
-        self, data: ProjectCreate, current_user: UserModel
-    ) -> ProjectModel:
+    async def create_project(self, data: ProjectCreate, current_user: UserModel) -> ProjectModel:
         """Создаёт проект. Владельцем становится текущий пользователь."""
         self._require_manager(current_user)
         project = ProjectModel(
@@ -55,14 +52,10 @@ class ProjectService:
             group_id=data.group_id,
         )
         created = await self.project_repo.create(project)
-        await logger.ainfo(
-            "project_created", project_id=created.id, owner_id=current_user.id
-        )
+        await logger.ainfo("project_created", project_id=created.id, owner_id=current_user.id)
         return created
 
-    async def get_projects(
-        self, current_user: UserModel, offset: int, limit: int
-    ) -> tuple[list[ProjectModel], int]:
+    async def get_projects(self, current_user: UserModel, offset: int, limit: int) -> tuple[list[ProjectModel], int]:
         """Возвращает проекты доступные пользователю."""
         is_admin = current_user.role in (UserRole.admin, UserRole.manager)
         return await self.project_repo.get_all_for_user(
@@ -72,9 +65,7 @@ class ProjectService:
             limit=limit,
         )
 
-    async def get_project(
-        self, project_id: int, current_user: UserModel
-    ) -> ProjectModel:
+    async def get_project(self, project_id: int, current_user: UserModel) -> ProjectModel:
         """Возвращает проект с проверкой доступа."""
         project = await self.project_repo.get_by_id(project_id)
         if not project:
@@ -83,17 +74,13 @@ class ProjectService:
         if current_user.role in (UserRole.admin, UserRole.manager):
             return project
         # Проверяем что пользователь owner, member или executor
-        is_visible = await self.project_repo.is_member_or_owner(
-            project_id, current_user.id
-        )
+        is_visible = await self.project_repo.is_member_or_owner(project_id, current_user.id)
         executor_ids = {t.user_id for t in project.tasks if t.user_id}
         if not is_visible and current_user.id not in executor_ids:
             raise HTTPException(403, "Нет доступа к проекту")
         return project
 
-    async def update_project(
-        self, project_id: int, data: ProjectUpdate, current_user: UserModel
-    ) -> ProjectModel:
+    async def update_project(self, project_id: int, data: ProjectUpdate, current_user: UserModel) -> ProjectModel:
         """Обновляет название и/или описание проекта."""
         project = await self.project_repo.get_by_id(project_id)
         if not project:
@@ -119,31 +106,19 @@ class ProjectService:
         self._require_owner_or_admin(project, current_user)
 
         await self.project_repo.delete(project)
-        await logger.ainfo(
-            "project_deleted", project_id=project_id, user_id=current_user.id
-        )
+        await logger.ainfo("project_deleted", project_id=project_id, user_id=current_user.id)
         return {"message": f"Project {project_id} deleted"}
 
-    async def add_member(
-        self, project_id: int, user_id: int, current_user: UserModel
-    ) -> dict:
+    async def add_member(self, project_id: int, user_id: int, current_user: UserModel) -> dict:
         """Добавляет участника в проект."""
         project = await self.project_repo.get_by_id(project_id)
         if not project:
             raise HTTPException(404, "Проект не найден")
         self._require_manager(current_user)
-        if (
-            current_user.role not in (UserRole.admin,)
-            and project.owner_id != current_user.id
-        ):
+        if current_user.role not in (UserRole.admin,) and project.owner_id != current_user.id:
             # manager может добавлять только в свои проекты
-            if (
-                current_user.role == UserRole.manager
-                and project.owner_id != current_user.id
-            ):
-                raise HTTPException(
-                    403, "Manager может управлять только своими проектами"
-                )
+            if current_user.role == UserRole.manager and project.owner_id != current_user.id:
+                raise HTTPException(403, "Manager может управлять только своими проектами")
 
         user = await self.user_repo.get_by_id(user_id)
         if not user:
@@ -154,14 +129,10 @@ class ProjectService:
 
         project.members.append(user)
         await self.project_repo.update(project)
-        await logger.ainfo(
-            "project_member_added", project_id=project_id, user_id=user_id
-        )
+        await logger.ainfo("project_member_added", project_id=project_id, user_id=user_id)
         return {"message": f"User {user_id} added to project {project_id}"}
 
-    async def set_project_group(
-        self, project_id: int, group_id: int | None, current_user: UserModel
-    ) -> ProjectModel:
+    async def set_project_group(self, project_id: int, group_id: int | None, current_user: UserModel) -> ProjectModel:
         """Привязывает или отвязывает группу от проекта."""
         project = await self.project_repo.get_by_id(project_id)
         if not project:
@@ -175,14 +146,10 @@ class ProjectService:
 
         project.group_id = group_id
         updated = await self.project_repo.update(project)
-        await logger.ainfo(
-            "project_group_set", project_id=project_id, group_id=group_id
-        )
+        await logger.ainfo("project_group_set", project_id=project_id, group_id=group_id)
         return updated
 
-    async def remove_member(
-        self, project_id: int, user_id: int, current_user: UserModel
-    ) -> dict:
+    async def remove_member(self, project_id: int, user_id: int, current_user: UserModel) -> dict:
         """Удаляет участника из проекта."""
         project = await self.project_repo.get_by_id(project_id)
         if not project:
@@ -191,7 +158,5 @@ class ProjectService:
 
         project.members = [m for m in project.members if m.id != user_id]
         await self.project_repo.update(project)
-        await logger.ainfo(
-            "project_member_removed", project_id=project_id, user_id=user_id
-        )
+        await logger.ainfo("project_member_removed", project_id=project_id, user_id=user_id)
         return {"message": f"User {user_id} removed from project {project_id}"}

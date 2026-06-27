@@ -8,8 +8,9 @@ Create Date: 2026-05-14 15:21:09.453420
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "8cf038c5b3df"
@@ -23,9 +24,7 @@ def upgrade() -> None:
 
     # Проверяем существующие колонки
     inspector = sa.inspect(op.get_bind())
-    existing_columns = [
-        col["name"] for col in inspector.get_columns("notification_settings")
-    ]
+    existing_columns = [col["name"] for col in inspector.get_columns("notification_settings")]
 
     # Добавляем только отсутствующие колонки
     if "notify_group_assigned" not in existing_columns:
@@ -48,17 +47,13 @@ def upgrade() -> None:
     if "created_at" not in existing_columns:
         op.add_column(
             "notification_settings",
-            sa.Column(
-                "created_at", sa.DateTime(), nullable=True, server_default=sa.func.now()
-            ),
+            sa.Column("created_at", sa.DateTime(), nullable=True, server_default=sa.func.now()),
         )
 
     if "updated_at" not in existing_columns:
         op.add_column(
             "notification_settings",
-            sa.Column(
-                "updated_at", sa.DateTime(), nullable=True, onupdate=sa.func.now()
-            ),
+            sa.Column("updated_at", sa.DateTime(), nullable=True, onupdate=sa.func.now()),
         )
 
 
@@ -66,9 +61,7 @@ def downgrade() -> None:
     """Удаление добавленных колонок (если они есть)"""
 
     inspector = sa.inspect(op.get_bind())
-    existing_columns = [
-        col["name"] for col in inspector.get_columns("notification_settings")
-    ]
+    existing_columns = [col["name"] for col in inspector.get_columns("notification_settings")]
 
     if "notify_group_assigned" in existing_columns:
         op.drop_index(

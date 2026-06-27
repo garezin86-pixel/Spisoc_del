@@ -1,12 +1,11 @@
 from aiogram import Router
-from aiogram.types import Message
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram.types import BotCommand, MenuButtonCommands, Message
 
 from src.bot.keyboards.main import main_menu_admin, main_menu_user
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
-from aiogram.types import MenuButtonCommands, BotCommand
-from aiogram.filters import CommandStart
 
 router = Router()
 
@@ -22,9 +21,7 @@ async def set_main_menu(bot):
         BotCommand(command="undone", description="⏪ Снять отметку: /undone 42"),
         BotCommand(command="task", description="🔍 Показать задачу: /task 42"),
         BotCommand(command="del", description="🗑 В корзину: /del 42"),
-        BotCommand(
-            command="new", description="➕ Создать задачу: /new Название | дедлайн"
-        ),
+        BotCommand(command="new", description="➕ Создать задачу: /new Название | дедлайн"),
         BotCommand(command="find", description="🔎 Найти задачу: /find текст"),
         BotCommand(command="voice", description="🎤 Голосовые команды — шпаргалка"),
         BotCommand(command="group", description="👥 Задачи группы: /group 3"),

@@ -1,20 +1,23 @@
 import asyncio
+from typing import Any, List, Optional, Tuple
+from zoneinfo import ZoneInfo
+
 import structlog
 from fastapi import Request
-from sqladmin import ModelView, action
-from markupsafe import Markup
-from sqladmin import expose
 from fastapi.responses import RedirectResponse
-from zoneinfo import ZoneInfo
-from typing import Any, List, Tuple, Optional
-from sqlalchemy import Select, select
-from sqlalchemy.orm import selectinload
+from markupsafe import Markup
+from sqladmin import ModelView, action, expose
 from sqladmin.filters import ForeignKeyFilter
-from sqlalchemy.orm import object_session
+from sqlalchemy import Select, select
+from sqlalchemy.orm import object_session, selectinload
 from wtforms import SelectField
+
 from src.admin.utils.url_helpers import URLS
 from src.core.exceptions import incorrect_valueerror
-from src.models import UserModel, SpisokModel, GroupModel
+from src.core.metrics import tasks_created
+from src.db import get_session_maker
+from src.db.unit_of_work import UnitOfWork
+from src.models import GroupModel, SpisokModel, UserModel
 from src.models.project import ProjectModel
 from src.models.task import TaskPriority, TaskStatus
 from src.services.notifications import (
@@ -22,11 +25,8 @@ from src.services.notifications import (
     notify_task_assigned,
     notify_task_updated,
 )
-from src.utils.datetime_utils import to_local
-from src.db.unit_of_work import UnitOfWork
-from src.db import get_session_maker
 from src.services.task_admin_service import task_admin_service
-from src.core.metrics import tasks_created
+from src.utils.datetime_utils import to_local
 
 LOCAL_TZ = ZoneInfo("Europe/Kiev")
 logger = structlog.get_logger()
@@ -71,9 +71,7 @@ STATUS_LABELS = {
 def _render_audit_history(audit_entries: list) -> Markup:
     """Рендерит HTML-таблицу истории изменений для карточки задачи."""
     if not audit_entries:
-        return Markup(
-            '<p style="color:#6c757d; font-style:italic;">История изменений пуста</p>'
-        )
+        return Markup('<p style="color:#6c757d; font-style:italic;">История изменений пуста</p>')
 
     rows = []
     for entry in audit_entries:
@@ -155,9 +153,7 @@ def _format_audit_history(model: SpisokModel, attr: str) -> Markup:
         future = asyncio.run_coroutine_threadsafe(_fetch_audit_entries(model.id), loop)
         entries = future.result(timeout=5)
     except Exception as e:
-        return Markup(
-            f'<span style="color:#dc3545">Ошибка загрузки истории: {e}</span>'
-        )
+        return Markup(f'<span style="color:#dc3545">Ошибка загрузки истории: {e}</span>')
     return _render_audit_history(entries)
 
 
@@ -238,9 +234,7 @@ class ProjectFilter:
             self.parameter_name = parameter_name
 
     async def lookups(self, request, model, run_query):
-        projects = await run_query(
-            select(ProjectModel.id, ProjectModel.name).order_by(ProjectModel.name)
-        )
+        projects = await run_query(select(ProjectModel.id, ProjectModel.name).order_by(ProjectModel.name))
 
         return [
             ("", "Все"),
@@ -281,13 +275,9 @@ class TaskAdmin(ModelView, model=SpisokModel):
     column_filters = [
         StatusFilter(),
         AssignmentFilter(),
-        ForeignKeyFilter(
-            SpisokModel.group_id, GroupModel.name, title="Назначено на группу"
-        ),
+        ForeignKeyFilter(SpisokModel.group_id, GroupModel.name, title="Назначено на группу"),
         ProjectFilter(),
-        ForeignKeyFilter(
-            SpisokModel.user_id, UserModel.username, title="Назначено на пользователя"
-        ),
+        ForeignKeyFilter(SpisokModel.user_id, UserModel.username, title="Назначено на пользователя"),
     ]
 
     column_sortable_list = [
@@ -384,9 +374,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
     }
 
     form_args = {
-        "user": {
-            "description": "Выберите пользователя, если задача для конкретного человека"
-        },
+        "user": {"description": "Выберите пользователя, если задача для конкретного человека"},
         "group": {"description": "Выберите группу, если задача для группы"},
         "priority": {
             "description": "Выберите приоритет задачи",
@@ -408,9 +396,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
     async def create_comment(self, request):
         if request.method == "GET":
             task_id = request.query_params.get("task_id")
-            return await self.templates.TemplateResponse(
-                request, "admin/comment_create.html", {"task_id": task_id}
-            )
+            return await self.templates.TemplateResponse(request, "admin/comment_create.html", {"task_id": task_id})
 
         form = await request.form()
         task_id = form.get("task_id")
@@ -435,15 +421,9 @@ class TaskAdmin(ModelView, model=SpisokModel):
             from datetime import timezone
 
             if model.deadline.tzinfo is not None:
-                model.deadline = model.deadline.astimezone(LOCAL_TZ).replace(
-                    tzinfo=None
-                )
+                model.deadline = model.deadline.astimezone(LOCAL_TZ).replace(tzinfo=None)
             else:
-                model.deadline = (
-                    model.deadline.replace(tzinfo=timezone.utc)
-                    .astimezone(LOCAL_TZ)
-                    .replace(tzinfo=None)
-                )
+                model.deadline = model.deadline.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ).replace(tzinfo=None)
         return model
 
     async def on_model_change(self, data, model, is_created, request):
@@ -457,9 +437,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
         group = data.get("group")
 
         if user and group:
-            return incorrect_valueerror(
-                "Нельзя назначать задачу одновременно пользователю и группе!"
-            )
+            return incorrect_valueerror("Нельзя назначать задачу одновременно пользователю и группе!")
 
         if is_created and "admin_id" in request.session:
             model.author_id = request.session["admin_id"]
@@ -565,6 +543,4 @@ class TaskAdmin(ModelView, model=SpisokModel):
         pks = [int(pk.strip()) for pk in pks_raw.split(",") if pk.strip()]
         admin_id = request.session.get("admin_id")
         await task_admin_service.bulk_soft_delete(pks, admin_id)
-        return RedirectResponse(
-            request.url_for("admin:list", identity="spisok-model"), status_code=302
-        )
+        return RedirectResponse(request.url_for("admin:list", identity="spisok-model"), status_code=302)

@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from src.models.task import SpisokModel, TaskStatus
+
 from src.models.comment import CommentModel
+from src.models.task import SpisokModel, TaskStatus
 
 
 class AbstractTaskRepository(ABC):
@@ -26,9 +27,7 @@ class AbstractTaskRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_tasks_limit(
-        self, query, limit: int, offset: int
-    ) -> list[SpisokModel]:
+    async def get_tasks_limit(self, query, limit: int, offset: int) -> list[SpisokModel]:
         raise NotImplementedError
 
     @abstractmethod
@@ -44,9 +43,7 @@ class AbstractTaskRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def add_comment(
-        self, task_id: int, user_id: int, content: str
-    ) -> CommentModel:
+    async def add_comment(self, task_id: int, user_id: int, content: str) -> CommentModel:
         raise NotImplementedError
 
     @abstractmethod
@@ -109,9 +106,7 @@ class AbstractTaskRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_tasks_by_deadline_window(
-        self, start: datetime, end: datetime, user_id: int | None = None
-    ):
+    async def get_tasks_by_deadline_window(self, start: datetime, end: datetime, user_id: int | None = None):
         raise NotImplementedError
 
     @abstractmethod

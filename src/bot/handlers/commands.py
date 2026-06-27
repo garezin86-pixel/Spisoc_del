@@ -82,10 +82,7 @@ _STATUS_EMOJI = {
 def _fmt_short(task) -> str:
     key = task.status.value if task.status else "todo"
     status = _STATUS_EMOJI.get(key, "⏳")
-    return (
-        f"{status} <b>{task.title}</b>\n"
-        f"{_priority_emoji(task)} | 📅 {_fmt_deadline(task)} | 🆔 {task.id}"
-    )
+    return f"{status} <b>{task.title}</b>\n{_priority_emoji(task)} | 📅 {_fmt_deadline(task)} | 🆔 {task.id}"
 
 
 def _fmt_full(task) -> str:
@@ -105,9 +102,7 @@ def _fmt_full(task) -> str:
         "medium": "🔵 Средний",
         "low": "⚪ Низкий",
     }
-    prio = priority_labels.get(
-        task.priority.value if task.priority else "", "⚪ Низкий"
-    )
+    prio = priority_labels.get(task.priority.value if task.priority else "", "⚪ Низкий")
     return (
         f"📋 <b>Задача #{task.id}</b>\n\n"
         f"<b>{task.title}</b>\n"
@@ -148,9 +143,7 @@ async def cmd_done(message: Message, command: CommandObject):
     """/done 42 — отметить задачу #42 как выполненную."""
     task_id = _parse_id(command.args)
     if not task_id:
-        await message.answer(
-            "⚠️ Укажите ID задачи: <code>/done 42</code>", parse_mode="HTML"
-        )
+        await message.answer("⚠️ Укажите ID задачи: <code>/done 42</code>", parse_mode="HTML")
         return
 
     async with UnitOfWork(get_session_maker()) as uow:
@@ -159,9 +152,7 @@ async def cmd_done(message: Message, command: CommandObject):
             return
         uow.set_audit_user(user.id)
         try:
-            await make_task_service(uow).update_task_status(
-                task_id, TaskStatus.done, user
-            )
+            await make_task_service(uow).update_task_status(task_id, TaskStatus.done, user)
             await uow.commit()
             await message.answer(
                 f"✅ Задача <b>#{task_id}</b> отмечена как выполненная!",
@@ -176,9 +167,7 @@ async def cmd_undone(message: Message, command: CommandObject):
     """/undone 42 — снять отметку выполнения."""
     task_id = _parse_id(command.args)
     if not task_id:
-        await message.answer(
-            "⚠️ Укажите ID задачи: <code>/undone 42</code>", parse_mode="HTML"
-        )
+        await message.answer("⚠️ Укажите ID задачи: <code>/undone 42</code>", parse_mode="HTML")
         return
 
     async with UnitOfWork(get_session_maker()) as uow:
@@ -187,9 +176,7 @@ async def cmd_undone(message: Message, command: CommandObject):
             return
         uow.set_audit_user(user.id)
         try:
-            await make_task_service(uow).update_task_status(
-                task_id, TaskStatus.todo, user
-            )
+            await make_task_service(uow).update_task_status(task_id, TaskStatus.todo, user)
             await uow.commit()
             await message.answer(
                 f"⏳ Задача <b>#{task_id}</b> переведена в статус «Новая».",
@@ -204,9 +191,7 @@ async def cmd_task(message: Message, command: CommandObject):
     """/task 42 — показать задачу #42 с деталями."""
     task_id = _parse_id(command.args)
     if not task_id:
-        await message.answer(
-            "⚠️ Укажите ID задачи: <code>/task 42</code>", parse_mode="HTML"
-        )
+        await message.answer("⚠️ Укажите ID задачи: <code>/task 42</code>", parse_mode="HTML")
         return
 
     async with UnitOfWork(get_session_maker()) as uow:
@@ -225,9 +210,7 @@ async def cmd_del(message: Message, command: CommandObject):
     """/del 42 — переместить задачу #42 в корзину."""
     task_id = _parse_id(command.args)
     if not task_id:
-        await message.answer(
-            "⚠️ Укажите ID задачи: <code>/del 42</code>", parse_mode="HTML"
-        )
+        await message.answer("⚠️ Укажите ID задачи: <code>/del 42</code>", parse_mode="HTML")
         return
 
     async with UnitOfWork(get_session_maker()) as uow:
@@ -238,9 +221,7 @@ async def cmd_del(message: Message, command: CommandObject):
         try:
             # delete_task делает session.commit() внутри себя
             await make_task_service(uow).delete_task(task_id, user)
-            await message.answer(
-                f"🗑 Задача <b>#{task_id}</b> перемещена в корзину.", parse_mode="HTML"
-            )
+            await message.answer(f"🗑 Задача <b>#{task_id}</b> перемещена в корзину.", parse_mode="HTML")
         except Exception as e:
             await message.answer(f"❌ Не удалось: {e}")
 
@@ -303,9 +284,7 @@ async def cmd_my(message: Message):
 @router.message(Command("today"))
 async def cmd_today(message: Message):
     """/today — задачи на сегодня."""
-    await _send_filtered(
-        message, TaskFilter.today, "📅 Задачи на сегодня:", "📭 Нет задач на сегодня."
-    )
+    await _send_filtered(message, TaskFilter.today, "📅 Задачи на сегодня:", "📭 Нет задач на сегодня.")
 
 
 @router.message(Command("overdue"))
@@ -463,9 +442,7 @@ async def cmd_find(message: Message, command: CommandObject):
     """/find отчёт — поиск задач по части названия/описания."""
     query = (command.args or "").strip()
     if not query:
-        await message.answer(
-            "⚠️ Укажите текст для поиска: <code>/find отчёт</code>", parse_mode="HTML"
-        )
+        await message.answer("⚠️ Укажите текст для поиска: <code>/find отчёт</code>", parse_mode="HTML")
         return
 
     async with UnitOfWork(get_session_maker()) as uow:
@@ -487,11 +464,7 @@ async def cmd_find(message: Message, command: CommandObject):
         )
 
     q = query.lower()
-    tasks = [
-        t
-        for t in all_tasks
-        if q in (t.title or "").lower() or q in (t.description or "").lower()
-    ][:20]
+    tasks = [t for t in all_tasks if q in (t.title or "").lower() or q in (t.description or "").lower()][:20]
 
     if not tasks:
         await message.answer(f"🔍 По запросу «{query}» задач не найдено.")
@@ -506,9 +479,7 @@ async def cmd_group(message: Message, command: CommandObject):
     """/group 3 — задачи группы #3."""
     group_id = _parse_id(command.args)
     if not group_id:
-        await message.answer(
-            "⚠️ Укажите ID группы: <code>/group 3</code>", parse_mode="HTML"
-        )
+        await message.answer("⚠️ Укажите ID группы: <code>/group 3</code>", parse_mode="HTML")
         return
 
     async with UnitOfWork(get_session_maker()) as uow:
@@ -539,9 +510,7 @@ async def cmd_group(message: Message, command: CommandObject):
         await message.answer(f"📭 В группе «{group.name}» нет задач.")
         return
 
-    lines = [f"<b>👥 Задачи группы «{group.name}»:</b>"] + [
-        _fmt_short(t) for t in tasks
-    ]
+    lines = [f"<b>👥 Задачи группы «{group.name}»:</b>"] + [_fmt_short(t) for t in tasks]
     await message.answer("\n\n".join(lines), parse_mode="HTML")
 
 

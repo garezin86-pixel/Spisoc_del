@@ -4,19 +4,20 @@
 """
 
 import uuid
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.task import SpisokModel, TaskStatus
 from src.models.comment import CommentModel
 from src.models.notification_settings import (
     NotificationSettingsModel as NotificationSettings,
 )
+from src.models.task import SpisokModel, TaskStatus
 from src.services.notifications import (
+    notify_comment_added,
     notify_task_assigned,
     notify_task_updated,
-    notify_comment_added,
 )
 from src.utils.reminders import notify_overdue, remind_deadline_1h, remind_deadline_24h
 from tests.conftest import make_user
@@ -32,9 +33,7 @@ def mock_bot(engine):  # ← добавили engine
     """Мокает get_bot И подменяет session_maker на тестовый"""
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    test_session_maker = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+    test_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     with (
         patch("src.services.notifications.get_bot") as mock_get_bot,
@@ -53,9 +52,7 @@ def mock_bot(engine):  # ← добавили engine
 def mock_reminders_bot(engine):  # ← добавили engine
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    test_session_maker = async_sessionmaker(
-        engine, expire_on_commit=False, class_=AsyncSession
-    )
+    test_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     with (
         patch("src.services.reminders.service.get_bot") as mock_get_bot,
@@ -96,9 +93,7 @@ async def create_task_with_users(session, same_user=False):
     tg_author = unique_tg_id()
     tg_user = unique_tg_id() if not same_user else tg_author
 
-    author = await make_user(
-        session, username=f"author_{uuid.uuid4().hex[:6]}", password="pass123"
-    )
+    author = await make_user(session, username=f"author_{uuid.uuid4().hex[:6]}", password="pass123")
     author.telegram_id = tg_author
     await session.commit()
     await session.refresh(author)
@@ -109,9 +104,7 @@ async def create_task_with_users(session, same_user=False):
     if same_user:
         user = author
     else:
-        user = await make_user(
-            session, username=f"executor_{uuid.uuid4().hex[:6]}", password="pass123"
-        )
+        user = await make_user(session, username=f"executor_{uuid.uuid4().hex[:6]}", password="pass123")
         user.telegram_id = tg_user
         await session.commit()
         await session.refresh(user)
@@ -131,9 +124,7 @@ async def create_task_with_users(session, same_user=False):
 
 
 async def create_comment(session, task, commenter_tg=None):
-    commenter = await make_user(
-        session, username=f"comm_{uuid.uuid4().hex[:6]}", password="pass123"
-    )
+    commenter = await make_user(session, username=f"comm_{uuid.uuid4().hex[:6]}", password="pass123")
     if commenter_tg is not None:
         commenter.telegram_id = commenter_tg
         await session.commit()
@@ -235,9 +226,7 @@ class TestNotifyTaskUpdated:
     async def test_not_sent_when_editor_is_executor(self, session, mock_bot):
         task, _, user = await create_task_with_users(session, same_user=True)
 
-        await notify_task_updated(
-            task.id, changed_fields={"title": "X"}, editor_telegram_id=user.telegram_id
-        )
+        await notify_task_updated(task.id, changed_fields={"title": "X"}, editor_telegram_id=user.telegram_id)
 
         mock_bot.send_message.assert_not_called()
 
@@ -280,9 +269,7 @@ class TestNotifyCommentAdded:
 
         # Проверяем, что автор получил уведомление
         assert mock_bot.send_message.called
-        sent_to = {
-            call.kwargs["chat_id"] for call in mock_bot.send_message.call_args_list
-        }
+        sent_to = {call.kwargs["chat_id"] for call in mock_bot.send_message.call_args_list}
         assert author.telegram_id in sent_to
 
     @pytest.mark.asyncio
@@ -297,9 +284,7 @@ class TestNotifyCommentAdded:
         await notify_comment_added(comment.id)
 
         assert mock_bot.send_message.called
-        sent_to = {
-            call.kwargs["chat_id"] for call in mock_bot.send_message.call_args_list
-        }
+        sent_to = {call.kwargs["chat_id"] for call in mock_bot.send_message.call_args_list}
         assert user.telegram_id in sent_to
 
     @pytest.mark.asyncio
@@ -315,9 +300,7 @@ class TestNotifyCommentAdded:
 
         await notify_comment_added(comment.id)
 
-        sent_to = {
-            call.kwargs["chat_id"] for call in mock_bot.send_message.call_args_list
-        }
+        sent_to = {call.kwargs["chat_id"] for call in mock_bot.send_message.call_args_list}
         assert author.telegram_id not in sent_to
 
     @pytest.mark.asyncio

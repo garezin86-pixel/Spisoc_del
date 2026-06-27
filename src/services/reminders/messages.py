@@ -6,17 +6,11 @@ def format_deadline(task, fmt: str = "%d.%m.%Y %H:%M") -> str:
 
 
 def deadline_24h_text(task) -> str:
-    return (
-        f"⏰ Напоминание: задача «{task.title}»\n"
-        f"Дедлайн через ~24 часа: {format_deadline(task)}"
-    )
+    return f"⏰ Напоминание: задача «{task.title}»\nДедлайн через ~24 часа: {format_deadline(task)}"
 
 
 def deadline_1h_text(task) -> str:
-    return (
-        f"🔔 Задача «{task.title}» истекает через ~1 час!\n"
-        f"Дедлайн: {format_deadline(task)}"
-    )
+    return f"🔔 Задача «{task.title}» истекает через ~1 час!\nДедлайн: {format_deadline(task)}"
 
 
 def overdue_text(task) -> str:
@@ -47,7 +41,4 @@ def weekly_report_text(upcoming, overdue) -> str:
 
 
 def group_assigned_text(group_name: str) -> str:
-    return (
-        f"👥 Вы назначены на группу «{group_name}»\n"
-        "Теперь вы будете получать задачи из этой группы."
-    )
+    return f"👥 Вы назначены на группу «{group_name}»\nТеперь вы будете получать задачи из этой группы."

@@ -8,8 +8,9 @@ Create Date: 2026-05-13 19:54:36.232165
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "7c53145af9bd"
@@ -42,7 +43,10 @@ def upgrade() -> None:
         ["user_id"],
         unique=False,
         postgresql_where=sa.text(
-            "notify_deadline_24h = true OR notify_deadline_1h = true OR notify_overdue = true OR weekly_report_enabled = true"
+            "notify_deadline_24h = true "
+            "OR notify_deadline_1h = true "
+            "OR notify_overdue = true "
+            "OR weekly_report_enabled = true"
         ),
     )
     op.create_index(
@@ -102,9 +106,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "ix_users_telegram_active", "users", ["telegram_id", "is_active"], unique=False
-    )
+    op.create_index("ix_users_telegram_active", "users", ["telegram_id", "is_active"], unique=False)
     # ### end Alembic commands ###
 
 
@@ -122,15 +124,9 @@ def downgrade() -> None:
         table_name="notification_settings",
         postgresql_where=sa.text("weekly_report_enabled = true"),
     )
-    op.drop_index(
-        "ix_notification_settings_user_weekly", table_name="notification_settings"
-    )
-    op.drop_index(
-        "ix_notification_settings_user_id", table_name="notification_settings"
-    )
-    op.drop_index(
-        "ix_notification_settings_notify_overdue", table_name="notification_settings"
-    )
+    op.drop_index("ix_notification_settings_user_weekly", table_name="notification_settings")
+    op.drop_index("ix_notification_settings_user_id", table_name="notification_settings")
+    op.drop_index("ix_notification_settings_notify_overdue", table_name="notification_settings")
     op.drop_index(
         "ix_notification_settings_notify_deadline_24h",
         table_name="notification_settings",
@@ -143,7 +139,10 @@ def downgrade() -> None:
         "ix_notification_settings_any_enabled",
         table_name="notification_settings",
         postgresql_where=sa.text(
-            "notify_deadline_24h = true OR notify_deadline_1h = true OR notify_overdue = true OR weekly_report_enabled = true"
+            "notify_deadline_24h = true "
+            "OR notify_deadline_1h = true "
+            "OR notify_overdue = true "
+            "OR weekly_report_enabled = true"
         ),
     )
     op.drop_table("notification_settings")

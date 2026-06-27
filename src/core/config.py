@@ -1,7 +1,7 @@
 import os
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -14,9 +14,7 @@ class Settings(BaseSettings):
     # JWT
     secret_key: str = Field(default="", alias="SECRET_KEY")
     algorithm: str = Field(default="HS256", alias="ALGORITHM")
-    access_token_expire_minutes: int = Field(
-        default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES"
-    )
+    access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     # Database
     database_url: str = Field(
@@ -57,9 +55,7 @@ class Settings(BaseSettings):
     grafana_admin_password: str = Field(default="admin", alias="GRAFANA_ADMIN_PASSWORD")
 
     refresh_secret_key: str = Field(default="", alias="REFRESH_SECRET_KEY")
-    refresh_token_expire_days: int = Field(
-        default=30, alias="REFRESH_TOKEN_EXPIRE_DAYS"
-    )
+    refresh_token_expire_days: int = Field(default=30, alias="REFRESH_TOKEN_EXPIRE_DAYS")
 
 
 settings = Settings()

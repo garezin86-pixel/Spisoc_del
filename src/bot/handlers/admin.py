@@ -1,21 +1,20 @@
-from aiogram import Router, F
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from src.bot.utils.user_utils import get_main_menu
-from src.services.group_service import GroupService
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
-from src.db import get_session_maker
-from src.models.user import UserModel
-from src.core.security import hash_password
 from src.bot.keyboards.main import (
-    main_menu_admin,
-    admin_users_keyboard,
     admin_groups_keyboard,
+    admin_users_keyboard,
     cancel_keyboard,
+    main_menu_admin,
 )
+from src.bot.utils.user_utils import get_main_menu
+from src.core.security import hash_password
+from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
+from src.models.user import UserModel
+from src.services.group_service import GroupService
 
 router = Router()
 
@@ -80,9 +79,7 @@ async def admin_users_menu(message: Message):
     user = await check_admin(message)
     if not user:
         return
-    await message.answer(
-        "👥 Управление пользователями:", reply_markup=admin_users_keyboard()
-    )
+    await message.answer("👥 Управление пользователями:", reply_markup=admin_users_keyboard())
 
 
 @router.message(F.text == "👤 Группы")
@@ -90,9 +87,7 @@ async def admin_groups_menu(message: Message):
     user = await check_admin(message)
     if not user:
         return
-    await message.answer(
-        "👤 Управление группами:", reply_markup=admin_groups_keyboard()
-    )
+    await message.answer("👤 Управление группами:", reply_markup=admin_groups_keyboard())
 
 
 @router.message(F.text == "🔙 Назад")
@@ -260,9 +255,7 @@ async def block_user_start(message: Message, state: FSMContext):
         text += f"{status} 🆔{u.id} — {u.username}\n"
 
     await state.set_state(BlockUser.user_id)
-    await message.answer(
-        text + "\n Введите ID пользователя:", reply_markup=cancel_keyboard()
-    )
+    await message.answer(text + "\n Введите ID пользователя:", reply_markup=cancel_keyboard())
 
 
 @router.message(BlockUser.user_id)
@@ -315,9 +308,7 @@ async def delete_user_start(message: Message, state: FSMContext):
         text += f"🆔{u.id} — {u.username}\n"
 
     await state.set_state(DeleteUser.user_id)
-    await message.answer(
-        text + "\nВведите ID пользователя:", reply_markup=cancel_keyboard()
-    )
+    await message.answer(text + "\nВведите ID пользователя:", reply_markup=cancel_keyboard())
 
 
 @router.message(DeleteUser.user_id)
@@ -439,11 +430,7 @@ async def add_to_group_select_group(message: Message, state: FSMContext):
             user = await uow.users.get_by_telegram_id(message.from_user.id)
 
         await state.clear()
-        kb = (
-            admin_groups_keyboard()
-            if user and user.role == "admin"
-            else get_main_menu(user)
-        )
+        kb = admin_groups_keyboard() if user and user.role == "admin" else get_main_menu(user)
         await message.answer("❌ Отменено.", reply_markup=kb)
         return
 
@@ -492,11 +479,7 @@ async def add_to_group_select_user(message: Message, state: FSMContext):
         await service.add_user_to_group(data["group_id"], user_id)
 
     await state.clear()
-    kb = (
-        admin_groups_keyboard()
-        if user and user.role == "admin"
-        else get_main_menu(user)
-    )
+    kb = admin_groups_keyboard() if user and user.role == "admin" else get_main_menu(user)
     await message.answer("✅ Пользователь добавлен в группу.", reply_markup=kb)
 
 
@@ -529,11 +512,7 @@ async def remove_from_group_select_group(message: Message, state: FSMContext):
             user = await uow.users.get_by_telegram_id(message.from_user.id)
 
         await state.clear()
-        kb = (
-            admin_groups_keyboard()
-            if user and user.role == "admin"
-            else get_main_menu(user)
-        )
+        kb = admin_groups_keyboard() if user and user.role == "admin" else get_main_menu(user)
         await message.answer("❌ Отменено.", reply_markup=kb)
         return
 
@@ -551,9 +530,7 @@ async def remove_from_group_select_group(message: Message, state: FSMContext):
 
     if not users:
         await state.clear()
-        await message.answer(
-            "📭 В группе нет пользователей.", reply_markup=admin_groups_keyboard()
-        )
+        await message.answer("📭 В группе нет пользователей.", reply_markup=admin_groups_keyboard())
         return
 
     text = "👥 Пользователи в группе:\n\n"
@@ -589,11 +566,7 @@ async def remove_from_group_select_user(message: Message, state: FSMContext):
         await service.add_user_to_group(data["group_id"], user_id)
 
     await state.clear()
-    kb = (
-        admin_groups_keyboard()
-        if user and user.role == "admin"
-        else get_main_menu(user)
-    )
+    kb = admin_groups_keyboard() if user and user.role == "admin" else get_main_menu(user)
     await message.answer("✅ Пользователь удалён из группы.", reply_markup=kb)
 
 
@@ -750,9 +723,7 @@ async def admin_show_group_members(message: Message, state: FSMContext):
         group = await uow.groups.get_by_id_users_in_group(group_id)
 
         if not group:
-            await message.answer(
-                "❌ Группа не найдена. Введите другой ID или нажмите отмену."
-            )
+            await message.answer("❌ Группа не найдена. Введите другой ID или нажмите отмену.")
             return  # не чистим стейт — даём попробовать снова
 
         users = group.users
@@ -771,7 +742,5 @@ async def admin_show_group_members(message: Message, state: FSMContext):
 
     await message.answer(text, parse_mode="HTML")
     # После показа предлагаем посмотреть другую группу или выйти
-    await message.answer(
-        "Введите ID другой группы или нажмите отмену:", reply_markup=cancel_keyboard()
-    )
+    await message.answer("Введите ID другой группы или нажмите отмену:", reply_markup=cancel_keyboard())
     # стейт НЕ чистим — остаёмся в режиме просмотра

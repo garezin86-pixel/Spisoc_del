@@ -1,14 +1,16 @@
 # src/models/project.py
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
-from sqlalchemy import Column, DateTime, ForeignKey, String, Table, Index
+
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from src.db import Base
 
 if TYPE_CHECKING:
-    from src.models.user import UserModel
-    from src.models.task import SpisokModel
     from src.models.group import GroupModel
+    from src.models.task import SpisokModel
+    from src.models.user import UserModel
 
 
 # M2M таблица участников проекта
@@ -16,9 +18,7 @@ project_member = Table(
     "project_member",
     Base.metadata,
     Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column(
-        "project_id", ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
-    ),
+    Column("project_id", ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -29,14 +29,10 @@ class ProjectModel(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
 
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # Привязка к группе (необязательно)
-    group_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("groups.id", ondelete="SET NULL"), nullable=True
-    )
+    group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

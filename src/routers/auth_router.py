@@ -1,15 +1,16 @@
 from fastapi import APIRouter, Depends, Request
-from src.db import SessionDep
-from src.schemas.token import TokenSchema, RefreshRequest
-from src.schemas.user import UserLogin
-from src.services.auth_service import AuthService
-from src.repositories.users_repository import UserRepository
-from src.core.limiter import limiter
+
 from src.core.dependencies import get_current_user
-from src.models.user import UserModel
+from src.core.limiter import limiter
 
 # Redis берём из FastAPICache (он уже инициализирован в lifespan)
 from src.core.redis import get_redis
+from src.db import SessionDep
+from src.models.user import UserModel
+from src.repositories.users_repository import UserRepository
+from src.schemas.token import RefreshRequest, TokenSchema
+from src.schemas.user import UserLogin
+from src.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 

@@ -1,8 +1,8 @@
-from .user import UserRegister, UserLogin, UserSchema, UserUpdate
-from .group import GroupCreate, GroupSchema
-from .token import TokenSchema
-from .task import SpisokAddSchema, SpisokSchema, SpisokUpdate
 from .comment import CommentCreate, CommentResponse
+from .group import GroupCreate, GroupSchema
+from .task import SpisokAddSchema, SpisokSchema, SpisokUpdate
+from .token import TokenSchema
+from .user import UserLogin, UserRegister, UserSchema, UserUpdate
 
 __all__ = [
     "UserRegister",
