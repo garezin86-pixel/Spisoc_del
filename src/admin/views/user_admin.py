@@ -113,7 +113,7 @@ class UserAdmin(ModelView, model=UserModel):
             f'style="display:inline-block; padding:3px 10px; border-radius:4px; '
             f"font-size:12px; text-decoration:none; color:#fff; "
             f'background:{"#198754" if not m.is_active else "#dc3545"};">'
-            f'{"Включить ✓" if not m.is_active else "Отключить ✗"}</a>'
+            f"{'Включить ✓' if not m.is_active else 'Отключить ✗'}</a>"
         ),
         "stats_btn": lambda m, a: Markup(
             f'<a href="{URLS["user"]["stats"]}{m.id}" '

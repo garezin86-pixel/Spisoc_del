@@ -252,7 +252,7 @@ class TaskTemplateAdmin(ModelView, model=TaskTemplateModel):
                 "template": template,
                 "items": items_ctx,
                 "projects": projects,
-                "apply_url": f'{URLS["template"]["apply"]}{pk}',
+                "apply_url": f"{URLS['template']['apply']}{pk}",
                 "urls": {"list": URLS["template"]["list"]},
                 "success": success,
                 "success_project": success_project,

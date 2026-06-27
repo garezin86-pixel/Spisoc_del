@@ -91,7 +91,7 @@ def _disable_rate_limits():
     try:
         import slowapi
 
-        slowapi.Limiter.limit = lambda self, *a, **kw: (lambda f: f)
+        slowapi.Limiter.limit = lambda self, *a, **kw: lambda f: f
     except ImportError:
         pass
 

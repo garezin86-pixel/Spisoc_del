@@ -187,7 +187,7 @@ async def add_user_role(message: Message, state: FSMContext):
     await state.update_data(role=message.text)
     await state.set_state(AddUser.telegram_id)
     await message.answer(
-        "📱 Введите Telegram ID пользователя\n" "или нажмите Пропустить:",
+        "📱 Введите Telegram ID пользователя\nили нажмите Пропустить:",
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="⏭ Пропустить")],
