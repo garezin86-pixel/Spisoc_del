@@ -25,8 +25,7 @@ class Registration(StatesGroup):
 async def registration_start(message: Message, state: FSMContext):
     await state.set_state(Registration.waiting_for_fio)
     await message.answer(
-        "👤 Введите ваше ФИО (Фамилия Имя Отчество):\n\n"
-        "Например: Иванов Иван Иванович"
+        "👤 Введите ваше ФИО (Фамилия Имя Отчество):\n\nНапример: Иванов Иван Иванович"
     )
 
 
@@ -79,7 +78,7 @@ async def registration_fio(message: Message, state: FSMContext):
     )
 
     await message.answer(
-        "✅ Заявка отправлена администратору.\n" "Ожидайте подтверждения."
+        "✅ Заявка отправлена администратору.\nОжидайте подтверждения."
     )
 
 
@@ -134,7 +133,7 @@ async def registration_accept(callback: CallbackQuery):
     bot = get_bot()
     await bot.send_message(
         chat_id=tg_id,
-        text="✅ Ваша заявка одобрена!\n" "Напишите /start чтобы начать работу.",
+        text="✅ Ваша заявка одобрена!\nНапишите /start чтобы начать работу.",
     )
 
     await callback.answer("✅ Пользователь принят.")
@@ -161,7 +160,7 @@ async def registration_decline(callback: CallbackQuery):
 
     bot = get_bot()
     await bot.send_message(
-        chat_id=tg_id, text="❌ Ваша заявка отклонена.\n" "Обратитесь к администратору."
+        chat_id=tg_id, text="❌ Ваша заявка отклонена.\nОбратитесь к администратору."
     )
 
     await callback.answer("❌ Заявка отклонена.")

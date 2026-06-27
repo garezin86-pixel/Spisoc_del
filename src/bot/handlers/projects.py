@@ -448,8 +448,7 @@ async def project_delete_start(message: Message, state: FSMContext):
 
     await state.set_state(ProjectMenu.delete_id)
     await message.answer(
-        "⚠️ Введите ID проекта для удаления.\n"
-        "<b>Все задачи проекта будут удалены!</b>",
+        "⚠️ Введите ID проекта для удаления.\n<b>Все задачи проекта будут удалены!</b>",
         parse_mode="HTML",
         reply_markup=cancel_keyboard(),
     )

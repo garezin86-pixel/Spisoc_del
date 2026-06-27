@@ -20,10 +20,7 @@ def deadline_1h_text(task) -> str:
 
 
 def overdue_text(task) -> str:
-    return (
-        f"❗ Задача «{task.title}» просрочена!\n"
-        f"Дедлайн был: {format_deadline(task)}"
-    )
+    return f"❗ Задача «{task.title}» просрочена!\nДедлайн был: {format_deadline(task)}"
 
 
 def weekly_report_text(upcoming, overdue) -> str:
