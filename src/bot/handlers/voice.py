@@ -1,11 +1,8 @@
 """
 src/bot/handlers/voice.py
 
-Поддерживаемые голосовые команды:
-- создать задачу
-- найти задачу
-- изменить статус задачи
-- изменить приоритет задачи
+Голосовой ассистент с memory (Redis) и tool calling (Groq).
+Поддерживает составные команды и контекст диалога.
 """
 
 import io
@@ -29,6 +26,7 @@ from src.db.unit_of_work import UnitOfWork
 from src.models.task import SpisokModel, TaskPriority, TaskStatus
 from src.models.user import UserModel
 from src.services.voice_ai import process_voice_message
+from src.services.chat_memory import get_history, add_message
 from src.services.notifications import notify_task_assigned, notify_task_updated
 
 logger = logging.getLogger(__name__)
@@ -51,92 +49,28 @@ STATUS_LABEL = {
 }
 
 
-class VoiceTask(StatesGroup):
-    confirm_create = State()
-    confirm_status = State()
-    confirm_priority = State()
-    confirm_assign = State()
+class VoiceConfirm(StatesGroup):
+    waiting = State()  # ждём подтверждения набора действий
 
 
-# ── Клавиатуры ────────────────────────────────────────────────────────────────
+# ── Хелперы ───────────────────────────────────────────────────────────────────
 
 
-def _kb_create(uid: str) -> InlineKeyboardMarkup:
+def _kb_confirm(uid: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text="✅ Создать", callback_data=f"voice:create:{uid}"
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отмена", callback_data=f"voice:cancel:{uid}"
-                ),
+                InlineKeyboardButton(text="✅ Выполнить", callback_data=f"vc:ok:{uid}"),
+                InlineKeyboardButton(text="❌ Отмена", callback_data=f"vc:no:{uid}"),
             ]
         ]
     )
-
-
-def _kb_update(task_id: int, action: str, uid: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Применить", callback_data=f"voice:{action}:{task_id}:{uid}"
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отмена", callback_data=f"voice:cancel:{uid}"
-                ),
-            ]
-        ]
-    )
-
-
-# ── Превью задачи для создания ────────────────────────────────────────────────
-
-
-def _format_create_preview(transcript: str, task: dict) -> str:
-    priority = task.get("priority", "medium")
-    deadline = task.get("deadline")
-    deadline_time = task.get("deadline_time")
-    description = task.get("description")
-
-    lines = [
-        "🎤 <b>Распознал:</b>",
-        f"<i>{transcript}</i>",
-        "",
-        "📌 <b>Новая задача:</b>",
-        f"  <b>Название:</b> {task['title']}",
-    ]
-    if description:
-        lines.append(f"  <b>Описание:</b> {description}")
-    lines.append(
-        f"  <b>Приоритет:</b> {PRIORITY_EMOJI.get(priority, '🔵')} {PRIORITY_LABEL.get(priority, priority)}"
-    )
-    if deadline:
-        dl_str = deadline + (f" в {deadline_time}" if deadline_time else "")
-        lines.append(f"  <b>Дедлайн:</b> {dl_str}")
-    lines += ["", "Создать задачу?"]
-    return "\n".join(lines)
-
-
-# ── Поиск задач по тексту ─────────────────────────────────────────────────────
-
-
-async def _search_users(session, query: str) -> list[UserModel]:
-    """Ищет пользователей по username (частичное совпадение)."""
-    words = [w.strip() for w in query.split() if len(w.strip()) > 1]
-    if not words:
-        words = [query]
-    conditions = [UserModel.username.ilike(f"%{w}%") for w in words]
-    result = await session.execute(select(UserModel).where(or_(*conditions)).limit(5))
-    return list(result.scalars().all())
 
 
 async def _search_tasks(session, user_id: int, query: str) -> list[SpisokModel]:
     words = [w.strip() for w in query.split() if len(w.strip()) > 2]
     if not words:
-        words = [query]
-
+        words = [query.strip()]
     conditions = [SpisokModel.title.ilike(f"%{w}%") for w in words]
     result = await session.execute(
         select(SpisokModel)
@@ -153,47 +87,227 @@ async def _search_tasks(session, user_id: int, query: str) -> list[SpisokModel]:
     return list(result.scalars().all())
 
 
-def _kb_assign(task_id: int, user_id: int, uid: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Назначить",
-                    callback_data=f"voice:assign:{task_id}:{user_id}:{uid}",
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отмена", callback_data=f"voice:cancel:{uid}"
-                ),
-            ]
-        ]
-    )
+async def _search_users(session, query: str) -> list[UserModel]:
+    words = [w.strip() for w in query.split() if len(w.strip()) > 1]
+    if not words:
+        words = [query.strip()]
+    conditions = [UserModel.username.ilike(f"%{w}%") for w in words]
+    result = await session.execute(select(UserModel).where(or_(*conditions)).limit(5))
+    return list(result.scalars().all())
 
 
-def _format_task_short(task: SpisokModel) -> str:
-    status = task.status.value if task.status else "todo"
+def _parse_deadline(deadline_str: str | None, time_str: str | None) -> datetime | None:
+    if not deadline_str:
+        return None
+    try:
+        h, m = (23, 59)
+        if time_str:
+            try:
+                t = datetime.strptime(time_str, "%H:%M")
+                h, m = t.hour, t.minute
+            except ValueError:
+                pass
+        return datetime.strptime(deadline_str, "%Y-%m-%d").replace(
+            hour=h, minute=m, tzinfo=LOCAL_TZ
+        )
+    except ValueError:
+        return None
+
+
+def _fmt_task(task: SpisokModel) -> str:
     priority = task.priority.value if task.priority else "medium"
+    status = task.status.value if task.status else "todo"
     return (
-        f"#{task.id} {PRIORITY_EMOJI.get(priority, '🔵')} {task.title} "
-        f"— {STATUS_LABEL.get(status, status)}"
+        f"{PRIORITY_EMOJI.get(priority, '🔵')} <b>{task.title}</b> "
+        f"— {STATUS_LABEL.get(status, status)} [#{task.id}]"
     )
 
 
-# ── Главный обработчик голосовых ──────────────────────────────────────────────
+# ── Выполнение tool calls ─────────────────────────────────────────────────────
+
+
+async def _execute_tool(
+    tool_name: str,
+    args: dict,
+    user_id: int,
+    session,
+) -> str:
+    """Выполняет один tool call, возвращает текстовый результат."""
+
+    if tool_name == "text_response":
+        return args.get("text", "")
+
+    if tool_name == "create_task":
+        priority_val = args.get("priority", "medium")
+        try:
+            priority = TaskPriority(priority_val)
+        except ValueError:
+            priority = TaskPriority.medium
+
+        deadline = _parse_deadline(args.get("deadline"), args.get("deadline_time"))
+
+        # Исполнитель если указан
+        assignee_id = user_id
+        if args.get("assignee_username"):
+            users = await _search_users(session, args["assignee_username"])
+            if users:
+                assignee_id = users[0].id
+
+        session.info["audit_user_id"] = user_id
+        task = SpisokModel(
+            title=args["title"][:255],
+            description=args.get("description"),
+            priority=priority,
+            status=TaskStatus.todo,
+            deadline=deadline,
+            user_id=assignee_id,
+            author_id=user_id,
+        )
+        session.add(task)
+        await session.flush()
+        await notify_task_assigned(task.id)
+
+        emoji = PRIORITY_EMOJI.get(priority.value, "🔵")
+        dl = f"\n📅 {args['deadline']}" if args.get("deadline") else ""
+        assignee_str = (
+            f"\n👤 → {args['assignee_username']}"
+            if args.get("assignee_username")
+            else ""
+        )
+        return f"✅ Создана: <b>{task.title}</b>\n{emoji} {PRIORITY_LABEL.get(priority.value, priority.value)}{dl}{assignee_str}"
+
+    if tool_name == "get_tasks":
+        from sqlalchemy import and_, or_
+        from datetime import datetime, timezone
+
+        conditions = [
+            SpisokModel.deleted_at.is_(None),
+            or_(SpisokModel.user_id == user_id, SpisokModel.author_id == user_id),
+        ]
+
+        if args.get("search"):
+            words = [w for w in args["search"].split() if len(w) > 2]
+            if words:
+                conditions.append(
+                    or_(*[SpisokModel.title.ilike(f"%{w}%") for w in words])
+                )
+
+        if args.get("status"):
+            try:
+                conditions.append(SpisokModel.status == TaskStatus(args["status"]))
+            except ValueError:
+                pass
+
+        if args.get("priority"):
+            try:
+                conditions.append(
+                    SpisokModel.priority == TaskPriority(args["priority"])
+                )
+            except ValueError:
+                pass
+
+        if args.get("overdue"):
+            now = datetime.now(timezone.utc)
+            conditions.append(SpisokModel.deadline < now)
+            conditions.append(SpisokModel.status != TaskStatus.done)
+
+        result = await session.execute(
+            select(SpisokModel)
+            .where(and_(*conditions))
+            .order_by(SpisokModel.created_at.desc())
+            .limit(10)
+        )
+        tasks = list(result.scalars().all())
+
+        if not tasks:
+            return "🔍 Задачи не найдены."
+
+        lines = [f"🔍 Найдено: {len(tasks)}"]
+        for t in tasks:
+            lines.append(_fmt_task(t))
+        return "\n".join(lines)
+
+    if tool_name == "update_task_status":
+        tasks = await _search_tasks(session, user_id, args.get("search", ""))
+        if not tasks:
+            return f"🔍 Задача «{args.get('search')}» не найдена."
+        task = tasks[0]
+        try:
+            session.info["audit_user_id"] = user_id
+            task.status = TaskStatus(args["status"])
+            await session.flush()
+            await notify_task_updated(task.id, {"status": args["status"]})
+        except ValueError:
+            return f"❌ Неизвестный статус: {args['status']}"
+        label = STATUS_LABEL.get(args["status"], args["status"])
+        return f"✅ <b>{task.title}</b>\n→ {label}"
+
+    if tool_name == "update_task_priority":
+        tasks = await _search_tasks(session, user_id, args.get("search", ""))
+        if not tasks:
+            return f"🔍 Задача «{args.get('search')}» не найдена."
+        task = tasks[0]
+        try:
+            session.info["audit_user_id"] = user_id
+            task.priority = TaskPriority(args["priority"])
+            await session.flush()
+            await notify_task_updated(task.id, {"priority": args["priority"]})
+        except ValueError:
+            return f"❌ Неизвестный приоритет: {args['priority']}"
+        emoji = PRIORITY_EMOJI.get(args["priority"], "🔵")
+        label = PRIORITY_LABEL.get(args["priority"], args["priority"])
+        return f"✅ <b>{task.title}</b>\n→ {emoji} {label}"
+
+    if tool_name == "assign_task":
+        tasks = await _search_tasks(session, user_id, args.get("search", ""))
+        if not tasks:
+            return f"🔍 Задача «{args.get('search')}» не найдена."
+        task = tasks[0]
+        users = await _search_users(session, args.get("assignee_username", ""))
+        if not users:
+            return f"🔍 Пользователь «{args.get('assignee_username')}» не найден."
+        assignee = users[0]
+        session.info["audit_user_id"] = user_id
+        task.user_id = assignee.id
+        await session.flush()
+        await notify_task_assigned(task.id)
+        return f"✅ <b>{task.title}</b>\n→ 👤 @{assignee.username}"
+
+    if tool_name == "update_task_description":
+        tasks = await _search_tasks(session, user_id, args.get("search", ""))
+        if not tasks:
+            return f"🔍 Задача «{args.get('search')}» не найдена."
+
+        task = tasks[0]
+
+        session.info["audit_user_id"] = user_id
+        task.description = args["description"]
+
+        await session.flush()
+
+        await notify_task_updated(task.id, {"description": args["description"]})
+
+        return f"📝 <b>{task.title}</b>\n→ описание обновлено"
+
+    return f"❓ Неизвестная команда: {tool_name}"
+
+
+# ── Главный обработчик ────────────────────────────────────────────────────────
 
 
 @router.message(F.voice)
 async def handle_voice(message: Message, state: FSMContext, bot: Bot):
     assert message.from_user is not None
+    tg_id = message.from_user.id
 
     async with UnitOfWork(get_session_maker()) as uow:
-        user = await uow.users.get_by_telegram_id(message.from_user.id)
+        user = await uow.users.get_by_telegram_id(tg_id)
         if not user:
             await message.answer("❌ Сначала зарегистрируйтесь через /start")
             return
         user_id = user.id
 
-    status_msg = await message.answer("🎤 Обрабатываю голосовое…")
-    uid = str(message.from_user.id)
+    status_msg = await message.answer("🎤 Слушаю…")
 
     try:
         voice = message.voice
@@ -203,7 +317,13 @@ async def handle_voice(message: Message, state: FSMContext, bot: Bot):
             raise ValueError("file_path is None")
         buf = io.BytesIO()
         await bot.download_file(file.file_path, destination=buf)
-        transcript, intent_data = await process_voice_message(buf.getvalue())
+
+        # Загружаем историю из Redis
+        history = await get_history(user_id)
+
+        await status_msg.edit_text("🧠 Обрабатываю…")
+        transcript, tool_calls = await process_voice_message(buf.getvalue(), history)
+
     except Exception as e:
         logger.exception("Voice processing error: %s", e)
         await status_msg.edit_text(
@@ -211,342 +331,112 @@ async def handle_voice(message: Message, state: FSMContext, bot: Bot):
         )
         return
 
-    intent = intent_data.get("intent", "create")
+    # Сохраняем запрос пользователя в память
+    await add_message(user_id, "user", transcript)
 
-    # ── CREATE ────────────────────────────────────────────────────────────────
-    if intent == "create":
-        await state.set_state(VoiceTask.confirm_create)
-        await state.update_data(
-            task_data=intent_data, transcript=transcript, user_id=user_id
-        )
+    uid = str(tg_id)
+
+    # Если только text_response — просто отвечаем без подтверждения
+    if len(tool_calls) == 1 and tool_calls[0]["name"] == "text_response":
+        resp = tool_calls[0]["arguments"].get("text", "")
         await status_msg.edit_text(
-            _format_create_preview(transcript, intent_data),
-            reply_markup=_kb_create(uid),
+            f"🎤 <i>{transcript}</i>\n\n{resp}",
             parse_mode="HTML",
         )
+        await add_message(user_id, "assistant", resp)
+        return
 
-    # ── FIND ──────────────────────────────────────────────────────────────────
-    elif intent == "find":
-        search_query = intent_data.get("search_query", transcript)
-        async with UnitOfWork(get_session_maker()) as uow:
-            tasks = await _search_tasks(uow.session, user_id, search_query)
-
-        if not tasks:
-            await status_msg.edit_text(
-                f"🔍 По запросу «{search_query}» задачи не найдены."
+    # Формируем превью действий для подтверждения
+    lines = [f"🎤 <i>{transcript}</i>\n", "📋 <b>Выполнить:</b>"]
+    for tc in tool_calls:
+        name = tc["name"]
+        args = tc["arguments"]
+        if name == "create_task":
+            priority = args.get("priority", "medium")
+            lines.append(
+                f"  ➕ Создать: <b>{args.get('title', '?')}</b> "
+                f"{PRIORITY_EMOJI.get(priority, '🔵')}"
             )
-        else:
-            lines = [f"🔍 <b>Найдено по «{search_query}»:</b>", ""]
-            for t in tasks:
-                lines.append(_format_task_short(t))
-            await status_msg.edit_text("\n".join(lines), parse_mode="HTML")
-
-    # ── UPDATE STATUS ─────────────────────────────────────────────────────────
-    elif intent == "update_status":
-        search_query = intent_data.get("search_query", transcript)
-        new_status = intent_data.get("status", "done")
-
-        async with UnitOfWork(get_session_maker()) as uow:
-            tasks = await _search_tasks(uow.session, user_id, search_query)
-
-        if not tasks:
-            await status_msg.edit_text(f"🔍 Задача «{search_query}» не найдена.")
-            return
-
-        task = tasks[0]
-        status_label = STATUS_LABEL.get(new_status, new_status)
-
-        await state.set_state(VoiceTask.confirm_status)
-        await state.update_data(
-            task_id=task.id,
-            new_status=new_status,
-            transcript=transcript,
-            user_id=user_id,
-        )
-        await status_msg.edit_text(
-            f"🎤 <b>Распознал:</b>\n<i>{transcript}</i>\n\n"
-            f"📌 <b>{task.title}</b>\n"
-            f"Изменить статус на <b>{status_label}</b>?",
-            reply_markup=_kb_update(task.id, "status", uid),
-            parse_mode="HTML",
-        )
-
-    # ── UPDATE PRIORITY ───────────────────────────────────────────────────────
-    elif intent == "update_priority":
-        search_query = intent_data.get("search_query", transcript)
-        new_priority = intent_data.get("priority", "high")
-
-        async with UnitOfWork(get_session_maker()) as uow:
-            tasks = await _search_tasks(uow.session, user_id, search_query)
-
-        if not tasks:
-            await status_msg.edit_text(f"🔍 Задача «{search_query}» не найдена.")
-            return
-
-        task = tasks[0]
-        priority_label = f"{PRIORITY_EMOJI.get(new_priority, '🔵')} {PRIORITY_LABEL.get(new_priority, new_priority)}"
-
-        await state.set_state(VoiceTask.confirm_priority)
-        await state.update_data(
-            task_id=task.id,
-            new_priority=new_priority,
-            transcript=transcript,
-            user_id=user_id,
-        )
-        await status_msg.edit_text(
-            f"🎤 <b>Распознал:</b>\n<i>{transcript}</i>\n\n"
-            f"📌 <b>{task.title}</b>\n"
-            f"Изменить приоритет на <b>{priority_label}</b>?",
-            reply_markup=_kb_update(task.id, "priority", uid),
-            parse_mode="HTML",
-        )
-
-    # ── ASSIGN ───────────────────────────────────────────────────────────────
-    elif intent == "assign":
-        search_query = intent_data.get("search_query", transcript)
-        assignee_query = intent_data.get("assignee", "")
-
-        async with UnitOfWork(get_session_maker()) as uow:
-            tasks = await _search_tasks(uow.session, user_id, search_query)
-            users = (
-                await _search_users(uow.session, assignee_query)
-                if assignee_query
-                else []
+        elif name == "get_tasks":
+            lines.append(f"  🔍 Найти задачи: {args.get('search', 'все')}")
+        elif name == "update_task_status":
+            lines.append(
+                f"  🔄 Статус «{args.get('search', '?')}» → "
+                f"{STATUS_LABEL.get(args.get('status', ''), args.get('status', '?'))}"
+            )
+        elif name == "update_task_priority":
+            p = args.get("priority", "?")
+            lines.append(
+                f"  🎯 Приоритет «{args.get('search', '?')}» → "
+                f"{PRIORITY_EMOJI.get(p, '🔵')} {PRIORITY_LABEL.get(p, p)}"
+            )
+        elif name == "assign_task":
+            lines.append(
+                f"  👤 Назначить «{args.get('search', '?')}» → @{args.get('assignee_username', '?')}"
             )
 
-        if not tasks:
-            await status_msg.edit_text(f"🔍 Задача «{search_query}» не найдена.")
-            return
-
-        if not users:
-            await status_msg.edit_text(
-                f"🔍 Пользователь «{assignee_query}» не найден."
-                f"Проверьте username и попробуйте снова."
+        elif name == "update_task_description":
+            lines.append(
+                f"  📝 Описание «{args.get('search', '?')}» → "
+                f"{args.get('description', '?')[:50]}…"
             )
-            return
 
-        task = tasks[0]
-        assignee = users[0]
+    await state.set_state(VoiceConfirm.waiting)
+    await state.update_data(
+        tool_calls=tool_calls, user_id=user_id, transcript=transcript
+    )
 
-        await state.set_state(VoiceTask.confirm_assign)
-        await state.update_data(
-            task_id=task.id,
-            assignee_id=assignee.id,
-            transcript=transcript,
-            user_id=user_id,
-        )
-        await status_msg.edit_text(
-            f"🎤 <b>Распознал:</b>\n<i>{transcript}</i>\n\n"
-            f"📌 <b>{task.title}</b>\n"
-            f"Назначить исполнителем: <b>@{assignee.username}</b>?",
-            reply_markup=_kb_assign(task.id, assignee.id, uid),
-            parse_mode="HTML",
-        )
-
-    else:
-        await status_msg.edit_text("❓ Не понял команду. Попробуйте иначе.")
+    await status_msg.edit_text(
+        "\n".join(lines),
+        reply_markup=_kb_confirm(uid),
+        parse_mode="HTML",
+    )
 
 
-# ── Подтверждение: создать задачу ─────────────────────────────────────────────
+# ── Подтверждение ─────────────────────────────────────────────────────────────
 
 
-@router.callback_query(VoiceTask.confirm_create, F.data.startswith("voice:create:"))
-async def confirm_create(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(VoiceConfirm.waiting, F.data.startswith("vc:ok:"))
+async def confirm_execute(callback: CallbackQuery, state: FSMContext):
     if not isinstance(callback.message, Message):
         await callback.answer()
         return
 
     data = await state.get_data()
-    task_data: dict = data["task_data"]
+    tool_calls: list[dict] = data["tool_calls"]
     user_id: int = data["user_id"]
 
+    results = []
     try:
-        priority_val = task_data.get("priority", "medium")
-        try:
-            priority = TaskPriority(priority_val)
-        except ValueError:
-            priority = TaskPriority.medium
-
-        deadline = None
-        if task_data.get("deadline"):
-            try:
-                dl_time = task_data.get("deadline_time")
-                if dl_time:
-                    try:
-                        t = datetime.strptime(dl_time, "%H:%M")
-                        h, m = t.hour, t.minute
-                    except ValueError:
-                        h, m = 23, 59
-                else:
-                    h, m = 23, 59
-                deadline = datetime.strptime(task_data["deadline"], "%Y-%m-%d").replace(
-                    hour=h, minute=m, tzinfo=LOCAL_TZ
+        async with UnitOfWork(get_session_maker()) as uow:
+            for tc in tool_calls:
+                result = await _execute_tool(
+                    tc["name"], tc["arguments"], user_id, uow.session
                 )
-            except ValueError:
-                deadline = None
-
-        async with UnitOfWork(get_session_maker()) as uow:
-            uow.session.info["audit_user_id"] = user_id
-            task = SpisokModel(
-                title=task_data["title"],
-                description=task_data.get("description"),
-                priority=priority,
-                status=TaskStatus.todo,
-                deadline=deadline,
-                user_id=user_id,
-                author_id=user_id,
-                group_id=None,
-            )
-            uow.session.add(task)
-            await uow.session.flush()
+                results.append(result)
             await uow.commit()
-            await uow.session.refresh(task)
-
-        await notify_task_assigned(task.id)
-        await state.clear()
-        emoji = PRIORITY_EMOJI.get(priority.value, "🔵")
-        dl_str = ""
-        if task_data.get("deadline"):
-            dl_str = f"\n📅 {task_data['deadline']}"
-            if task_data.get("deadline_time"):
-                dl_str += f" в {task_data['deadline_time']}"
-
-        await callback.message.edit_text(
-            f"✅ <b>Задача создана!</b>\n\n"
-            f"📌 {task.title}\n"
-            f"{emoji} {PRIORITY_LABEL.get(priority.value, priority.value)}{dl_str}",
-            parse_mode="HTML",
-        )
     except Exception as e:
-        logger.exception("Failed to create task: %s", e)
-        await callback.message.edit_text("❌ Ошибка при создании задачи.")
-    finally:
+        logger.exception("Tool execution error: %s", e)
+        await callback.message.edit_text("❌ Ошибка при выполнении команды.")
         await callback.answer()
-
-
-# ── Подтверждение: изменить статус ────────────────────────────────────────────
-
-
-@router.callback_query(VoiceTask.confirm_status, F.data.startswith("voice:status:"))
-async def confirm_status(callback: CallbackQuery, state: FSMContext):
-    if not isinstance(callback.message, Message):
-        await callback.answer()
+        await state.clear()
         return
 
-    data = await state.get_data()
-    task_id: int = data["task_id"]
-    new_status: str = data["new_status"]
+    await state.clear()
 
-    try:
-        async with UnitOfWork(get_session_maker()) as uow:
-            uow.session.info["audit_user_id"] = data["user_id"]
-            task = await uow.session.get(SpisokModel, task_id)
-            if not task:
-                await callback.message.edit_text("❌ Задача не найдена.")
-                return
-            task.status = TaskStatus(new_status)
-            await uow.commit()
+    response_text = "\n\n".join(results)
+    await callback.message.edit_text(response_text, parse_mode="HTML")
+    await callback.answer()
 
-        await notify_task_updated(task_id, {"status": new_status})
-        await state.clear()
-        status_label = STATUS_LABEL.get(new_status, new_status)
-        await callback.message.edit_text(
-            f"✅ <b>Статус обновлён!</b>\n\n" f"📌 {task.title}\n" f"→ {status_label}",
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        logger.exception("Failed to update status: %s", e)
-        await callback.message.edit_text("❌ Ошибка при обновлении статуса.")
-    finally:
-        await callback.answer()
+    # Сохраняем результат в память
+    await add_message(user_id, "assistant", response_text)
 
 
-# ── Подтверждение: изменить приоритет ─────────────────────────────────────────
+# ── Отмена ────────────────────────────────────────────────────────────────────
 
 
-@router.callback_query(VoiceTask.confirm_priority, F.data.startswith("voice:priority:"))
-async def confirm_priority(callback: CallbackQuery, state: FSMContext):
-    if not isinstance(callback.message, Message):
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    task_id: int = data["task_id"]
-    new_priority: str = data["new_priority"]
-
-    try:
-        async with UnitOfWork(get_session_maker()) as uow:
-            uow.session.info["audit_user_id"] = data["user_id"]
-            task = await uow.session.get(SpisokModel, task_id)
-            if not task:
-                await callback.message.edit_text("❌ Задача не найдена.")
-                return
-            task.priority = TaskPriority(new_priority)
-            await uow.commit()
-
-        await notify_task_updated(task_id, {"priority": new_priority})
-        await state.clear()
-        emoji = PRIORITY_EMOJI.get(new_priority, "🔵")
-        label = PRIORITY_LABEL.get(new_priority, new_priority)
-        await callback.message.edit_text(
-            f"✅ <b>Приоритет обновлён!</b>\n\n"
-            f"📌 {task.title}\n"
-            f"→ {emoji} {label}",
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        logger.exception("Failed to update priority: %s", e)
-        await callback.message.edit_text("❌ Ошибка при обновлении приоритета.")
-    finally:
-        await callback.answer()
-
-
-# ── Подтверждение: назначить исполнителя ─────────────────────────────────────
-
-
-@router.callback_query(VoiceTask.confirm_assign, F.data.startswith("voice:assign:"))
-async def confirm_assign(callback: CallbackQuery, state: FSMContext):
-    if not isinstance(callback.message, Message):
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    task_id: int = data["task_id"]
-    assignee_id: int = data["assignee_id"]
-
-    try:
-        async with UnitOfWork(get_session_maker()) as uow:
-            uow.session.info["audit_user_id"] = data["user_id"]
-            task = await uow.session.get(SpisokModel, task_id)
-            assignee = await uow.session.get(UserModel, assignee_id)
-            if not task or not assignee:
-                await callback.message.edit_text(
-                    "❌ Задача или пользователь не найдены."
-                )
-                return
-            task.user_id = assignee_id
-            await uow.commit()
-
-        await notify_task_assigned(task_id)
-        await state.clear()
-        await callback.message.edit_text(
-            f"✅ <b>Исполнитель назначен!</b>\n\n"
-            f"📌 {task.title}\n"
-            f"👤 @{assignee.username}",
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        logger.exception("Failed to assign task: %s", e)
-        await callback.message.edit_text("❌ Ошибка при назначении.")
-    finally:
-        await callback.answer()
-
-
-# ── Отмена (любое состояние) ──────────────────────────────────────────────────
-
-
-@router.callback_query(F.data.startswith("voice:cancel:"))
-async def cancel_voice(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith("vc:no:"))
+async def cancel_execute(callback: CallbackQuery, state: FSMContext):
     if not isinstance(callback.message, Message):
         await callback.answer()
         return
