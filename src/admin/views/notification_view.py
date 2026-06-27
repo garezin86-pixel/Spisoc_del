@@ -1,6 +1,7 @@
 # src/admin/views.py
 from sqladmin import ModelView
-from sqladmin.filters import OperationColumnFilter, BooleanFilter
+from sqladmin.filters import BooleanFilter, OperationColumnFilter
+
 from src.models.notification_log import NotificationLogModel
 
 
@@ -57,15 +58,11 @@ class NotificationLogAdmin(ModelView, model=NotificationLogModel):
     ]
 
     # Сортировка по умолчанию
-    column_default_sort = [
-        (NotificationLogModel.sent_at, True)
-    ]  # True - DESC (сначала новые)
+    column_default_sort = [(NotificationLogModel.sent_at, True)]  # True - DESC (сначала новые)
 
     # Форматирование даты
     column_formatters = {
-        NotificationLogModel.sent_at: lambda m, a: (
-            m.sent_at.strftime("%d.%m.%Y %H:%M:%S") if m.sent_at else "-"
-        ),
+        NotificationLogModel.sent_at: lambda m, a: m.sent_at.strftime("%d.%m.%Y %H:%M:%S") if m.sent_at else "-",
         NotificationLogModel.success: lambda m, a: "✅ Да" if m.success else "❌ Нет",
         NotificationLogModel.notification_type: lambda m, a: {
             "deadline_24h": "⏰ Напоминание за 24ч",

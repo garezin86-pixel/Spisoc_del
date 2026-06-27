@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
+
 from src.models.task import TaskPriority
 
 VisibilityType = Literal["private", "group", "global"]

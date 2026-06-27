@@ -2,9 +2,10 @@
 Интеграционные тесты: уведомления, комментарии, группы, дедлайн, RBAC.
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.conftest import make_user
 
@@ -14,12 +15,8 @@ def mock_background_notifications():
     with (
         patch("src.services.task_service.notify_task_assigned", new_callable=AsyncMock),
         patch("src.routers.tasks_router.notify_task_assigned", new_callable=AsyncMock),
-        patch(
-            "src.services.comments_service.notify_comment_added", new_callable=AsyncMock
-        ),
-        patch(
-            "src.services.group_service.notify_group_assigned", new_callable=AsyncMock
-        ),
+        patch("src.services.comments_service.notify_comment_added", new_callable=AsyncMock),
+        patch("src.services.group_service.notify_group_assigned", new_callable=AsyncMock),
     ):
         yield
 
@@ -36,9 +33,7 @@ class TestTaskNotifications:
         client, user = auth_client
 
         # патчим путь откуда импортируется в task_service
-        with patch(
-            "src.services.task_service.notify_task_assigned", new_callable=AsyncMock
-        ) as mock_notify:
+        with patch("src.services.task_service.notify_task_assigned", new_callable=AsyncMock) as mock_notify:
             resp = await client.post(
                 "/tasks/",
                 json={
@@ -53,9 +48,7 @@ class TestTaskNotifications:
     @pytest.mark.asyncio
     async def test_notify_not_called_when_no_assignee(self, auth_client):
         client, _ = auth_client
-        with patch(
-            "src.services.task_service.notify_task_assigned", new_callable=AsyncMock
-        ):
+        with patch("src.services.task_service.notify_task_assigned", new_callable=AsyncMock):
             resp = await client.post("/tasks/", json={"title": "Без исполнителя"})
         assert resp.status_code == 201
 
@@ -64,12 +57,8 @@ class TestTaskNotifications:
         client, _ = auth_client
         create_resp = await client.post("/tasks/", json={"title": "Задача"})
         task_id = create_resp.json()["id"]
-        with patch(
-            "src.services.notifications.notify_task_updated", new_callable=AsyncMock
-        ):
-            resp = await client.patch(
-                f"/tasks/{task_id}", json={"title": "Новое название"}
-            )
+        with patch("src.services.notifications.notify_task_updated", new_callable=AsyncMock):
+            resp = await client.patch(f"/tasks/{task_id}", json={"title": "Новое название"})
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -117,9 +106,7 @@ class TestDeadlineValidation:
         client, _ = auth_client
         create_resp = await client.post("/tasks/", json={"title": "Задача"})
         task_id = create_resp.json()["id"]
-        resp = await client.patch(
-            f"/tasks/{task_id}", json={"deadline": "2019-06-15T10:00:00"}
-        )
+        resp = await client.patch(f"/tasks/{task_id}", json={"deadline": "2019-06-15T10:00:00"})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
@@ -147,14 +134,10 @@ class TestComments:
     @pytest.mark.asyncio
     async def test_author_can_add_comment(self, auth_client):
         client, user = auth_client
-        create_resp = await client.post(
-            "/tasks/", json={"title": "Задача для комментария"}
-        )
+        create_resp = await client.post("/tasks/", json={"title": "Задача для комментария"})
         task_id = create_resp.json()["id"]
 
-        with patch(
-            "src.services.comments_service.notify_comment_added", new_callable=AsyncMock
-        ):
+        with patch("src.services.comments_service.notify_comment_added", new_callable=AsyncMock):
             resp = await client.post(
                 f"/comments/tasks/{task_id}/comment",
                 json={"content": "Мой комментарий"},
@@ -170,9 +153,7 @@ class TestComments:
         client, _ = auth_client
 
         # Создаём задачу
-        create_resp = await client.post(
-            "/tasks/", json={"title": "Задача с комментариями"}
-        )
+        create_resp = await client.post("/tasks/", json={"title": "Задача с комментариями"})
         assert create_resp.status_code == 201
         task_id = create_resp.json()["id"]
 
@@ -202,9 +183,7 @@ class TestComments:
         create_resp = await client.post("/tasks/", json={"title": "XSS тест"})
         task_id = create_resp.json()["id"]
 
-        with patch(
-            "src.services.comments_service.notify_comment_added", new_callable=AsyncMock
-        ):
+        with patch("src.services.comments_service.notify_comment_added", new_callable=AsyncMock):
             resp = await client.post(
                 f"/comments/tasks/{task_id}/comment",
                 json={"content": "<script>alert('xss')</script>"},
@@ -220,20 +199,14 @@ class TestComments:
         client, _ = auth_client
         create_resp = await client.post("/tasks/", json={"title": "Задача"})
         task_id = create_resp.json()["id"]
-        resp = await client.post(
-            f"/comments/tasks/{task_id}/comment", json={"content": ""}
-        )
+        resp = await client.post(f"/comments/tasks/{task_id}/comment", json={"content": ""})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_comment_on_nonexistent_task(self, auth_client):
         client, _ = auth_client
-        with patch(
-            "src.services.comments_service.notify_comment_added", new_callable=AsyncMock
-        ):
-            resp = await client.post(
-                "/comments/tasks/999999/comment", json={"content": "Комментарий"}
-            )
+        with patch("src.services.comments_service.notify_comment_added", new_callable=AsyncMock):
+            resp = await client.post("/comments/tasks/999999/comment", json={"content": "Комментарий"})
         assert resp.status_code in (403, 404)
 
     @pytest.mark.asyncio
@@ -293,9 +266,7 @@ class TestGroups:
     @pytest.mark.asyncio
     async def test_admin_can_add_user_to_group(self, admin_client, engine):
         client, _ = admin_client
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
             user = await make_user(sess, username="group_member", password="pass123")
         group_resp = await client.post("/groups/", json={"name": "Тест-группа"})
@@ -306,13 +277,9 @@ class TestGroups:
     @pytest.mark.asyncio
     async def test_admin_can_remove_user_from_group(self, admin_client, engine):
         client, _ = admin_client
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
-            user = await make_user(
-                sess, username="to_remove_from_group", password="pass123"
-            )
+            user = await make_user(sess, username="to_remove_from_group", password="pass123")
         group_resp = await client.post("/groups/", json={"name": "Группа-удаление"})
         group_id = group_resp.json()["id"]
         await client.post(f"/groups/{group_id}/users/{user.id}")
@@ -322,9 +289,7 @@ class TestGroups:
     @pytest.mark.asyncio
     async def test_regular_user_cannot_add_to_group(self, auth_client, engine):
         client, _ = auth_client
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
             user = await make_user(sess, username="nogroup_user", password="pass123")
         resp = await client.post(f"/groups/1/users/{user.id}")
@@ -339,19 +304,13 @@ class TestGroups:
 class TestRBAC:
     @pytest.mark.asyncio
     async def test_manager_can_edit_any_task(self, client, engine):
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
         async with async_session() as sess:
             await make_user(sess, username="rbac_owner", password="pass123")
-            await make_user(
-                sess, username="rbac_manager", password="pass123", role="manager"
-            )
+            await make_user(sess, username="rbac_manager", password="pass123", role="manager")
 
-        r1 = await client.post(
-            "/auth/login", json={"username": "rbac_owner", "password": "pass123"}
-        )
+        r1 = await client.post("/auth/login", json={"username": "rbac_owner", "password": "pass123"})
         token1 = r1.json()["access_token"]
         task_resp = await client.post(
             "/tasks/",
@@ -360,9 +319,7 @@ class TestRBAC:
         )
         task_id = task_resp.json()["id"]
 
-        r2 = await client.post(
-            "/auth/login", json={"username": "rbac_manager", "password": "pass123"}
-        )
+        r2 = await client.post("/auth/login", json={"username": "rbac_manager", "password": "pass123"})
         token2 = r2.json()["access_token"]
         resp = await client.patch(
             f"/tasks/{task_id}",
@@ -374,17 +331,11 @@ class TestRBAC:
 
     @pytest.mark.asyncio
     async def test_manager_can_list_users(self, client, engine):
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
-            await make_user(
-                sess, username="mgr_list", password="pass123", role="manager"
-            )
+            await make_user(sess, username="mgr_list", password="pass123", role="manager")
 
-        r = await client.post(
-            "/auth/login", json={"username": "mgr_list", "password": "pass123"}
-        )
+        r = await client.post("/auth/login", json={"username": "mgr_list", "password": "pass123"})
         token = r.json()["access_token"]
         resp = await client.get("/users/", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
@@ -435,9 +386,7 @@ class TestRBAC:
         group_id = group_resp.json()["id"]
 
         # Добавляем 15 пользователей
-        async_session = async_sessionmaker(
-            engine, expire_on_commit=False, class_=AsyncSession
-        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
             for i in range(15):
                 user = await make_user(sess, username=f"user_{i}")

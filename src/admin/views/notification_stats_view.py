@@ -1,6 +1,6 @@
 # src/admin/views/notification_stats_view.py
-from sqladmin import BaseView, expose
 from fastapi import Request
+from sqladmin import BaseView, expose
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.repositories.other_repositories import NotificationRepository

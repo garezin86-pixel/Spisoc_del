@@ -7,6 +7,7 @@ Create Date: 2026-06-07 12:00:00.000000
 """
 
 from typing import Sequence, Union
+
 from alembic import op
 
 revision: str = "a9f3b2c1d8e7"

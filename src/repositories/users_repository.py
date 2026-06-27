@@ -22,9 +22,7 @@ class UserRepository(AbstractUserRepository):
 
     async def get_by_id(self, user_id: int) -> UserModel | None:
         """Возвращает пользователя по первичному ключу через SELECT WHERE."""
-        result = await self.session.execute(
-            select(UserModel).where(UserModel.id == user_id)
-        )
+        result = await self.session.execute(select(UserModel).where(UserModel.id == user_id))
         return result.scalar_one_or_none()
 
     async def get_user_id(self, user_id: int) -> UserModel | None:
@@ -36,9 +34,7 @@ class UserRepository(AbstractUserRepository):
 
     async def get_users_limit(self, limit: int, offset: int) -> list[UserModel]:
         """Устаревший метод пагинации. Используйте select_users_offset_limit + execute_scalars."""
-        result = await self.session.execute(
-            select(UserModel).limit(limit).offset(offset)
-        )
+        result = await self.session.execute(select(UserModel).limit(limit).offset(offset))
         return list(result.scalars().all())
 
     async def create(self, user: UserModel) -> UserModel:
@@ -50,9 +46,7 @@ class UserRepository(AbstractUserRepository):
 
     async def get_by_username(self, username: str) -> UserModel | None:
         """Ищет пользователя по уникальному username. Используется при логине и регистрации."""
-        return await self.session.scalar(
-            select(UserModel).where(UserModel.username == username)
-        )
+        return await self.session.scalar(select(UserModel).where(UserModel.username == username))
 
     async def update(self, user: UserModel) -> UserModel:
         """Фиксирует изменения пользователя (commit + refresh).
@@ -75,9 +69,7 @@ class UserRepository(AbstractUserRepository):
         Зачем: Telegram-бот идентифицирует пользователей по telegram_id,
         а не по username/password. Этот метод — точка входа для бота.
         """
-        result = await self.session.execute(
-            select(UserModel).where(UserModel.telegram_id == telegram_id)
-        )
+        result = await self.session.execute(select(UserModel).where(UserModel.telegram_id == telegram_id))
         return result.scalar_one_or_none()
 
     async def set_role(self, username: str, role: str) -> None:
@@ -86,9 +78,7 @@ class UserRepository(AbstractUserRepository):
         Зачем: используется скриптом make_admin.py для выдачи роли admin
         напрямую через CLI без API.
         """
-        await self.session.execute(
-            update(UserModel).where(UserModel.username == username).values(role=role)
-        )
+        await self.session.execute(update(UserModel).where(UserModel.username == username).values(role=role))
         await self.session.commit()
 
     async def get_admin_by_username(self, username: str) -> UserModel | None:

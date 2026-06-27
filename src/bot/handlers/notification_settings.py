@@ -1,14 +1,16 @@
-from aiogram import Router, F
+import logging
+
+from aiogram import F, Router
+from aiogram.filters import Command
 from aiogram.types import (
-    Message,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    Message,
 )
-from aiogram.filters import Command
+
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +130,7 @@ async def settings_command(message: Message):
             "✅ - включено\n"
             "❌ - выключено"
         )
-        await message.answer(
-            text, parse_mode="HTML", reply_markup=get_notification_keyboard(settings)
-        )
+        await message.answer(text, parse_mode="HTML", reply_markup=get_notification_keyboard(settings))
     except Exception as e:
         logger.exception("settings_command error")
         await message.answer(f"❌ Ошибка: {e}")
@@ -152,10 +152,7 @@ async def notifications_on_command(message: Message):
         await uow.notification_settings.enable_all_notifications(user.id)
         await uow.commit()
 
-    await message.answer(
-        "✅ Все уведомления включены!\n\n"
-        "Вы можете настроить их по отдельности командой /settings"
-    )
+    await message.answer("✅ Все уведомления включены!\n\nВы можете настроить их по отдельности командой /settings")
 
 
 @router.message(Command("notifications_off"))
@@ -235,9 +232,7 @@ async def notification_toggle_callback(callback: CallbackQuery):
         return
 
     await callback.message.edit_text(
-        f"{status}: {label}\n\n"
-        "⚙️ <b>Настройки уведомлений</b>\n\n"
-        "✅ - включено  |  ❌ - выключено",
+        f"{status}: {label}\n\n⚙️ <b>Настройки уведомлений</b>\n\n✅ - включено  |  ❌ - выключено",
         parse_mode="HTML",
         reply_markup=get_notification_keyboard(settings),
     )
@@ -266,9 +261,7 @@ async def enable_all_callback(callback: CallbackQuery):
         return
 
     await callback.message.edit_text(
-        "✅ Все уведомления включены\n\n"
-        "⚙️ <b>Настройки уведомлений</b>\n\n"
-        "✅ - включено  |  ❌ - выключено",
+        "✅ Все уведомления включены\n\n⚙️ <b>Настройки уведомлений</b>\n\n✅ - включено  |  ❌ - выключено",
         parse_mode="HTML",
         reply_markup=get_notification_keyboard(settings),
     )
@@ -298,9 +291,7 @@ async def disable_all_callback(callback: CallbackQuery):
         return
 
     await callback.message.edit_text(
-        "❌ Все уведомления выключены\n\n"
-        "⚙️ <b>Настройки уведомлений</b>\n\n"
-        "✅ - включено  |  ❌ - выключено",
+        "❌ Все уведомления выключены\n\n⚙️ <b>Настройки уведомлений</b>\n\n✅ - включено  |  ❌ - выключено",
         parse_mode="HTML",
         reply_markup=get_notification_keyboard(settings),
     )

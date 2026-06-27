@@ -1,9 +1,11 @@
 # import enum
 
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, Text, DateTime, Integer
-from sqlalchemy import Enum as SAEnum
 from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from src.db import Base
 from src.models.enums import TaskPriority
 
@@ -14,9 +16,7 @@ class TaskTemplateModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     visibility: Mapped[str] = mapped_column(
         SAEnum(
             "private",
@@ -29,9 +29,7 @@ class TaskTemplateModel(Base):
         default="private",
         server_default="private",
     )
-    group_id: Mapped[int | None] = mapped_column(
-        ForeignKey("groups.id", ondelete="SET NULL"), nullable=True
-    )
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -59,9 +57,7 @@ class TaskTemplateItemModel(Base):
     __tablename__ = "task_template_items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    template_id: Mapped[int] = mapped_column(
-        ForeignKey("task_templates.id", ondelete="CASCADE"), nullable=False
-    )
+    template_id: Mapped[int] = mapped_column(ForeignKey("task_templates.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     priority: Mapped[TaskPriority] = mapped_column(
         SAEnum(TaskPriority, name="taskpriority", create_type=False),

@@ -1,8 +1,9 @@
 # src/schemas/schemas_audit.py
-from pydantic import BaseModel, ConfigDict
-from typing import Optional
-from datetime import datetime, timezone
 import zoneinfo
+from datetime import datetime, timezone
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 USER_TZ = zoneinfo.ZoneInfo("Europe/Kiev")
 
@@ -72,9 +73,7 @@ class AuditLogSchema(BaseModel):
 
         return cls(
             id=entry.id,
-            action=(
-                entry.action.value if hasattr(entry.action, "value") else entry.action
-            ),
+            action=(entry.action.value if hasattr(entry.action, "value") else entry.action),
             action_label=ACTION_LABELS.get(
                 entry.action.value if hasattr(entry.action, "value") else entry.action,
                 str(entry.action) if entry.action is not None else "",
@@ -83,11 +82,7 @@ class AuditLogSchema(BaseModel):
                 entry.action.value if hasattr(entry.action, "value") else entry.action,
                 "📝",
             ),
-            user=(
-                AuditUserSchema(id=entry.user.id, username=entry.user.username)
-                if entry.user
-                else None
-            ),
+            user=(AuditUserSchema(id=entry.user.id, username=entry.user.username) if entry.user else None),
             old_values=entry.old_values,
             new_values=entry.new_values,
             changed_at=_fmt_dt(entry.changed_at),

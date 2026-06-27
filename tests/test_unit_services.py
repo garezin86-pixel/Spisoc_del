@@ -2,22 +2,24 @@
 Unit-тесты сервисов — исправленные пароли (min_length=6).
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi import HTTPException
-from unittest.mock import MagicMock, AsyncMock
-from src.models.user import UserModel
-from src.models.task import SpisokModel
-from src.schemas.user import UserRegister, UserLogin
-from src.schemas.task import SpisokAddSchema, SpisokUpdate
-from src.repositories.mock_repositories import (
-    MockUserRepository,
-    MockTaskRepository,
-    MockGroupRepository,
-)
-from src.services.auth_service import AuthService
-from src.services.user_service import UserService
-from src.services.task_service import TaskService
+
 from src.core.security import hash_password
+from src.models.task import SpisokModel
+from src.models.user import UserModel
+from src.repositories.mock_repositories import (
+    MockGroupRepository,
+    MockTaskRepository,
+    MockUserRepository,
+)
+from src.schemas.task import SpisokAddSchema, SpisokUpdate
+from src.schemas.user import UserLogin, UserRegister
+from src.services.auth_service import AuthService
+from src.services.task_service import TaskService
+from src.services.user_service import UserService
 
 
 def make_user_model(**kwargs) -> UserModel:
@@ -86,9 +88,7 @@ class TestAuthService:
     @pytest.mark.asyncio
     async def test_register_success(self):
         service = AuthService(MockUserRepository(), self._make_redis())
-        result = await service.register(
-            UserRegister(username="newuser", password="pass123")
-        )
+        result = await service.register(UserRegister(username="newuser", password="pass123"))
         assert result.username == "newuser"
 
     @pytest.mark.asyncio
@@ -96,9 +96,7 @@ class TestAuthService:
         user = make_user_model(username="existing")
         service = AuthService(MockUserRepository(users=[user]), self._make_redis())
         with pytest.raises(HTTPException) as exc:
-            await service.register(
-                UserRegister(username="existing", password="pass123")
-            )
+            await service.register(UserRegister(username="existing", password="pass123"))
         assert exc.value.status_code == 400
 
 
@@ -107,9 +105,7 @@ class TestUserService:
     async def test_create_user_as_admin_success(self):
         admin = make_user_model(role="admin")
         service = UserService(MockUserRepository())
-        result = await service.create_user(
-            UserRegister(username="newuser", password="pass1234", role="user"), admin
-        )
+        result = await service.create_user(UserRegister(username="newuser", password="pass1234", role="user"), admin)
         assert result.username == "newuser"
 
     @pytest.mark.asyncio
@@ -117,9 +113,7 @@ class TestUserService:
         user = make_user_model(role="user")
         service = UserService(MockUserRepository())
         with pytest.raises(HTTPException) as exc:
-            await service.create_user(
-                UserRegister(username="newuser", password="pass1234"), user
-            )
+            await service.create_user(UserRegister(username="newuser", password="pass1234"), user)
         assert exc.value.status_code == 403
 
     @pytest.mark.asyncio
@@ -128,9 +122,7 @@ class TestUserService:
         existing = make_user_model(id=2, username="existing")
         service = UserService(MockUserRepository(users=[existing]))
         with pytest.raises(HTTPException) as exc:
-            await service.create_user(
-                UserRegister(username="existing", password="pass1234"), admin
-            )
+            await service.create_user(UserRegister(username="existing", password="pass1234"), admin)
         assert exc.value.status_code == 400
 
     @pytest.mark.asyncio

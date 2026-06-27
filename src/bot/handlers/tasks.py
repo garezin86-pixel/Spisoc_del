@@ -1,36 +1,35 @@
-from aiogram import Router, F
-from aiogram.types import Message
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message
 from aiogram.utils.keyboard import ReplyKeyboardBuilder as _RKB
 
-from src.bot.utils.user_utils import get_main_menu, get_task_edit_keyboard
-from src.db import get_session_maker
-from src.models.task import SpisokModel
-from src.schemas.task import FilterUserGroup, TaskFilter, SpisokUpdate
-from src.schemas.comment import CommentCreate
-from src.repositories.users_repository import UserRepository
-from src.repositories.task_repository import TaskRepository
-from src.repositories.groups_repository import GroupRepository
-from src.repositories.other_repositories import CommentRepository
-from src.models.task import TaskPriority, TaskStatus
-from src.services.notifications import notify_task_assigned, notify_task_updated
-from src.services.task_service import TaskService
-from src.services.comments_service import CommentService
 from src.bot.keyboards.main import (
     assign_to_keyboard,
-    skip_or_cancel,
     cancel_keyboard,
+    comments_action_keyboard,
+    skip_or_cancel,
+    task_edit_keyboard,
     task_edit_manager_keyboard,
     task_filters_keyboard,
-    task_edit_keyboard,
-    comments_action_keyboard,
 )
-
-from src.utils.datetime_utils import to_local
+from src.bot.utils.user_utils import get_main_menu, get_task_edit_keyboard
+from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
+from src.models.task import SpisokModel, TaskPriority, TaskStatus
+from src.repositories.groups_repository import GroupRepository
+from src.repositories.other_repositories import CommentRepository
+from src.repositories.task_repository import TaskRepository
+from src.repositories.users_repository import UserRepository
+from src.schemas.comment import CommentCreate
+from src.schemas.task import FilterUserGroup, SpisokUpdate, TaskFilter
+from src.services.comments_service import CommentService
+from src.services.notifications import notify_task_assigned, notify_task_updated
+from src.services.task_service import TaskService
+from src.utils.datetime_utils import to_local
 
 LOCAL_TZ = ZoneInfo("Europe/Kiev")
 
@@ -137,17 +136,11 @@ async def my_tasks(message: Message):
                 f"{status} <b>{task.title}</b>\n"
                 f"🎯 {
                     '🔴'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'critical'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'critical'
                     else '🟠'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'high'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'high'
                     else '🔵'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'medium'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'medium'
                     else '⚪'
                 } Приоритет\n"
                 f"📅 Дедлайн: {deadline}\n"
@@ -165,6 +158,7 @@ async def author_tasks(message: Message):
             await message.answer("❌ У вас нет доступа.")
             return
         from sqlalchemy import select
+
         from src.models.task import SpisokModel
 
         result = await uow.session.execute(
@@ -182,9 +176,7 @@ async def author_tasks(message: Message):
         await message.answer("📭 Вы не являетесь автором ни одной задачи.")
         return
 
-    await message.answer(
-        f"👤 <b>Задачи где вы автор</b> (последние {len(tasks)}):", parse_mode="HTML"
-    )
+    await message.answer(f"👤 <b>Задачи где вы автор</b> (последние {len(tasks)}):", parse_mode="HTML")
     for task in tasks:
         status = _status_emoji(task)
         deadline = to_local(task.deadline)
@@ -218,9 +210,7 @@ async def done_tasks(message: Message):
         if not user:
             await message.answer("❌ У вас нет доступа.")
             return
-        tasks = await uow.tasks.get_user_tasks_by_status(
-            user_id=user.id, status=TaskStatus.done
-        )
+        tasks = await uow.tasks.get_user_tasks_by_status(user_id=user.id, status=TaskStatus.done)
         if not tasks:
             await message.answer("📭 Нет выполненных задач.")
             return
@@ -229,17 +219,11 @@ async def done_tasks(message: Message):
                 f"✅ <b>{task.title}</b>\n"
                 f"🎯 {
                     '🔴'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'critical'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'critical'
                     else '🟠'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'high'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'high'
                     else '🔵'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'medium'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'medium'
                     else '⚪'
                 } Приоритет\n"
                 f"📅 {to_local(task.deadline)}\n🆔 ID: {task.id}",
@@ -255,9 +239,7 @@ async def pending_tasks(message: Message):
         if not user:
             await message.answer("❌ У вас нет доступа.")
             return
-        tasks = await uow.tasks.get_user_tasks_by_status(
-            user_id=user.id, exclude_status=TaskStatus.done
-        )
+        tasks = await uow.tasks.get_user_tasks_by_status(user_id=user.id, exclude_status=TaskStatus.done)
         if not tasks:
             await message.answer("📭 Нет невыполненных задач.")
             return
@@ -266,17 +248,11 @@ async def pending_tasks(message: Message):
                 f"⏳ <b>{task.title}</b>\n"
                 f"🎯 {
                     '🔴'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'critical'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'critical'
                     else '🟠'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'high'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'high'
                     else '🔵'
-                    if hasattr(task, 'priority')
-                    and task.priority
-                    and task.priority.value == 'medium'
+                    if hasattr(task, 'priority') and task.priority and task.priority.value == 'medium'
                     else '⚪'
                 } Приоритет\n"
                 f"📅 {to_local(task.deadline)}\n🆔 ID: {task.id}",
@@ -510,9 +486,7 @@ async def back_to_menu(message: Message, state: FSMContext):
     await message.answer("🔙 Вернулись в меню.", reply_markup=keyboard)
 
 
-async def _filter_and_send(
-    message: Message, filter_type: TaskFilter, empty_text: str, header: str
-):
+async def _filter_and_send(message: Message, filter_type: TaskFilter, empty_text: str, header: str):
     """Общий хелпер для фильтров задач."""
     async with UnitOfWork(get_session_maker()) as uow:
         assert message.from_user is not None
@@ -546,9 +520,7 @@ async def _filter_and_send(
 
 @router.message(F.text == "📅 На сегодня")
 async def filter_today(message: Message):
-    await _filter_and_send(
-        message, TaskFilter.today, "📭 Нет задач на сегодня.", "📅 Задачи на сегодня:"
-    )
+    await _filter_and_send(message, TaskFilter.today, "📭 Нет задач на сегодня.", "📅 Задачи на сегодня:")
 
 
 @router.message(F.text == "⚠️ Просроченные")
@@ -595,9 +567,7 @@ async def filter_no_deadline(message: Message):
             await message.answer("🚫 <b>Задачи без дедлайна:</b>\n", parse_mode="HTML")
             for task in tasks:
                 status = _status_emoji(task)
-                await message.answer(
-                    f"{status} <b>{task.title}</b>\n🆔 ID: {task.id}", parse_mode="HTML"
-                )
+                await message.answer(f"{status} <b>{task.title}</b>\n🆔 ID: {task.id}", parse_mode="HTML")
         except Exception as e:
             await message.answer(f"❌ Ошибка при получении задач: {str(e)}")
 
@@ -616,11 +586,7 @@ async def cancel_edit_task(message: Message, state: FSMContext):
     await state.set_state(EditTask.edit_type)
     data = await state.get_data()
     user_role = data.get("user_role", "user")
-    kb = (
-        task_edit_manager_keyboard()
-        if user_role in ("admin", "manager")
-        else task_edit_keyboard()
-    )
+    kb = task_edit_manager_keyboard() if user_role in ("admin", "manager") else task_edit_keyboard()
     await message.answer("❌ Отменено.", reply_markup=kb)
 
 
@@ -661,7 +627,15 @@ async def get_task_by_id(message: Message, state: FSMContext):
                 f"<b>{task.title}</b>\n"
                 f"📝 Описание: {task.description or 'Нет'}\n"
                 f"📊 Статус: {status}\n"
-                f"🎯 Приоритет: {'🔴 Критический' if task.priority and task.priority.value == 'critical' else '🟠 Высокий' if task.priority and task.priority.value == 'high' else '🔵 Средний' if task.priority and task.priority.value == 'medium' else '⚫ Низкий'}\n"
+                f"🎯 Приоритет: {
+                    '🔴 Критический'
+                    if task.priority and task.priority.value == 'critical'
+                    else '🟠 Высокий'
+                    if task.priority and task.priority.value == 'high'
+                    else '🔵 Средний'
+                    if task.priority and task.priority.value == 'medium'
+                    else '⚫ Низкий'
+                }\n"
                 f"📅 Дедлайн: {to_local(task.deadline)}\n"
                 f"👤 Автор: {author}",
                 parse_mode="HTML",
@@ -687,9 +661,7 @@ async def get_task_by_id(message: Message, state: FSMContext):
 async def edit_task_menu(message: Message, state: FSMContext):
     if message.text == "🔙 Назад в меню фильтры":
         await state.clear()
-        await message.answer(
-            "🔙 Вернулись в меню фильтры.", reply_markup=task_filters_keyboard()
-        )
+        await message.answer("🔙 Вернулись в меню фильтры.", reply_markup=task_filters_keyboard())
         return
 
     data = await state.get_data()
@@ -698,9 +670,7 @@ async def edit_task_menu(message: Message, state: FSMContext):
     if message.text == "✏️ Изменить название":
         await state.update_data(edit_type="title")
         await state.set_state(EditTask.new_value)
-        await message.answer(
-            "✏️ Введите новое название:", reply_markup=cancel_keyboard()
-        )
+        await message.answer("✏️ Введите новое название:", reply_markup=cancel_keyboard())
 
     elif message.text == "📅 Изменить дедлайн":
         await state.update_data(edit_type="deadline")
@@ -719,9 +689,7 @@ async def edit_task_menu(message: Message, state: FSMContext):
                 await message.answer("❌ У вас нет прав для переназначения.")
                 return
         await state.set_state(ReassignTask.assign_to)
-        await message.answer(
-            "👤 Кому переназначить задачу?", reply_markup=assign_to_keyboard()
-        )
+        await message.answer("👤 Кому переназначить задачу?", reply_markup=assign_to_keyboard())
 
     elif message.text == "💬 Комментарии":
         async with UnitOfWork(get_session_maker()) as uow:
@@ -747,18 +715,14 @@ async def edit_task_menu(message: Message, state: FSMContext):
                         parse_mode="HTML",
                     )
                     for comment in comments:
-                        author = (
-                            comment.user.username if comment.user else "Неизвестный"
-                        )
+                        author = comment.user.username if comment.user else "Неизвестный"
                         await message.answer(
                             f"👤 <b>{author}</b>\n💭 {comment.content}",
                             parse_mode="HTML",
                         )
                 await state.update_data(task_id=task_id)
                 await state.set_state(AddComment.action_choice)
-                await message.answer(
-                    "Что вы хотите сделать?", reply_markup=comments_action_keyboard()
-                )
+                await message.answer("Что вы хотите сделать?", reply_markup=comments_action_keyboard())
             except Exception as e:
                 await message.answer(f"❌ Ошибка: {str(e)}")
                 await state.clear()
@@ -795,14 +759,10 @@ async def edit_task_menu(message: Message, state: FSMContext):
                     edge = "последний" if direction == 1 else "первый"
                     await message.answer(f"ℹ️ Это уже {edge} статус.")
                     await state.set_state(EditTask.edit_type)
-                    await message.answer(
-                        "Выберите действие:", reply_markup=get_task_edit_keyboard(user)
-                    )
+                    await message.answer("Выберите действие:", reply_markup=get_task_edit_keyboard(user))
                     return
                 new_status = TaskStatus(_STATUS_ORDER[new_idx])
-                await make_task_service(uow).update_task_status(
-                    task_id, new_status, user
-                )
+                await make_task_service(uow).update_task_status(task_id, new_status, user)
                 await uow.commit()
                 label = _STATUS_LABEL[_STATUS_ORDER[new_idx]]
                 await notify_task_updated(
@@ -812,9 +772,7 @@ async def edit_task_menu(message: Message, state: FSMContext):
                 )
                 await message.answer(f"Статус обновлён: {label}")
                 await state.set_state(EditTask.edit_type)
-                await message.answer(
-                    "Выберите действие:", reply_markup=get_task_edit_keyboard(user)
-                )
+                await message.answer("Выберите действие:", reply_markup=get_task_edit_keyboard(user))
             except Exception as e:
                 await message.answer(f"❌ Ошибка: {str(e)}")
                 await state.clear()
@@ -853,27 +811,19 @@ async def reassign_task_assign(message: Message, state: FSMContext):
         await state.set_state(EditTask.edit_type)
         data = await state.get_data()
         user_role = data.get("user_role", "user")
-        kb = (
-            task_edit_manager_keyboard()
-            if user_role in ("admin", "manager")
-            else task_edit_keyboard()
-        )
+        kb = task_edit_manager_keyboard() if user_role in ("admin", "manager") else task_edit_keyboard()
         await message.answer("❌ Отменено.", reply_markup=kb)
         return
     if message.text == "👤 Пользователю":
         async with UnitOfWork(get_session_maker()) as uow:
             users = await uow.users.get_all()
-        text = "👤 Введите ID пользователя:\n\n" + "".join(
-            f"🆔 {u.id} — {u.username}\n" for u in users
-        )
+        text = "👤 Введите ID пользователя:\n\n" + "".join(f"🆔 {u.id} — {u.username}\n" for u in users)
         await state.set_state(ReassignTask.select_user)
         await message.answer(text, reply_markup=cancel_keyboard())
     elif message.text == "👥 Группе":
         async with UnitOfWork(get_session_maker()) as uow:
             groups = await uow.groups.get_all()
-        text = "👥 Введите ID группы:\n\n" + "".join(
-            f"🆔 {g.id} — {g.name}\n" for g in groups
-        )
+        text = "👥 Введите ID группы:\n\n" + "".join(f"🆔 {g.id} — {g.name}\n" for g in groups)
         await state.set_state(ReassignTask.select_group)
         await message.answer(text, reply_markup=cancel_keyboard())
     elif message.text == "🚫 Без назначения":
@@ -910,9 +860,7 @@ async def reassign_select_group(message: Message, state: FSMContext):
     await _do_reassign(message, state, user_id=None, group_id=group_id)
 
 
-async def _do_reassign(
-    message: Message, state: FSMContext, user_id: int | None, group_id: int | None
-):
+async def _do_reassign(message: Message, state: FSMContext, user_id: int | None, group_id: int | None):
     data = await state.get_data()
     task_id: int | None = data.get("task_id")
 
@@ -951,11 +899,7 @@ async def _do_reassign(
             return
 
     await state.set_state(EditTask.edit_type)
-    kb = (
-        task_edit_manager_keyboard()
-        if user.role in ("admin", "manager")
-        else task_edit_keyboard()
-    )
+    kb = task_edit_manager_keyboard() if user.role in ("admin", "manager") else task_edit_keyboard()
     await message.answer("Выберите действие:", reply_markup=kb)
 
 
@@ -985,9 +929,7 @@ async def edit_task_new_value(message: Message, state: FSMContext):
                     await state.clear()
                     return
                 task_id = int(task_id)
-                await make_task_service(uow).update_task(
-                    task_id, SpisokUpdate(title=message.text), user
-                )
+                await make_task_service(uow).update_task(task_id, SpisokUpdate(title=message.text), user)
                 await notify_task_updated(task_id, {"title": message.text})
                 await message.answer(
                     f"✅ Название изменено на: <b>{message.text}</b>",
@@ -1002,25 +944,19 @@ async def edit_task_new_value(message: Message, state: FSMContext):
                         await state.clear()
                         return
                     task_id = int(task_id)
-                    await make_task_service(uow).update_task(
-                        task_id, SpisokUpdate(deadline=None), user
-                    )
+                    await make_task_service(uow).update_task(task_id, SpisokUpdate(deadline=None), user)
                     await notify_task_updated(task_id, {"deadline": None})
                     await message.answer("✅ Дедлайн удален!", reply_markup=keyboard)
                 else:
                     try:
                         assert message.text is not None
-                        new_deadline = datetime.strptime(
-                            message.text, "%d.%m.%Y %H:%M"
-                        ).replace(tzinfo=LOCAL_TZ)
+                        new_deadline = datetime.strptime(message.text, "%d.%m.%Y %H:%M").replace(tzinfo=LOCAL_TZ)
                         if not task_id:
                             await message.answer("❌ Задача не найдена.")
                             await state.clear()
                             return
                         task_id = int(task_id)
-                        await make_task_service(uow).update_task(
-                            task_id, SpisokUpdate(deadline=new_deadline), user
-                        )
+                        await make_task_service(uow).update_task(task_id, SpisokUpdate(deadline=new_deadline), user)
                         await notify_task_updated(task_id, {"deadline": new_deadline})
                         await message.answer(
                             f"✅ Дедлайн изменен на: <b>{message.text}</b>",
@@ -1028,18 +964,12 @@ async def edit_task_new_value(message: Message, state: FSMContext):
                             reply_markup=keyboard,
                         )
                     except ValueError:
-                        await message.answer(
-                            "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ ЧЧ:ММ"
-                        )
+                        await message.answer("❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ ЧЧ:ММ")
                         return
             await state.set_state(EditTask.edit_type)
             data = await state.get_data()
             user_role = data.get("user_role", "user")
-            kb = (
-                task_edit_manager_keyboard()
-                if user_role in ("admin", "manager")
-                else task_edit_keyboard()
-            )
+            kb = task_edit_manager_keyboard() if user_role in ("admin", "manager") else task_edit_keyboard()
             await message.answer("Выберите действие:", reply_markup=kb)
         except Exception as e:
             await message.answer(f"❌ Ошибка: {str(e)}", reply_markup=keyboard)
@@ -1055,20 +985,12 @@ async def comments_action_choice(message: Message, state: FSMContext):
         await state.set_state(EditTask.edit_type)
         data = await state.get_data()
         user_role = data.get("user_role", "user")
-        kb = (
-            task_edit_manager_keyboard()
-            if user_role in ("admin", "manager")
-            else task_edit_keyboard()
-        )
-        await message.answer(
-            "🔙 Возвращаемся к редактированию задачи.", reply_markup=kb
-        )
+        kb = task_edit_manager_keyboard() if user_role in ("admin", "manager") else task_edit_keyboard()
+        await message.answer("🔙 Возвращаемся к редактированию задачи.", reply_markup=kb)
         return
     if message.text == "💬 Добавить комментарий":
         await state.set_state(AddComment.comment_text)
-        await message.answer(
-            "💬 Введите текст комментария:", reply_markup=cancel_keyboard()
-        )
+        await message.answer("💬 Введите текст комментария:", reply_markup=cancel_keyboard())
         return
     await message.answer("❌ Выберите действие из меню.")
 
@@ -1079,11 +1001,7 @@ async def add_task_comment(message: Message, state: FSMContext):
         await state.set_state(EditTask.edit_type)
         data = await state.get_data()
         user_role = data.get("user_role", "user")
-        kb = (
-            task_edit_manager_keyboard()
-            if user_role in ("admin", "manager")
-            else task_edit_keyboard()
-        )  # ← добавить
+        kb = task_edit_manager_keyboard() if user_role in ("admin", "manager") else task_edit_keyboard()  # ← добавить
         await message.answer(
             "❌ Отменено. Возвращаемся к редактированию задачи.",
             reply_markup=kb,  # ← было task_edit_keyboard()
@@ -1110,9 +1028,7 @@ async def add_task_comment(message: Message, state: FSMContext):
                 CommentCreate(content=message.text),
                 user,
             )
-            await message.answer(
-                f"✅ Комментарий добавлен!\n\n💭 {comment.content}", parse_mode="HTML"
-            )
+            await message.answer(f"✅ Комментарий добавлен!\n\n💭 {comment.content}", parse_mode="HTML")
             await state.set_state(AddComment.action_choice)
             await message.answer(
                 "Что ещё хотите сделать с комментариями?",

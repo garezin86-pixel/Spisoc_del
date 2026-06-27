@@ -1,10 +1,12 @@
 # scripts/init_notification_settings.py
 import asyncio
+import logging
+
 from sqlalchemy import select
+
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.user import UserModel as User
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,9 +41,7 @@ async def init_notification_settings():
                 logger.info(f"Created settings for user {user.id} ({user.telegram_id})")
 
         await uow.commit()
-        logger.info(
-            f"Done! Created settings for {created_count} out of {len(users)} users"
-        )
+        logger.info(f"Done! Created settings for {created_count} out of {len(users)} users")
 
 
 if __name__ == "__main__":

@@ -1,22 +1,21 @@
 # src/routers/project_router.py
 from fastapi import APIRouter, Depends
+
+from src.core.dependencies import get_current_user
 from src.db import SessionDep
 from src.models.user import UserModel
-from src.schemas.schemas_project import ProjectCreate, ProjectSchema, ProjectUpdate
-from src.schemas.pagination import PaginationParams, PaginatedResponse
-from src.core.dependencies import get_current_user
-from src.services.project_service import ProjectService
+from src.repositories.groups_repository import GroupRepository
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.users_repository import UserRepository
-from src.repositories.groups_repository import GroupRepository
+from src.schemas.pagination import PaginatedResponse, PaginationParams
+from src.schemas.schemas_project import ProjectCreate, ProjectSchema, ProjectUpdate
+from src.services.project_service import ProjectService
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
 def get_project_service(session: SessionDep) -> ProjectService:
-    return ProjectService(
-        ProjectRepository(session), UserRepository(session), GroupRepository(session)
-    )
+    return ProjectService(ProjectRepository(session), UserRepository(session), GroupRepository(session))
 
 
 @router.post(
@@ -63,9 +62,7 @@ async def get_projects(
         current_user, offset=pagination.offset, limit=pagination.size
     )
     items = [ProjectSchema.from_model(p) for p in projects]
-    return PaginatedResponse.create(
-        items=items, total=total, page=pagination.page, size=pagination.size
-    )
+    return PaginatedResponse.create(items=items, total=total, page=pagination.page, size=pagination.size)
 
 
 @router.get(
@@ -104,9 +101,7 @@ async def update_project(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    project = await get_project_service(session).update_project(
-        project_id, data, current_user
-    )
+    project = await get_project_service(session).update_project(project_id, data, current_user)
     return ProjectSchema.from_model(project)
 
 
@@ -122,9 +117,7 @@ async def update_project(
     responses={
         200: {
             "description": "Проект удалён",
-            "content": {
-                "application/json": {"example": {"message": "Project 1 deleted"}}
-            },
+            "content": {"application/json": {"example": {"message": "Project 1 deleted"}}},
         },
         403: {"description": "Нет прав"},
         404: {"description": "Проект не найден"},
@@ -155,9 +148,7 @@ async def add_member(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    return await get_project_service(session).add_member(
-        project_id, user_id, current_user
-    )
+    return await get_project_service(session).add_member(project_id, user_id, current_user)
 
 
 @router.delete(
@@ -172,16 +163,16 @@ async def remove_member(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    return await get_project_service(session).remove_member(
-        project_id, user_id, current_user
-    )
+    return await get_project_service(session).remove_member(project_id, user_id, current_user)
 
 
 @router.patch(
     "/{project_id}/group",
     response_model=ProjectSchema,
     summary="Привязать группу к проекту",
-    description="Назначает или снимает группу с проекта. Передай `group_id: null` чтобы отвязать. **Требует быть владельцем или admin.**",
+    description="Назначает или снимает группу с проекта. "
+    "Передай `group_id: null` чтобы отвязать. "
+    "**Требует быть владельцем или admin.**",
     responses={
         200: {"description": "Проект обновлён"},
         403: {"description": "Нет прав"},
@@ -194,7 +185,5 @@ async def set_project_group(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    project = await get_project_service(session).set_project_group(
-        project_id, data.group_id, current_user
-    )
+    project = await get_project_service(session).set_project_group(project_id, data.group_id, current_user)
     return ProjectSchema.from_model(project)

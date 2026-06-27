@@ -1,8 +1,9 @@
 import os
+
 import sentry_sdk
+from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-from sentry_sdk.integrations.asyncio import AsyncioIntegration
 
 
 def setup_sentry() -> None:

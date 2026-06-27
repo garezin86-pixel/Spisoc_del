@@ -1,11 +1,11 @@
 import jwt
 import structlog
-
 from redis.asyncio import Redis
 
-from src.repositories.abstract import AbstractUserRepository
+from src.core.config import REFRESH_TOKEN_EXPIRE_DAYS
 from src.core.constants import INVALID_CREDENTIALS, USER_ALREADY_EXISTS
-from src.core.exceptions import invalid_credentials, user_already_exists, unauthorized
+from src.core.exceptions import invalid_credentials, unauthorized, user_already_exists
+from src.core.metrics import users_registered
 from src.core.security import (
     create_access_token,
     create_refresh_token,
@@ -13,10 +13,9 @@ from src.core.security import (
     hash_password,
     verify_password,
 )
-from src.schemas.user import UserLogin, UserRegister
+from src.repositories.abstract import AbstractUserRepository
 from src.schemas.token import TokenSchema
-from src.core.metrics import users_registered
-from src.core.config import REFRESH_TOKEN_EXPIRE_DAYS
+from src.schemas.user import UserLogin, UserRegister
 
 logger = structlog.get_logger()
 
@@ -79,9 +78,7 @@ class AuthService:
             invalid_credentials(INVALID_CREDENTIALS)
             raise
 
-        access_token = create_access_token(
-            {"sub": str(db_user.id), "role": db_user.role, "username": db_user.username}
-        )
+        access_token = create_access_token({"sub": str(db_user.id), "role": db_user.role, "username": db_user.username})
         refresh_token, jti = create_refresh_token(db_user.id)
 
         # Сохраняем jti в Redis — именно это позволяет отозвать токен
@@ -140,9 +137,7 @@ class AuthService:
             raise RuntimeError
 
         # Выдаём новую пару
-        new_access = create_access_token(
-            {"sub": str(db_user.id), "role": db_user.role, "username": db_user.username}
-        )
+        new_access = create_access_token({"sub": str(db_user.id), "role": db_user.role, "username": db_user.username})
         new_refresh, new_jti = create_refresh_token(db_user.id)
 
         await self.redis.set(

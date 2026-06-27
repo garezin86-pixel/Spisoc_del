@@ -1,11 +1,13 @@
 from typing import Optional
+
 import structlog
+
+from src.bot.keyboards.notification_keyboard import task_action_keyboard
 from src.bot.setup import get_bot
-from src.models.notification_log import NotificationLogModel
-from src.utils.datetime_utils import to_local
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
-from src.bot.keyboards.notification_keyboard import task_action_keyboard
+from src.models.notification_log import NotificationLogModel
+from src.utils.datetime_utils import to_local
 
 logger = structlog.get_logger()
 
@@ -33,12 +35,7 @@ async def notify_comment_added(comment_id: int):
         if not notify_recipients:
             return
 
-        text = (
-            f"💬 Новый комментарий!\n\n"
-            f"📋 Задача№ {task.id}\n"
-            f"📋 {task.title}\n"
-            f"💭 Комментарий: \n {comment.content}"
-        )
+        text = f"💬 Новый комментарий!\n\n📋 Задача№ {task.id}\n📋 {task.title}\n💭 Комментарий: \n {comment.content}"
 
         for tg_id, user_id in notify_recipients.items():
             try:
@@ -55,9 +52,7 @@ async def notify_comment_added(comment_id: int):
                     user_id=user_id,
                     error=str(e),
                 )
-                logger.error(
-                    f"Ошибка отправки уведомления комментария {comment.id}: {e}"
-                )
+                logger.error(f"Ошибка отправки уведомления комментария {comment.id}: {e}")
 
 
 async def notify_task_assigned(task_id: int):
@@ -111,9 +106,7 @@ async def notify_task_assigned(task_id: int):
                     user_id=task.user_id,
                     error=str(e),
                 )
-                logger.error(
-                    f"Failed to send task notification to user {task.user_id}: {e}"
-                )
+                logger.error(f"Failed to send task notification to user {task.user_id}: {e}")
                 success = False
                 error = str(e)[:500]
 
@@ -131,9 +124,7 @@ async def notify_task_assigned(task_id: int):
 
         # Уведомление группе
         elif task.group:
-            logger.info(
-                f"Sending group notification for task {task.id} to group {task.group.id}"
-            )
+            logger.info(f"Sending group notification for task {task.id} to group {task.group.id}")
 
             users = await uow.groups.get_group_users_with_telegram(
                 group_id=task.group.id, exclude_user_id=task.author_id
@@ -155,12 +146,8 @@ async def notify_task_assigned(task_id: int):
                     logger.info(f"User {user.id} disabled task notifications")
                     continue
 
-                if await _already_sent_within(
-                    uow, user.id, task.id, "task_assigned", hours=1
-                ):
-                    logger.info(
-                        f"Notification already sent to user {user.id} for task {task.id}"
-                    )
+                if await _already_sent_within(uow, user.id, task.id, "task_assigned", hours=1):
+                    logger.info(f"Notification already sent to user {user.id} for task {task.id}")
                     continue
 
                 text = (
@@ -196,9 +183,7 @@ async def notify_task_assigned(task_id: int):
                         user_id=user.id,
                         error=str(e),
                     )
-                    logger.error(
-                        f"Failed to send group notification to user {user.id}: {e}"
-                    )
+                    logger.error(f"Failed to send group notification to user {user.id}: {e}")
                     success = False
                     error = str(e)[:500]
 
@@ -218,9 +203,7 @@ async def notify_task_assigned(task_id: int):
 
 
 # Вспомогательная функция для дедупликации
-async def _already_sent_within(
-    uow, user_id: int, task_id: int | None, notif_type: str, hours: int
-) -> bool:
+async def _already_sent_within(uow, user_id: int, task_id: int | None, notif_type: str, hours: int) -> bool:
     """Проверяет через репозиторий, было ли уведомление отправлено за последние hours часов."""
     return await uow.notifications.check_already_sent(
         user_id=user_id,
@@ -230,9 +213,7 @@ async def _already_sent_within(
     )
 
 
-async def notify_task_updated(
-    task_id: int | None, changed_fields: dict, editor_telegram_id: Optional[int] = None
-):
+async def notify_task_updated(task_id: int | None, changed_fields: dict, editor_telegram_id: Optional[int] = None):
     """Фоновая отправка уведомления об изменении задачи текущему исполнителю."""
     if task_id is None:
         logger.error("task_id is None")
@@ -257,9 +238,7 @@ async def notify_task_updated(
                 group_id=task.group.id, exclude_user_id=editor_telegram_id
             )
             # ✅ Сразу берем и telegram_id, и user_id
-            recipients = [
-                (user.telegram_id, user.id) for user in users if user.telegram_id
-            ]
+            recipients = [(user.telegram_id, user.id) for user in users if user.telegram_id]
         else:
             logger.warning(f"No recipients for task {task_id}")
             return
@@ -313,9 +292,7 @@ async def notify_task_updated(
                     parse_mode="HTML",
                     reply_markup=task_action_keyboard(task.id),
                 )
-                logger.info(
-                    f"Task update notification sent to {telegram_id} for task {task_id}"
-                )
+                logger.info(f"Task update notification sent to {telegram_id} for task {task_id}")
                 await logger.ainfo(
                     "notification_sent",
                     user_id=user_id,
@@ -336,9 +313,7 @@ async def notify_task_updated(
 
             except Exception as e:
                 error_msg = str(e)[:500]
-                logger.error(
-                    f"Ошибка отправки уведомления telegram_id={telegram_id}: {error_msg}"
-                )
+                logger.error(f"Ошибка отправки уведомления telegram_id={telegram_id}: {error_msg}")
                 await logger.aerror(
                     "notification_failed",
                     user_id=user_id,

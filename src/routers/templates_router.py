@@ -1,17 +1,18 @@
 from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from src.core.dependencies import get_current_user
 from src.db import SessionDep
 from src.models.user import UserModel
-from src.core.dependencies import get_current_user
 from src.repositories.template_repository import TemplateRepository
-from src.schemas.template import (
-    TemplateCreate,
-    TemplateUpdate,
-    TemplateResponse,
-    ApplyTemplateRequest,
-)
 from src.schemas.task import SpisokSchema
+from src.schemas.template import (
+    ApplyTemplateRequest,
+    TemplateCreate,
+    TemplateResponse,
+    TemplateUpdate,
+)
 from src.utils.cache_manager import cache_manager
 
 router = APIRouter(prefix="/templates", tags=["Templates"])
@@ -25,14 +26,10 @@ def get_repo(session: SessionDep) -> TemplateRepository:
 async def list_templates(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
-    visibility: Literal["private", "group", "global"] | None = Query(
-        None, description="Фильтр по видимости"
-    ),
+    visibility: Literal["private", "group", "global"] | None = Query(None, description="Фильтр по видимости"),
 ):
     """Список шаблонов доступных пользователю с опциональным фильтром по видимости."""
-    return await get_repo(session).get_all(
-        current_user.id, visibility_filter=visibility
-    )
+    return await get_repo(session).get_all(current_user.id, visibility_filter=visibility)
 
 
 @router.post("", response_model=TemplateResponse, status_code=201)

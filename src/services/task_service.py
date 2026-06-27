@@ -1,23 +1,6 @@
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.repositories.abstract import (
-    AbstractTaskRepository,
-    AbstractUserRepository,
-    AbstractGroupRepository,
-)
-from src.models.task import SpisokModel, TaskStatus
-from src.models.user import UserModel, UserRole
-from src.schemas.task import FilterUserGroup, SpisokAddSchema
-
-from src.core.exceptions import (
-    incorrect_request,
-    not_found,
-    task_not_found,
-    unauthorized_user,
-    user_not_found,
-    no_access,
-)
 from src.core.constants import (
     ENTER_GROUP_ID,
     GROUP_NOT_FOUND,
@@ -27,19 +10,35 @@ from src.core.constants import (
     USER_NOT_FOUND,
     YOU_CANNOT_DELETE_TASK,
 )
-from src.services.notifications import notify_task_assigned
-from src.services.permissions import (
-    can_edit_task,
-    can_update_task_deadline,
-    can_delete_task,
-    can_reassign_task,
+from src.core.exceptions import (
+    incorrect_request,
+    no_access,
+    not_found,
+    task_not_found,
+    unauthorized_user,
+    user_not_found,
 )
 from src.core.metrics import (
+    tasks_completed,
     tasks_created,
     tasks_deleted,
-    tasks_completed,
     tasks_hard_deleted,
     tasks_restored,
+)
+from src.models.task import SpisokModel, TaskStatus
+from src.models.user import UserModel, UserRole
+from src.repositories.abstract import (
+    AbstractGroupRepository,
+    AbstractTaskRepository,
+    AbstractUserRepository,
+)
+from src.schemas.task import FilterUserGroup, SpisokAddSchema
+from src.services.notifications import notify_task_assigned
+from src.services.permissions import (
+    can_delete_task,
+    can_edit_task,
+    can_reassign_task,
+    can_update_task_deadline,
 )
 
 logger = structlog.get_logger()
@@ -64,9 +63,7 @@ class TaskService:
         self.group_repo = group_repo
         self.session = session
 
-    async def add_task(
-        self, data: SpisokAddSchema, current_user: UserModel
-    ) -> SpisokModel:
+    async def add_task(self, data: SpisokAddSchema, current_user: UserModel) -> SpisokModel:
         """Создаёт задачу и запускает уведомление исполнителю.
 
         Зачем: при создании задачи нужно проверить, что пользователь/группа
@@ -232,9 +229,7 @@ class TaskService:
         )
         return updated_task
 
-    async def update_task(
-        self, task_id: int, data, current_user: UserModel
-    ) -> SpisokModel:
+    async def update_task(self, task_id: int, data, current_user: UserModel) -> SpisokModel:
         """Обновляет поля задачи с разграничением прав на дедлайн.
 
         Зачем: изменять дедлайн могут только автор, admin или manager —
@@ -286,11 +281,7 @@ class TaskService:
             task_id=updated_task.id,
             changed_fields=list(update_data.keys()),
         )
-        if (
-            "status" in update_data
-            and update_data["status"] == TaskStatus.done
-            and was_status != TaskStatus.done
-        ):
+        if "status" in update_data and update_data["status"] == TaskStatus.done and was_status != TaskStatus.done:
             tasks_completed.inc()
             await self._notify_task_done(updated_task, current_user)
         return updated_task
@@ -429,9 +420,7 @@ class TaskService:
                     "status": t.status.value if t.status else "backlog",  # ← добавить
                     "priority": t.priority,
                     "deadline": t.deadline.strftime("%d.%m.%Y") if t.deadline else None,
-                    "created_at": (
-                        t.created_at.strftime("%d.%m.%Y") if t.created_at else None
-                    ),
+                    "created_at": (t.created_at.strftime("%d.%m.%Y") if t.created_at else None),
                 }
                 for t in recent_tasks
             ],
@@ -451,11 +440,7 @@ class TaskService:
               (pass в except), чтобы не ломать основной поток обновления задачи.
         """
         try:
-            if (
-                not task.author
-                or task.author.id == executor.id
-                or not task.author.telegram_id
-            ):
+            if not task.author or task.author.id == executor.id or not task.author.telegram_id:
                 return
             from src.bot.setup import get_bot
 

@@ -3,12 +3,13 @@ Unit-тесты: модуль безопасности (хеши паролей,
 Не требуют БД.
 """
 
-import pytest
 from datetime import datetime, timezone
-import jwt
 
-from src.core.security import hash_password, verify_password, create_access_token
-from src.core.config import SECRET_KEY, ALGORITHM
+import jwt
+import pytest
+
+from src.core.config import ALGORITHM, SECRET_KEY
+from src.core.security import create_access_token, hash_password, verify_password
 
 
 class TestPasswordHashing:

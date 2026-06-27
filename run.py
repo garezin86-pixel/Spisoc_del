@@ -1,7 +1,7 @@
+import signal
 import subprocess
 import sys
 import time
-import signal
 from pathlib import Path
 
 # ── Пути ─────────────────────────────────────────────────────────────────────
@@ -49,10 +49,7 @@ class ManagedProcess:
 
     def restart(self) -> None:
         self.restart_count += 1
-        print(
-            f"[run] Restarting '{self.name}' "
-            f"(attempt #{self.restart_count}, last code={self._proc.returncode})..."
-        )
+        print(f"[run] Restarting '{self.name}' (attempt #{self.restart_count}, last code={self._proc.returncode})...")
         self.start()
 
     def stop(self, timeout: int = 10) -> None:
@@ -165,9 +162,7 @@ def main() -> None:
                     flush=True,
                 )
                 if svc.restart_count >= MAX_RESTARTS:
-                    print(
-                        f"[run] ERROR: '{svc.name}' exceeded {MAX_RESTARTS} restarts."
-                    )
+                    print(f"[run] ERROR: '{svc.name}' exceeded {MAX_RESTARTS} restarts.")
                     shutdown()
                 svc.restart()
 

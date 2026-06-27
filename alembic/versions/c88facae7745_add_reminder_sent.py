@@ -7,8 +7,9 @@ Create Date: 2026-05-13 10:58:45.495496
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c88facae7745"
@@ -27,9 +28,7 @@ def upgrade() -> None:
     op.execute("UPDATE spisok_del SET reminder_sent = FALSE")
 
     # 3. Делаем NOT NULL
-    op.alter_column(
-        "spisok_del", "reminder_sent", nullable=False, existing_type=sa.Boolean()
-    )
+    op.alter_column("spisok_del", "reminder_sent", nullable=False, existing_type=sa.Boolean())
 
     # 4. Добавляем DEFAULT для новых записей
     op.alter_column(

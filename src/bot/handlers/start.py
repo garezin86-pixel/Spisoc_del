@@ -1,24 +1,24 @@
 from aiogram import Router
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Command, CommandStart
 from aiogram.filters.command import CommandObject
+from aiogram.fsm.context import FSMContext
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
-from src.db import get_session_maker
-from src.db.unit_of_work import UnitOfWork
 from src.bot.keyboards.main import (
     main_menu_admin as main_menu_admin_keyboard,
+)
+from src.bot.keyboards.main import (
     main_menu_user as main_menu_user_keyboard,
 )
+from src.db import get_session_maker
+from src.db.unit_of_work import UnitOfWork
 from src.utils.datetime_utils import to_local
-from aiogram.fsm.context import FSMContext
 
 router = Router()
 
 
 @router.message(CommandStart(deep_link=True))
-async def cmd_start_deeplink(
-    message: Message, command: CommandObject, state: FSMContext
-):
+async def cmd_start_deeplink(message: Message, command: CommandObject, state: FSMContext):
     """Обработка deep links: t.me/бот?start=task_5"""
     param = command.args  # например "task_5"
 
@@ -28,8 +28,7 @@ async def cmd_start_deeplink(
 
         if not user:
             await message.answer(
-                "👋 Добро пожаловать!\n"
-                "У вас нет доступа. Подайте заявку на регистрацию.",
+                "👋 Добро пожаловать!\nУ вас нет доступа. Подайте заявку на регистрацию.",
                 reply_markup=ReplyKeyboardMarkup(
                     keyboard=[[KeyboardButton(text="📝 Подать заявку")]],
                     resize_keyboard=True,
@@ -39,9 +38,7 @@ async def cmd_start_deeplink(
             return
 
         if not user.is_active:
-            await message.answer(
-                "⛔ Ваш аккаунт заблокирован.\nОбратитесь к администратору."
-            )
+            await message.answer("⛔ Ваш аккаунт заблокирован.\nОбратитесь к администратору.")
             return
 
         # Обработка deep link task_<id>
@@ -52,9 +49,9 @@ async def cmd_start_deeplink(
                 await message.answer("❌ Некорректная ссылка.")
                 return
 
+            from src.repositories.groups_repository import GroupRepository
             from src.repositories.task_repository import TaskRepository
             from src.repositories.users_repository import UserRepository
-            from src.repositories.groups_repository import GroupRepository
             from src.services.task_service import TaskService
 
             task_service = TaskService(
@@ -77,13 +74,11 @@ async def cmd_start_deeplink(
                 "todo": "📋 Новая",
                 "backlog": "📥 В очереди",
             }
-            status = _STATUS_LABELS.get(
-                task.status.value if task.status else "todo", "⏳"
-            )
+            status = _STATUS_LABELS.get(task.status.value if task.status else "todo", "⏳")
             author = task.author.username if task.author else "Неизвестный"
 
-            from src.bot.keyboards.main import task_edit_keyboard
             from src.bot.handlers.tasks import EditTask
+            from src.bot.keyboards.main import task_edit_keyboard
 
             await message.answer(
                 f"📋 <b>Задача #{task.id}</b>\n\n"
@@ -100,11 +95,7 @@ async def cmd_start_deeplink(
             return
 
         # Неизвестный deep link — просто показываем меню
-        keyboard = (
-            main_menu_admin_keyboard()
-            if user.role == "admin"
-            else main_menu_user_keyboard()
-        )
+        keyboard = main_menu_admin_keyboard() if user.role == "admin" else main_menu_user_keyboard()
         await message.answer(
             f"👋 Добро пожаловать, {user.username}!",
             reply_markup=keyboard,
@@ -120,8 +111,7 @@ async def cmd_start(message: Message):
 
         if not user:
             await message.answer(
-                "👋 Добро пожаловать!\n"
-                "У вас нет доступа. Подайте заявку на регистрацию.",
+                "👋 Добро пожаловать!\nУ вас нет доступа. Подайте заявку на регистрацию.",
                 reply_markup=ReplyKeyboardMarkup(
                     keyboard=[[KeyboardButton(text="📝 Подать заявку")]],
                     resize_keyboard=True,
@@ -130,16 +120,10 @@ async def cmd_start(message: Message):
             return
 
         if not user.is_active:
-            await message.answer(
-                "⛔ Ваш аккаунт заблокирован.\nОбратитесь к администратору."
-            )
+            await message.answer("⛔ Ваш аккаунт заблокирован.\nОбратитесь к администратору.")
             return
 
-        keyboard = (
-            main_menu_admin_keyboard()
-            if user.role == "admin"
-            else main_menu_user_keyboard()
-        )
+        keyboard = main_menu_admin_keyboard() if user.role == "admin" else main_menu_user_keyboard()
         await message.answer(
             f"👋 Добро пожаловать, {user.username}!",
             reply_markup=keyboard,

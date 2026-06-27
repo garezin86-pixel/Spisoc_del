@@ -1,14 +1,15 @@
-import jwt
 import uuid
+from datetime import UTC, datetime, timedelta
+
+import jwt
 from passlib.context import CryptContext
-from datetime import datetime, timedelta, UTC
 
 from src.core.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     ALGORITHM,
-    SECRET_KEY,
     REFRESH_SECRET_KEY,
     REFRESH_TOKEN_EXPIRE_DAYS,
+    SECRET_KEY,
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

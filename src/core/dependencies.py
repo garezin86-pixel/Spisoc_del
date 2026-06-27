@@ -1,13 +1,13 @@
 import jwt
 from fastapi import Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.config import ALGORITHM, SECRET_KEY
 from src.core.constants import (
+    ACCOUNT_DISABLED,
     FOR_ADMIN_ONLY,
     INVALID_EXPIRED_TOKEN,
     USER_NOT_FOUND,
-    ACCOUNT_DISABLED,
 )
 from src.core.exceptions import current_admin, unauthorized, user_not_found
 from src.db import SessionDep

@@ -5,9 +5,10 @@ Revises: <замени на id последней миграции>
 Create Date: 2026-06-19
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
+
+from alembic import op
 
 revision = "add_task_templates"
 down_revision = "4c9b58a062c6"

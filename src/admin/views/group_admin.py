@@ -1,5 +1,6 @@
 import structlog
 from sqladmin import ModelView
+
 from src.models import GroupModel
 
 logger = structlog.get_logger()
@@ -35,13 +36,12 @@ class GroupAdmin(ModelView, model=GroupModel):
 
     async def on_model_change(self, data, model, is_created, request):
         """Запоминаем старых участников ДО сохранения."""
-        request.state.old_user_ids = (
-            {u.id for u in model.users} if model.users else set()
-        )
+        request.state.old_user_ids = {u.id for u in model.users} if model.users else set()
 
     async def after_model_change(self, data, model, is_created, request):
         """Уведомляем НОВЫХ участников ПОСЛЕ сохранения."""
         import asyncio
+
         from src.utils.reminders import notify_group_assigned
 
         old_ids = getattr(request.state, "old_user_ids", set())

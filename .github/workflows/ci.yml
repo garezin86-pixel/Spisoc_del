@@ -64,7 +64,7 @@ jobs:
       - name: Run migrations
         run: alembic upgrade head
 
-      - name: Ruff lint
+      - name: Ruff check
         run: ruff check .
 
       - name: Ruff format check

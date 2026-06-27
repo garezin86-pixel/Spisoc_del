@@ -1,11 +1,13 @@
-from fastapi import BackgroundTasks
 import asyncio
+
 import structlog
-from src.repositories.abstract import AbstractGroupRepository, AbstractUserRepository
+from fastapi import BackgroundTasks
+
 from src.core.constants import GROUP_NOT_FOUND, USER_OR_GROUP_NOT_FOUND
 from src.core.exceptions import group_already_exists, not_found
 from src.models.group import ConfirmDelete, GroupModel
 from src.models.user import UserModel
+from src.repositories.abstract import AbstractGroupRepository, AbstractUserRepository
 from src.schemas.group import GroupCreate
 from src.utils.reminders import notify_group_assigned
 
@@ -94,9 +96,7 @@ class GroupService:
         await logger.ainfo("user_added_to_group", user_id=user_id, group_id=group_id)
 
         if background_tasks:
-            background_tasks.add_task(
-                notify_group_assigned, user_id, group_id, group.name
-            )
+            background_tasks.add_task(notify_group_assigned, user_id, group_id, group.name)
         else:
             asyncio.create_task(notify_group_assigned(user_id, group_id, group.name))
 
@@ -144,9 +144,7 @@ class GroupService:
             return {"message": "User not in group"}
 
         await self.group_repo.delete_user_group(group, user)
-        await logger.ainfo(
-            "user_removed_from_group", user_id=user_id, group_id=group_id
-        )
+        await logger.ainfo("user_removed_from_group", user_id=user_id, group_id=group_id)
 
         return {"message": f"User {user_id} removed from group {group_id}"}
 
@@ -173,9 +171,7 @@ class GroupService:
         await self.group_repo.delete_group(group)
         return {"message": f"Group {group_id} deleted"}
 
-    async def get_groups_paginated(
-        self, offset: int, limit: int, user: UserModel
-    ) -> tuple[list[GroupModel], int]:
+    async def get_groups_paginated(self, offset: int, limit: int, user: UserModel) -> tuple[list[GroupModel], int]:
         """Возвращает (groups, total) с учётом прав доступа пользователя.
 
         Зачем: обычный пользователь не должен видеть группы, в которых не состоит —

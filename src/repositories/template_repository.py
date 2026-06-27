@@ -1,8 +1,9 @@
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, or_, and_
-from src.models.template import TaskTemplateModel, TaskTemplateItemModel
-from src.models.task import SpisokModel, TaskStatus
+
 from src.models.group import user_group
+from src.models.task import SpisokModel, TaskStatus
+from src.models.template import TaskTemplateItemModel, TaskTemplateModel
 from src.schemas.template import TemplateCreate, TemplateUpdate
 
 
@@ -48,11 +49,7 @@ class TemplateRepository:
         visibility_filter — опциональный фильтр: "private" | "group" | "global" | None (все доступные)
         """
         # Подзапрос: группы пользователя
-        user_groups_sq = (
-            select(user_group.c.group_id)
-            .where(user_group.c.user_id == owner_id)
-            .scalar_subquery()
-        )
+        user_groups_sq = select(user_group.c.group_id).where(user_group.c.user_id == owner_id).scalar_subquery()
 
         # Базовое условие доступности
         access_condition = or_(
@@ -89,15 +86,9 @@ class TemplateRepository:
         result = await self.session.execute(stmt)
         return list(result.unique().scalars().all())
 
-    async def get_by_id(
-        self, template_id: int, user_id: int
-    ) -> TaskTemplateModel | None:
+    async def get_by_id(self, template_id: int, user_id: int) -> TaskTemplateModel | None:
         """Получить шаблон если пользователь имеет к нему доступ."""
-        user_groups_sq = (
-            select(user_group.c.group_id)
-            .where(user_group.c.user_id == user_id)
-            .scalar_subquery()
-        )
+        user_groups_sq = select(user_group.c.group_id).where(user_group.c.user_id == user_id).scalar_subquery()
 
         access_condition = or_(
             and_(
@@ -119,9 +110,7 @@ class TemplateRepository:
         )
         return result.unique().scalar_one_or_none()
 
-    async def get_by_id_owner_only(
-        self, template_id: int, owner_id: int
-    ) -> TaskTemplateModel | None:
+    async def get_by_id_owner_only(self, template_id: int, owner_id: int) -> TaskTemplateModel | None:
         """Получить шаблон только если текущий пользователь — владелец (для edit/delete)."""
         result = await self.session.execute(
             select(TaskTemplateModel).where(
@@ -131,9 +120,7 @@ class TemplateRepository:
         )
         return result.unique().scalar_one_or_none()
 
-    async def update(
-        self, template: TaskTemplateModel, data: TemplateUpdate
-    ) -> TaskTemplateModel:
+    async def update(self, template: TaskTemplateModel, data: TemplateUpdate) -> TaskTemplateModel:
         if data.title is not None:
             template.title = data.title
         if data.description is not None:
@@ -144,9 +131,7 @@ class TemplateRepository:
 
         if data.items is not None:
             await self.session.execute(
-                delete(TaskTemplateItemModel).where(
-                    TaskTemplateItemModel.template_id == template.id
-                )
+                delete(TaskTemplateItemModel).where(TaskTemplateItemModel.template_id == template.id)
             )
             for i, item_data in enumerate(data.items):
                 item = TaskTemplateItemModel(
@@ -165,9 +150,7 @@ class TemplateRepository:
         await self.session.delete(template)
         await self.session.flush()
 
-    async def apply(
-        self, template: TaskTemplateModel, project_id: int, user_id: int
-    ) -> list[SpisokModel]:
+    async def apply(self, template: TaskTemplateModel, project_id: int, user_id: int) -> list[SpisokModel]:
         created = []
         for item in sorted(template.items, key=lambda x: x.order_index):
             task = SpisokModel(

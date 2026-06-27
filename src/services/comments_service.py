@@ -1,11 +1,11 @@
-from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.repositories.abstract import AbstractCommentRepository, AbstractTaskRepository
+from src.core.exceptions import no_access, task_not_found
 from src.models.comment import CommentModel
 from src.models.user import UserModel
+from src.repositories.abstract import AbstractCommentRepository, AbstractTaskRepository
 from src.schemas.comment import CommentCreate
-from src.core.exceptions import task_not_found, no_access
 from src.services.notifications import notify_comment_added
 from src.services.permissions import can_edit_task
 
@@ -100,9 +100,7 @@ class CommentService:
 
         return await self.comment_repo.get_by_task(task_id)
 
-    async def get_by_task_paginated(
-        self, task_id: int, offset: int, limit: int, user: UserModel
-    ):
+    async def get_by_task_paginated(self, task_id: int, offset: int, limit: int, user: UserModel):
         """Возвращает (comments, total) для задачи с пагинацией.
 
         Зачем: задачи могут накопить много комментариев — пагинация
@@ -120,7 +118,5 @@ class CommentService:
 
         query = await self.comment_repo.select_query(task_id)
         total = await self.comment_repo.get_total_tasks(query)
-        comments = await self.comment_repo.get_by_task_offset_limit(
-            query, offset, limit
-        )
+        comments = await self.comment_repo.get_by_task_offset_limit(query, offset, limit)
         return comments, total

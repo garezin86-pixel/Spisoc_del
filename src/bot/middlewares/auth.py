@@ -1,9 +1,10 @@
-from aiogram import BaseMiddleware
-from aiogram.types import Message
-from src.db import get_session_maker
-from aiogram.fsm.context import FSMContext
-from src.db.unit_of_work import UnitOfWork
 import structlog
+from aiogram import BaseMiddleware
+from aiogram.fsm.context import FSMContext
+from aiogram.types import Message
+
+from src.db import get_session_maker
+from src.db.unit_of_work import UnitOfWork
 
 logger = structlog.get_logger()
 
@@ -14,9 +15,7 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Пропускаем /start и заявку
-        if event.text and (
-            event.text.startswith("/start") or event.text == "📝 Подать заявку"
-        ):
+        if event.text and (event.text.startswith("/start") or event.text == "📝 Подать заявку"):
             return await handler(event, data)
 
         # Пропускаем состояния регистрации
@@ -47,9 +46,7 @@ class AuthMiddleware(BaseMiddleware):
                 telegram_id=event.from_user.id if event.from_user else None,
                 reason="inactive",
             )
-            await event.answer(
-                "⛔ Ваш аккаунт заблокирован. Обратитесь к администратору."
-            )
+            await event.answer("⛔ Ваш аккаунт заблокирован. Обратитесь к администратору.")
             return
 
         return await handler(event, data)

@@ -1,6 +1,6 @@
-import os
 import asyncio  # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,6 @@ async def invalidate_cache(pattern: str, redis):
         # Исправлено: убрал print, оставил только logger
         logger.warning(f"Redis timeout during cache invalidation for {pattern}")
     except ConnectionError:
-        logger.warning(
-            f"Redis connection error during cache invalidation for {pattern}"
-        )
+        logger.warning(f"Redis connection error during cache invalidation for {pattern}")
     except Exception as e:
         logger.error(f"Unexpected error during cache invalidation: {e}")

@@ -1,14 +1,14 @@
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+import structlog
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-import structlog
 
-from src.db import get_session_maker
-from src.models.user import UserModel
 from src.core.config import SUPER_ADMIN_TG_ID
+from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
+from src.models.user import UserModel
 
 router = Router()
 logger = structlog.get_logger()
@@ -24,9 +24,7 @@ class Registration(StatesGroup):
 @router.message(F.text == "📝 Подать заявку")
 async def registration_start(message: Message, state: FSMContext):
     await state.set_state(Registration.waiting_for_fio)
-    await message.answer(
-        "👤 Введите ваше ФИО (Фамилия Имя Отчество):\n\nНапример: Иванов Иван Иванович"
-    )
+    await message.answer("👤 Введите ваше ФИО (Фамилия Имя Отчество):\n\nНапример: Иванов Иван Иванович")
 
 
 @router.message(Registration.waiting_for_fio)
@@ -59,12 +57,8 @@ async def registration_fio(message: Message, state: FSMContext):
     bot = get_bot()
 
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text="✅ Принять", callback_data=f"reg_accept:{message.from_user.id}"
-    )
-    builder.button(
-        text="❌ Отклонить", callback_data=f"reg_decline:{message.from_user.id}"
-    )
+    builder.button(text="✅ Принять", callback_data=f"reg_accept:{message.from_user.id}")
+    builder.button(text="❌ Отклонить", callback_data=f"reg_decline:{message.from_user.id}")
     builder.adjust(2)
 
     await bot.send_message(
@@ -77,9 +71,7 @@ async def registration_fio(message: Message, state: FSMContext):
         reply_markup=builder.as_markup(),
     )
 
-    await message.answer(
-        "✅ Заявка отправлена администратору.\nОжидайте подтверждения."
-    )
+    await message.answer("✅ Заявка отправлена администратору.\nОжидайте подтверждения.")
 
 
 @router.callback_query(F.data.startswith("reg_accept:"))
@@ -159,9 +151,7 @@ async def registration_decline(callback: CallbackQuery):
     from src.bot.setup import get_bot
 
     bot = get_bot()
-    await bot.send_message(
-        chat_id=tg_id, text="❌ Ваша заявка отклонена.\nОбратитесь к администратору."
-    )
+    await bot.send_message(chat_id=tg_id, text="❌ Ваша заявка отклонена.\nОбратитесь к администратору.")
 
     await callback.answer("❌ Заявка отклонена.")
     text = callback.message.text or ""

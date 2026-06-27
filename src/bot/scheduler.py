@@ -1,8 +1,9 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 from src.utils.reminders import (
-    remind_deadline_24h,
-    remind_deadline_1h,
     notify_overdue,
+    remind_deadline_1h,
+    remind_deadline_24h,
     send_weekly_report,
 )
 

@@ -1,22 +1,22 @@
 from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi_cache.decorator import cache
+
+from src.core.dependencies import (
+    get_current_admin,
+    get_current_manager,
+    get_current_user,
+)
 from src.db import SessionDep
 from src.models.group import ConfirmDelete
 from src.models.user import UserModel
-from src.schemas.group import GroupCreate, GroupSchema
-from src.schemas.user import UserSchema
-from src.core.dependencies import (
-    get_current_admin,
-    get_current_user,
-    get_current_manager,
-)
-from src.services.group_service import GroupService
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.users_repository import UserRepository
-
-from fastapi_cache.decorator import cache
+from src.schemas.group import GroupCreate, GroupSchema
+from src.schemas.pagination import PaginatedResponse, PaginationParams
+from src.schemas.user import UserSchema
+from src.services.group_service import GroupService
 from src.utils.cache_keys import user_scoped_key_builder
 from src.utils.cache_manager import cache_manager
-from src.schemas.pagination import PaginationParams, PaginatedResponse
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
@@ -45,9 +45,7 @@ Side-effects:
     responses={
         200: {
             "description": "Группа создана",
-            "content": {
-                "application/json": {"example": {"id": 1, "name": "Backend Team"}}
-            },
+            "content": {"application/json": {"example": {"id": 1, "name": "Backend Team"}}},
         },
         403: {"description": "Требуется роль admin"},
         409: {"description": "Группа с таким именем уже существует"},
@@ -104,9 +102,7 @@ async def get_group(
         offset=pagination.offset, limit=pagination.size, user=current_user
     )
     groups_schemas = [GroupSchema.model_validate(group) for group in groups]
-    return PaginatedResponse.create(
-        items=groups_schemas, total=total, page=pagination.page, size=pagination.size
-    )
+    return PaginatedResponse.create(items=groups_schemas, total=total, page=pagination.page, size=pagination.size)
 
 
 @router.post(
@@ -147,9 +143,7 @@ async def add_user_to_group(
     background_tasks: BackgroundTasks,
     current_user: UserModel = Depends(get_current_manager),
 ):
-    user = await get_group_service(session).add_user_to_group(
-        group_id, user_id, background_tasks
-    )
+    user = await get_group_service(session).add_user_to_group(group_id, user_id, background_tasks)
     await cache_manager.invalidate_groups()
     return {"message": f"User {user_id} added to group {group_id}", "user": user}
 
@@ -184,9 +178,7 @@ async def get_group_users(
         user=current_user,
     )
     users_schemas = [UserSchema.model_validate(user) for user in users]
-    return PaginatedResponse.create(
-        items=users_schemas, total=total, page=pagination.page, size=pagination.size
-    )
+    return PaginatedResponse.create(items=users_schemas, total=total, page=pagination.page, size=pagination.size)
 
 
 @router.delete(
@@ -206,11 +198,7 @@ Side-effects:
     responses={
         200: {
             "description": "Пользователь удалён из группы",
-            "content": {
-                "application/json": {
-                    "example": {"message": "User 3 removed from group 1"}
-                }
-            },
+            "content": {"application/json": {"example": {"message": "User 3 removed from group 1"}}},
         },
         403: {"description": "Требуется роль admin или manager"},
         404: {"description": "Пользователь или группа не найдены"},
@@ -250,11 +238,7 @@ Side-effects:
                 "application/json": {
                     "examples": {
                         "deleted": {"value": {"message": "Group 1 deleted"}},
-                        "mismatch": {
-                            "value": {
-                                "message": "Введите точное имя группы для удаления"
-                            }
-                        },
+                        "mismatch": {"value": {"message": "Введите точное имя группы для удаления"}},
                     }
                 }
             },

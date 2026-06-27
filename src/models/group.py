@@ -1,14 +1,16 @@
-from pydantic import BaseModel
-from sqlalchemy import Column, ForeignKey, Table
-from src.db import Base
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+from sqlalchemy import Column, ForeignKey, Table
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.db import Base
+
 if TYPE_CHECKING:
+    from src.models.task import SpisokModel
     from src.models.user import (
         UserModel,
-    )  # 👈 только для линтера, не создаёт циклического импорта
-    from src.models.task import SpisokModel
+    )
 
 
 user_group = Table(

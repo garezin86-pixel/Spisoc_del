@@ -1,5 +1,5 @@
-from sqladmin import BaseView, expose
 from fastapi import Request
+from sqladmin import BaseView, expose
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.repositories.other_repositories import StatsRepository
@@ -23,9 +23,7 @@ class StatsView(BaseView):
 
         total_tasks = tasks_stats.total_tasks or 0
         done_tasks = tasks_stats.done_tasks or 0
-        completion_rate = round(
-            (done_tasks / total_tasks * 100) if total_tasks > 0 else 0
-        )
+        completion_rate = round((done_tasks / total_tasks * 100) if total_tasks > 0 else 0)
 
         return await self.templates.TemplateResponse(
             request,

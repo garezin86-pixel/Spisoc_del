@@ -8,8 +8,9 @@ Create Date: 2026-05-13 17:04:37.619548
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "4a3d7909f328"
@@ -40,13 +41,9 @@ def upgrade() -> None:
         "spisok_del",
         ["deadline"],
         unique=False,
-        postgresql_where=sa.text(
-            "reminder_sent = false AND is_done = false AND user_id IS NOT NULL"
-        ),
+        postgresql_where=sa.text("reminder_sent = false AND is_done = false AND user_id IS NOT NULL"),
     )
-    op.create_index(
-        "ix_spisok_del_reminder_sent", "spisok_del", ["reminder_sent"], unique=False
-    )
+    op.create_index("ix_spisok_del_reminder_sent", "spisok_del", ["reminder_sent"], unique=False)
     # ### end Alembic commands ###
 
 
@@ -57,9 +54,7 @@ def downgrade() -> None:
     op.drop_index(
         "ix_spisok_del_reminder_pending",
         table_name="spisok_del",
-        postgresql_where=sa.text(
-            "reminder_sent = false AND is_done = false AND user_id IS NOT NULL"
-        ),
+        postgresql_where=sa.text("reminder_sent = false AND is_done = false AND user_id IS NOT NULL"),
     )
     op.drop_index("ix_spisok_del_done_deadline", table_name="spisok_del")
     op.create_index(

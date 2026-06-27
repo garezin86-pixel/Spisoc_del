@@ -8,12 +8,8 @@ tasks_restored = Counter("tasks_restored_total", "Всего восстанов�
 tasks_completed = Counter("tasks_completed_total", "Всего выполнено задач")
 
 # Уведомления
-notifications_sent = Counter(
-    "notifications_sent_total", "Отправлено уведомлений", ["type"]
-)
-notifications_failed = Counter(
-    "notifications_failed_total", "Ошибок при отправке", ["type"]
-)
+notifications_sent = Counter("notifications_sent_total", "Отправлено уведомлений", ["type"])
+notifications_failed = Counter("notifications_failed_total", "Ошибок при отправке", ["type"])
 
 # Бот
 bot_errors = Counter("bot_errors_total", "Ошибки бота", ["handler"])

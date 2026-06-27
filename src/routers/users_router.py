@@ -1,22 +1,22 @@
 from fastapi import APIRouter, Depends
-from src.db import SessionDep
-from src.schemas.user import UserRegister, UserSchema, UserUpdate
-from src.models.user import UserModel
+from fastapi_cache.decorator import cache
+
 from src.core.dependencies import (
     get_current_admin,
-    get_current_user,
     get_current_manager,
+    get_current_user,
 )
-from src.services.user_service import UserService
+from src.db import SessionDep
+from src.models.user import UserModel
+from src.repositories.groups_repository import GroupRepository
+from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
-
-from fastapi_cache.decorator import cache
+from src.schemas.pagination import PaginatedResponse, PaginationParams
+from src.schemas.user import UserRegister, UserSchema, UserUpdate
+from src.services.task_service import TaskService
+from src.services.user_service import UserService
 from src.utils.cache_keys import user_scoped_key_builder
 from src.utils.cache_manager import cache_manager
-from src.schemas.pagination import PaginationParams, PaginatedResponse
-from src.services.task_service import TaskService
-from src.repositories.task_repository import TaskRepository
-from src.repositories.groups_repository import GroupRepository
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -25,7 +25,8 @@ router = APIRouter(prefix="/users", tags=["Users"])
     "/me",
     response_model=UserSchema,
     summary="Текущий пользователь",
-    description="Возвращает данные авторизованного пользователя. Удобный способ получить свой профиль без знания user_id.",
+    description="Возвращает данные авторизованного пользователя. "
+    "Удобный способ получить свой профиль без знания user_id.",
 )
 async def get_me(
     current_user: UserModel = Depends(get_current_user),
@@ -140,16 +141,12 @@ async def get_users(
 ):
     """Список пользователей с пагинацией"""
     service = get_user_service(session)
-    users, total = await service.get_users_paginated(
-        offset=pagination.offset, limit=pagination.size
-    )
+    users, total = await service.get_users_paginated(offset=pagination.offset, limit=pagination.size)
 
     # 🔁 Преобразуем SQLAlchemy объекты в Pydantic схемы
     users_schemas = [UserSchema.model_validate(user) for user in users]
 
-    return PaginatedResponse.create(
-        items=users_schemas, total=total, page=pagination.page, size=pagination.size
-    )
+    return PaginatedResponse.create(items=users_schemas, total=total, page=pagination.page, size=pagination.size)
 
 
 @router.get(

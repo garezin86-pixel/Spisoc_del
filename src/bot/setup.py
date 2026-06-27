@@ -1,4 +1,5 @@
 import asyncio
+
 import structlog
 
 logger = structlog.get_logger()
@@ -25,6 +26,7 @@ def get_bot():
     global _bot
     if _bot is None:
         from aiogram import Bot
+
         from src.core.config import BOT_TOKEN
 
         if not BOT_TOKEN:
@@ -79,6 +81,7 @@ async def start_bot():
 
         # 👇 глобальный error handler
         from aiogram.types import ErrorEvent
+
         from src.core.metrics import bot_errors
 
         @dp_instance.errors()

@@ -6,9 +6,11 @@ Create Date: 2026-05-19 10:05:00.000000
 """
 
 from typing import Sequence, Union
-from alembic import op
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "b2c3d4e5f6a7"
 down_revision: Union[str, Sequence[str], None] = "a1b2c3d4e5f6"
@@ -20,9 +22,7 @@ _ACTIONS = ("create", "update", "delete", "restore")
 
 def upgrade() -> None:
     # Создаём enum тип
-    audit_action = postgresql.ENUM(
-        *_ACTIONS, name="audit_action_enum", create_type=True
-    )
+    audit_action = postgresql.ENUM(*_ACTIONS, name="audit_action_enum", create_type=True)
     audit_action.create(op.get_bind(), checkfirst=True)
 
     op.create_table(

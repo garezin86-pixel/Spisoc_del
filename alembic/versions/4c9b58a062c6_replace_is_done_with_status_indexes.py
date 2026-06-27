@@ -8,8 +8,9 @@ Create Date: 2026-06-18 14:39:13.872709
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "4c9b58a062c6"
@@ -46,9 +47,7 @@ def upgrade() -> None:
     op.drop_index(op.f("ix_spisok_del_priority_done"), table_name="spisok_del")
     op.drop_index(op.f("ix_spisok_del_project_id"), table_name="spisok_del")
     op.drop_index(op.f("ix_spisok_del_project_status"), table_name="spisok_del")
-    op.drop_index(
-        op.f("ix_spisok_del_title_gin"), table_name="spisok_del", postgresql_using="gin"
-    )
+    op.drop_index(op.f("ix_spisok_del_title_gin"), table_name="spisok_del", postgresql_using="gin")
     op.drop_index(
         op.f("ix_spisok_del_title_trgm"),
         table_name="spisok_del",
@@ -57,9 +56,7 @@ def upgrade() -> None:
     )
     op.drop_index(op.f("ix_spisok_del_user_status"), table_name="spisok_del")
     op.drop_index(op.f("ix_spisok_del_author_done"), table_name="spisok_del")
-    op.create_index(
-        "ix_spisok_del_author_done", "spisok_del", ["author_id", "status"], unique=False
-    )
+    op.create_index("ix_spisok_del_author_done", "spisok_del", ["author_id", "status"], unique=False)
     op.drop_index(op.f("ix_spisok_del_done_deadline"), table_name="spisok_del")
     op.create_index(
         "ix_spisok_del_done_deadline",
@@ -68,13 +65,9 @@ def upgrade() -> None:
         unique=False,
     )
     op.drop_index(op.f("ix_spisok_del_group_done"), table_name="spisok_del")
-    op.create_index(
-        "ix_spisok_del_group_done", "spisok_del", ["group_id", "status"], unique=False
-    )
+    op.create_index("ix_spisok_del_group_done", "spisok_del", ["group_id", "status"], unique=False)
     op.drop_index(op.f("ix_spisok_del_user_done"), table_name="spisok_del")
-    op.create_index(
-        "ix_spisok_del_user_done", "spisok_del", ["user_id", "status"], unique=False
-    )
+    op.create_index("ix_spisok_del_user_done", "spisok_del", ["user_id", "status"], unique=False)
     op.drop_column("spisok_del", "is_done")
     # ### end Alembic commands ###
 
@@ -131,11 +124,7 @@ def downgrade() -> None:
     op.create_index(
         op.f("ix_spisok_del_title_gin"),
         "spisok_del",
-        [
-            sa.literal_column(
-                "to_tsvector('russian'::regconfig, COALESCE(title, ''::character varying)::text)"
-            )
-        ],
+        [sa.literal_column("to_tsvector('russian'::regconfig, COALESCE(title, ''::character varying)::text)")],
         unique=False,
         postgresql_using="gin",
     )
@@ -145,21 +134,15 @@ def downgrade() -> None:
         ["project_id", "status"],
         unique=False,
     )
-    op.create_index(
-        op.f("ix_spisok_del_project_id"), "spisok_del", ["project_id"], unique=False
-    )
+    op.create_index(op.f("ix_spisok_del_project_id"), "spisok_del", ["project_id"], unique=False)
     op.create_index(
         op.f("ix_spisok_del_priority_done"),
         "spisok_del",
         ["priority", "is_done"],
         unique=False,
     )
-    op.create_index(
-        op.f("ix_spisok_del_priority"), "spisok_del", ["priority"], unique=False
-    )
-    op.create_index(
-        op.f("ix_spisok_del_is_done"), "spisok_del", ["is_done"], unique=False
-    )
+    op.create_index(op.f("ix_spisok_del_priority"), "spisok_del", ["priority"], unique=False)
+    op.create_index(op.f("ix_spisok_del_is_done"), "spisok_del", ["is_done"], unique=False)
     # op.create_index(
     #     op.f("ix_notification_settings_updated_at"),
     #     "notification_settings",

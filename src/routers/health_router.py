@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from sqlalchemy import text
+
 from src.db import SessionDep
 
 router = APIRouter(tags=["System"])

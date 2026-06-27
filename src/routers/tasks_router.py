@@ -1,31 +1,30 @@
-from fastapi import APIRouter, Depends, Query
-from fastapi import BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi_cache.decorator import cache
 
+from src.core.dependencies import get_current_user
 from src.db import SessionDep
+from src.models.task import TaskStatus
 from src.models.user import UserModel
+from src.repositories.audit_repository import AuditRepository
+from src.repositories.groups_repository import GroupRepository
+from src.repositories.task_repository import TaskRepository
+from src.repositories.users_repository import UserRepository
+from src.schemas.pagination import PaginatedResponse, PaginationParams
+from src.schemas.schemas_audit import AuditLogSchema
 from src.schemas.task import (
     FilterUserGroup,
+    KanbanResponse,
     SpisokAddSchema,
     SpisokSchema,
     SpisokUpdate,
     TaskFilter,
     TaskPriorityFilter,
     TaskStatusUpdate,
-    KanbanResponse,
 )
-from src.models.task import TaskStatus
-from src.core.dependencies import get_current_user
 from src.services.notifications import notify_task_assigned
 from src.services.task_service import TaskService
-from src.repositories.task_repository import TaskRepository
-from src.repositories.users_repository import UserRepository
-from src.repositories.groups_repository import GroupRepository
-from src.schemas.pagination import PaginationParams, PaginatedResponse
-from fastapi_cache.decorator import cache
 from src.utils.cache_keys import user_scoped_key_builder
 from src.utils.cache_manager import cache_manager
-from src.repositories.audit_repository import AuditRepository
-from src.schemas.schemas_audit import AuditLogSchema
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -104,9 +103,7 @@ async def list_deleted_tasks(
         limit=pagination.size,
         search=search,
     )
-    return PaginatedResponse.create(
-        items=tasks, total=total, page=pagination.page, size=pagination.size
-    )
+    return PaginatedResponse.create(items=tasks, total=total, page=pagination.page, size=pagination.size)
 
 
 # ── Канбан GET — должен быть до /{task_id} ────────────────────────────────────
@@ -128,9 +125,7 @@ async def get_kanban(
     current_user: UserModel = Depends(get_current_user),
     project_id: int | None = Query(None, description="Фильтр по проекту"),
     only_mine: bool = Query(False, description="Только мои задачи (исполнитель)"),
-    only_author: bool = Query(
-        False, description="Только задачи, где текущий пользователь — автор"
-    ),
+    only_author: bool = Query(False, description="Только задачи, где текущий пользователь — автор"),
 ):
     return await get_task_service(session).get_kanban(
         current_user,
@@ -162,9 +157,7 @@ async def reassign_task(
     group_id: int | None = Query(None),
 ):
     session.info["audit_user_id"] = current_user.id
-    result = await get_task_service(session).reassign_task(
-        task_id, current_user, user_id, group_id
-    )
+    result = await get_task_service(session).reassign_task(task_id, current_user, user_id, group_id)
     await cache_manager.invalidate_tasks()
     background_tasks.add_task(notify_task_assigned, result.id)
     return result
@@ -249,8 +242,6 @@ async def update_task_status(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    task = await get_task_service(session).update_task_status(
-        task_id, data.status, current_user
-    )
+    task = await get_task_service(session).update_task_status(task_id, data.status, current_user)
     await cache_manager.invalidate_tasks()
     return task
