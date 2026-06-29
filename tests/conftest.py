@@ -17,12 +17,19 @@ from src.utils.cache_manager import cache_manager
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import warnings
+
 from src.core.security import hash_password
 from src.db import Base
 from src.models import CommentModel, GroupModel, SpisokModel, UserModel  # noqa: F401
 
-TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
+warnings.filterwarnings(
+    "ignore",
+    message="coroutine '.*' was never awaited",
+    category=RuntimeWarning,
+)
 
+TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

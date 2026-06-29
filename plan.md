@@ -644,3 +644,115 @@ Parse → Groq LLM
 улучшение модели
 смена STT
 даже UI
+
+
+-----------------------------------------------------------------------------------------
+
+Хороший вопрос — давай разберу честно что сложно и как это реализовать.
+
+Что сложно
+1. Хранение файлов
+Главный вопрос — где хранить. Три варианта:
+
+Telegram file_id — самый простой. Telegram сам хранит файл, ты только сохраняешь file_id строкой в БД. Минус: file_id протухает если бот переустановлен, и файл недоступен вне Telegram.
+Локальная папка / volume — работает локально, но на Render ephemeral filesystem — файлы исчезают при рестарте.
+S3-совместимое хранилище (Cloudflare R2, Backblaze B2, AWS S3) — правильное решение для продакшна, но требует интеграции.
+
+Для твоего стека на Render — рекомендую комбо: сохранять file_id Telegram + скачивать и заливать на R2/B2 (у Cloudflare R2 есть бесплатный tier 10GB).
+2. Доступ с веб-фронта
+Бот получает файл, но веб-пользователь тоже должен его видеть. Значит нужен эндпоинт /api/tasks/{id}/attachments и либо проксирование через API, либо прямые ссылки на S3.
+3. Разные типы файлов в aiogram
+Telegram разделяет: document, photo, video, audio, voice — у каждого своя структура. Нужно обрабатывать все.
+
+Архитектура
+Модель:
+pythonclass AttachmentModel(Base):
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("spisok.id", ondelete="CASCADE"))
+    filename: Mapped[str]
+    file_size: Mapped[int | None]
+    mime_type: Mapped[str | None]
+
+    # Хранение
+    telegram_file_id: Mapped[str | None]   # для бота
+    storage_url: Mapped[str | None]        # для веба (S3 URL)
+
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(default=func.now())
+
+    task: Mapped["SpisokModel"] = relationship(back_populates="attachments")
+    uploader: Mapped["UserModel"] = relationship()
+API эндпоинты:
+GET  /api/tasks/{id}/attachments      — список вложений
+POST /api/tasks/{id}/attachments      — загрузить файл (multipart)
+DELETE /api/attachments/{id}          — удалить
+GET  /api/attachments/{id}/download   — скачать / редирект на S3
+Бот — обработчик файлов:
+python@router.message(F.document | F.photo | F.video | F.audio)
+async def handle_file(message: Message, state: FSMContext):
+    # Получить task_id из state (юзер должен был выбрать задачу)
+    data = await state.get_data()
+    task_id = data.get("task_id")
+
+    if not task_id:
+        await message.answer(
+            "📎 К какой задаче прикрепить файл?\n"
+            "Введите ID задачи или используйте /task 42"
+        )
+        await state.set_state(AttachFile.waiting_for_task_id)
+        # сохранить file_id временно
+        return
+
+    # Определяем тип и получаем file_id
+    if message.document:
+        file_id = message.document.file_id
+        filename = message.document.file_name or "file"
+        mime_type = message.document.mime_type
+    elif message.photo:
+        file_id = message.photo[-1].file_id  # берём самое большое
+        filename = "photo.jpg"
+        mime_type = "image/jpeg"
+    # ... и т.д.
+
+    # Сохраняем в БД
+    async with UnitOfWork(get_session_maker()) as uow:
+        user = await uow.users.get_by_telegram_id(message.from_user.id)
+        attachment = AttachmentModel(
+            task_id=task_id,
+            filename=filename,
+            telegram_file_id=file_id,
+            mime_type=mime_type,
+            uploaded_by=user.id,
+        )
+        uow.session.add(attachment)
+        await uow.commit()
+
+    await message.answer(f"📎 Файл прикреплён к задаче #{task_id}")
+
+Поэтапная реализация
+Фаза 1 — MVP (только Telegram file_id, без S3):
+
+Миграция attachments таблицы
+AttachmentRepository + AttachmentService
+Bot handler для входящих файлов
+API GET/DELETE для вложений
+В боте показывать список вложений при просмотре задачи
+
+Фаза 2 — веб-доступ:
+
+Подключить Cloudflare R2 (или Backblaze B2)
+При получении файла от бота — скачивать через bot.download() и заливать на R2
+storage_url — публичная ссылка для фронта
+Компонент AttachmentsPanel в React
+
+Фаза 3 — загрузка с веба:
+
+POST /api/tasks/{id}/attachments multipart endpoint
+Дропзона в UI
+
+
+Мой совет
+Начни с Фазы 1 — она даёт уже рабочую фичу и не требует S3. На Render файлы через telegram_file_id доступны боту в любое время (Telegram хранит их минимум несколько месяцев). Для MVP этого достаточно — пользователи бота могут прикреплять и просматривать файлы прямо в Telegram.
+С чего начать — с модели и миграции, или сразу с bot handler?

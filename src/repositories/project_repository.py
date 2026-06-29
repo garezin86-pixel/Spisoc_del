@@ -20,11 +20,23 @@ class ProjectRepository:
         self.session = session
 
     def _base_query(self):
+        """Базовый запрос без tasks — они не нужны при листинге проектов."""
         return select(ProjectModel).options(
             selectinload(ProjectModel.owner),
             selectinload(ProjectModel.members),
-            selectinload(ProjectModel.tasks),
             selectinload(ProjectModel.group),
+        )
+
+    def _base_query_with_tasks(self):
+        """Запрос с tasks — только для детальной карточки проекта."""
+        return select(ProjectModel).options(
+            selectinload(ProjectModel.owner),
+            selectinload(ProjectModel.members),
+            selectinload(ProjectModel.group),
+            selectinload(ProjectModel.tasks).options(
+                selectinload(SpisokModel.user),
+                selectinload(SpisokModel.author),
+            ),
         )
 
     def _visible_for_user(self, query, user_id: int):
@@ -59,7 +71,8 @@ class ProjectRepository:
         return projects, total or 0
 
     async def get_by_id(self, project_id: int) -> ProjectModel | None:
-        result = await self.session.execute(self._base_query().where(ProjectModel.id == project_id))
+        """Детальная карточка — грузим tasks."""
+        result = await self.session.execute(self._base_query_with_tasks().where(ProjectModel.id == project_id))
         return result.scalar_one_or_none()
 
     async def create(self, project: ProjectModel) -> ProjectModel:

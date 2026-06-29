@@ -77,3 +77,10 @@ def is_manager(user: UserModel) -> bool:
 
 def is_regular_user(user: UserModel) -> bool:
     return user.role == UserRole.user
+
+
+def decode_access_token(token: str) -> dict:
+    if not SECRET_KEY or not ALGORITHM:
+        raise RuntimeError("JWT config missing")
+
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

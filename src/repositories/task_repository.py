@@ -155,7 +155,12 @@ class TaskRepository(AbstractTaskRepository):
         priority: str | None = None,
         status=None,
     ):
-        query = select(SpisokModel).options(selectinload(SpisokModel.author))
+        query = select(SpisokModel).options(
+            selectinload(SpisokModel.author),
+            selectinload(SpisokModel.user),
+            selectinload(SpisokModel.group),
+            selectinload(SpisokModel.project),
+        )
 
         filter_user_group_value = getattr(filter_user_group, "value", filter_user_group)
         filter_type_value = getattr(filter_type, "value", filter_type)
@@ -367,7 +372,16 @@ class TaskRepository(AbstractTaskRepository):
         return result.scalars().all()
 
     async def get_task(self, task_id: int) -> Optional[SpisokModel]:
-        query = select(SpisokModel).where(SpisokModel.id == task_id)
+        query = (
+            select(SpisokModel)
+            .options(
+                selectinload(SpisokModel.author),
+                selectinload(SpisokModel.user),
+                selectinload(SpisokModel.group),
+                selectinload(SpisokModel.project),
+            )
+            .where(SpisokModel.id == task_id)
+        )
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
