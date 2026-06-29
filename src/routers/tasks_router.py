@@ -23,6 +23,13 @@ from src.schemas.task import (
 )
 from src.services.notifications import notify_task_assigned
 from src.services.task_service import TaskService
+from src.services.ws_events import (
+    emit_kanban_moved,
+    emit_task_created,
+    emit_task_deleted,
+    emit_task_restored,
+    emit_task_updated,
+)
 from src.utils.cache_keys import user_scoped_key_builder
 from src.utils.cache_manager import cache_manager
 
@@ -47,6 +54,7 @@ async def add_task(
     session.info["audit_user_id"] = current_user.id
     task = await get_task_service(session).add_task(data, current_user)
     await cache_manager.invalidate_tasks()
+    await emit_task_created(task)
     return task
 
 
@@ -173,6 +181,7 @@ async def update_task(
     session.info["audit_user_id"] = current_user.id
     task = await get_task_service(session).update_task(task_id, data, current_user)
     await cache_manager.invalidate_tasks()
+    await emit_task_updated(task)
     return task
 
 
@@ -184,8 +193,10 @@ async def delete_task(
 ):
     """Мягкое удаление. Задача помечается deleted_at, физически не удаляется."""
     session.info["audit_user_id"] = current_user.id
+    task = await get_task_service(session).get_task(task_id, current_user)
     result = await get_task_service(session).delete_task(task_id, current_user)
     await cache_manager.invalidate_tasks()
+    await emit_task_deleted(task)
     return result
 
 
@@ -199,6 +210,7 @@ async def restore_task(
     session.info["audit_user_id"] = current_user.id
     task = await get_task_service(session).restore_task(task_id, current_user)
     await cache_manager.invalidate_tasks()
+    await emit_task_restored(task)
     return task
 
 
@@ -244,4 +256,5 @@ async def update_task_status(
 ):
     task = await get_task_service(session).update_task_status(task_id, data.status, current_user)
     await cache_manager.invalidate_tasks()
+    await emit_kanban_moved(task)
     return task

@@ -1,4 +1,66 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+// ── WebSocket hook ────────────────────────────────────────────────────────────
+function useWebSocket(token, onEvent) {
+    const wsRef = useRef(null);
+    const reconnectRef = useRef(null);
+    const mountedRef = useRef(true);
+
+    const connect = useCallback(() => {
+        if (!token || !mountedRef.current) return;
+
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = window.location.host;
+        const url = `${protocol}//${host}/api/ws?token=${token}`;
+
+        const ws = new WebSocket(url);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+            console.log("[WS] connected");
+            if (reconnectRef.current) {
+                clearTimeout(reconnectRef.current);
+                reconnectRef.current = null;
+            }
+        };
+
+        ws.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.event === "pong") return;
+                onEvent(msg.event, msg.data);
+            } catch {}
+        };
+
+        ws.onclose = (e) => {
+            console.log("[WS] disconnected, reconnecting in 3s...", e.code);
+            if (mountedRef.current && e.code !== 4001) {
+                reconnectRef.current = setTimeout(connect, 3000);
+            }
+        };
+
+        ws.onerror = () => ws.close();
+    }, [token, onEvent]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        connect();
+
+        // Keepalive ping каждые 25 сек
+        const ping = setInterval(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send("ping");
+            }
+        }, 25000);
+
+        return () => {
+            mountedRef.current = false;
+            clearTimeout(reconnectRef.current);
+            clearInterval(ping);
+            wsRef.current?.close();
+        };
+    }, [connect]);
+}
 import { apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -1142,15 +1204,12 @@ function TemplatesTab({ token }) {
     const [applyProjectId, setApplyProjectId] = useState("");
     const [applying, setApplying] = useState(false);
     const [applySuccess, setApplySuccess] = useState(null);
-    const [visibilityFilter, setVisibilityFilter] = useState(null); // null | "private" | "group" | "global"
-    const [groups, setGroups] = useState([]);
     const dragIdx = useRef(null);
 
-    async function loadTemplates(visFilter) {
+    async function loadTemplates() {
         setLoading(true); setError(null);
         try {
-            const q = visFilter ? `?visibility=${visFilter}` : "";
-            const data = await apiRequest({ path: `/templates${q}`, token });
+            const data = await apiRequest({ path: "/templates", token });
             setTemplates(Array.isArray(data) ? data : []);
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
@@ -1163,36 +1222,18 @@ function TemplatesTab({ token }) {
         } catch { setProjects([]); }
     }
 
-    async function loadGroups() {
-        try {
-            const data = await apiRequest({ path: "/groups?page=1&size=100", token });
-            setGroups(extractItems(data));
-        } catch { setGroups([]); }
-    }
-
-    useEffect(() => { loadTemplates(null); loadProjects(); loadGroups(); }, []); // eslint-disable-line
-
-    function handleVisibilityFilter(v) {
-        const next = visibilityFilter === v ? null : v;
-        setVisibilityFilter(next);
-        loadTemplates(next);
-    }
+    useEffect(() => { loadTemplates(); loadProjects(); }, []); // eslint-disable-line
 
     function openCreate() {
         setEditingTemplate(null);
-        setForm({ title: "", description: "", visibility: "private", group_id: "" });
+        setForm({ title: "", description: "" });
         setItems([]);
         setView("create");
     }
 
     function openEdit(tpl) {
         setEditingTemplate(tpl);
-        setForm({
-            title: tpl.title,
-            description: tpl.description || "",
-            visibility: tpl.visibility || "private",
-            group_id: tpl.group_id ? String(tpl.group_id) : "",
-        });
+        setForm({ title: tpl.title, description: tpl.description || "" });
         setItems([...tpl.items].sort((a, b) => a.order_index - b.order_index)
             .map(it => ({ title: it.title, priority: it.priority, order_index: it.order_index })));
         setView("edit");
@@ -1228,8 +1269,6 @@ function TemplatesTab({ token }) {
         const body = {
             title: form.title.trim(),
             description: form.description.trim() || null,
-            visibility: form.visibility || "private",
-            group_id: form.visibility === "group" && form.group_id ? Number(form.group_id) : null,
             items: items.filter(it => it.title.trim())
                 .map((it, i) => ({ title: it.title.trim(), priority: it.priority, order_index: i })),
         };
@@ -1300,34 +1339,6 @@ function TemplatesTab({ token }) {
                             value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                             style={{ resize: "vertical" }} />
                     </div>
-                    <div>
-                        <label className="field-label">ВИДИМОСТЬ</label>
-                        <div style={{ display: "flex", gap: 8 }}>
-                            {[
-                                { v: "private", label: "🔒 Только я" },
-                                { v: "group",   label: "👥 Группа" },
-                                { v: "global",  label: "🌐 Глобальный" },
-                            ].map(({ v, label }) => (
-                                <button key={v} type="button"
-                                    className={`btn btn-sm ${form.visibility === v ? "btn-primary" : "btn-ghost"}`}
-                                    onClick={() => setForm(f => ({ ...f, visibility: v, group_id: v !== "group" ? "" : f.group_id }))}>
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-                        {form.visibility === "group" && (
-                            <div style={{ marginTop: 8 }}>
-                                <label className="field-label">ГРУППА</label>
-                                <select className="input" value={form.group_id}
-                                    onChange={e => setForm(f => ({ ...f, group_id: e.target.value }))}>
-                                    <option value="">— Выберите группу —</option>
-                                    {groups.map(g => (
-                                        <option key={g.id} value={g.id}>{g.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
-                    </div>
                 </div>
                 <div style={{ marginBottom: 12 }}>
                     <label className="field-label">ЗАДАЧИ В ШАБЛОНЕ</label>
@@ -1387,16 +1398,9 @@ function TemplatesTab({ token }) {
                                 : "Создайте шаблон и применяйте его к проектам"}
                         </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {["private", "group", "global"].map(v => (
-                            <button key={v}
-                                className={`btn btn-sm ${visibilityFilter === v ? "btn-primary" : "btn-ghost"}`}
-                                onClick={() => handleVisibilityFilter(v)}>
-                                {v === "private" ? "🔒 Мои" : v === "group" ? "👥 Группа" : "🌐 Глобальные"}
-                            </button>
-                        ))}
-                        <button className="btn btn-ghost btn-sm" onClick={() => loadTemplates(visibilityFilter)} disabled={loading}>
-                            <Icon d={ICONS.refresh} />
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={loadTemplates} disabled={loading}>
+                            <Icon d={ICONS.refresh} /> Обновить
                         </button>
                         <button className="btn btn-primary btn-sm" onClick={openCreate}>
                             <Icon d={ICONS.plus} /> Новый шаблон
@@ -1423,16 +1427,9 @@ function TemplatesTab({ token }) {
                             }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                                             <Icon d={TEMPLATE_ICON} size={16} />
                                             <span style={{ fontWeight: 600, fontSize: 15 }}>{tpl.title}</span>
-                                            <span style={{
-                                                fontSize: 11, padding: "2px 8px", borderRadius: 999,
-                                                background: tpl.visibility === "global" ? "var(--accent)22" : tpl.visibility === "group" ? "#19875422" : "var(--border)",
-                                                color: tpl.visibility === "global" ? "var(--accent)" : tpl.visibility === "group" ? "#198754" : "var(--text-muted)",
-                                            }}>
-                                                {tpl.visibility === "private" ? "🔒 Только я" : tpl.visibility === "group" ? `👥 ${tpl.group?.name || "Группа"}` : "🌐 Глобальный"}
-                                            </span>
                                         </div>
                                         {tpl.description && (
                                             <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 8 }}>
@@ -2466,12 +2463,33 @@ function DashboardTab({ stats, loading, username, role }) {
 // ─── Main App ─────────────────────────────────────────────
 function App() {
     const [token, setToken] = useState(localStorage.getItem("spisoc_token"));
+    const [tab, setTab] = useState("tasks"); // "tasks" | "projects" | "groups" | "trash" | "dashboard" | "templates"
+
+    // ── WebSocket realtime ────────────────────────────────────────────────────
+    const handleWsEvent = useCallback((event, data) => {
+        if (event === "task_created") {
+            // Перезагружаем список если на вкладке задач
+            if (tab === "tasks") loadTasks(tasksPage, viewMode);
+            if (tab === "kanban") loadKanban();
+        } else if (event === "task_updated" || event === "kanban_moved") {
+            if (tab === "tasks") loadTasks(tasksPage, viewMode);
+            if (tab === "kanban") loadKanban();
+        } else if (event === "task_deleted") {
+            if (tab === "tasks") loadTasks(tasksPage, viewMode);
+            if (tab === "kanban") loadKanban();
+        } else if (event === "task_restored") {
+            if (tab === "trash") loadTrash();
+        } else if (event === "comment_added") {
+            // Комментарии обновятся при следующем открытии задачи
+        }
+    }, [tab]);  // eslint-disable-line
+
+    useWebSocket(token, handleWsEvent);
     const [theme, setTheme] = useState(() => localStorage.getItem("spisoc_theme") || "dark");
     const [tasks, setTasks] = useState([]);
     const [trashTasks, setTrash] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [tab, setTab] = useState("tasks"); // "tasks" | "projects" | "groups" | "trash" | "dashboard" | "templates"
     const [filterPriority, setFilterPriority] = useState(null);
     const [appProjects, setAppProjects] = useState([]);
     const [dashStats, setDashStats] = useState(null);

@@ -34,7 +34,10 @@ class GroupModel(Base):
         cascade="all, delete",
     )
     tasks: Mapped[list["SpisokModel"]] = relationship(
-        "SpisokModel", back_populates="group", cascade="all, delete-orphan"
+        "SpisokModel",
+        back_populates="group",
+        cascade="all, delete-orphan",
+        lazy="noload",  # не грузим задачи при листинге групп — только явным selectinload
     )
 
     def __str__(self):
