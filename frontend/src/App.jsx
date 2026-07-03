@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
+import AttachmentsPanel from "./AttachmentsPanel";
 
 // ── WebSocket hook ────────────────────────────────────────────────────────────
 function useWebSocket(token, onEvent) {
@@ -61,7 +63,6 @@ function useWebSocket(token, onEvent) {
         };
     }, [connect]);
 }
-import { apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
 
 // ─── Helpers ──────────────────────────────────────────────
 const initialForm = { title: "", description: "", deadline: "", priority: "medium", project_id: "" };
@@ -345,11 +346,12 @@ const PRIORITY_LABELS = { critical: "Критический", high: "Высок�
 const PRIORITY_ICONS = { critical: "🔴", high: "🟠", medium: "🔵", low: "⚪" };
 
 // ─── TaskCard ─────────────────────────────────────────────
-function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible }) {
+function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole }) {
     const [expanded, setExpanded] = useState(!collapsible);
     const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [showAudit, setShowAudit] = useState(false);
+    const [showAttachments, setShowAttachments] = useState(false);
     const [showReassign, setShowReassign] = useState(false);
     const [saving, setSaving] = useState(false);
     const formatForInput = (value) => {
@@ -613,6 +615,9 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                 <button className="btn btn-ghost btn-sm" onClick={() => { setShowComments(v => !v); setShowAudit(false); }}>
                     <Icon d={ICONS.comment} /> {showComments ? "Скрыть" : "Комментарии"}
                 </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowAttachments(v => !v)}>
+                    📎 {showAttachments ? "Скрыть" : "Вложения"}
+                </button>
                 <button className="btn btn-ghost btn-sm" onClick={() => { setShowAudit(v => !v); setShowComments(false); }}>
                     📋 {showAudit ? "Скрыть" : "История"}
                 </button>
@@ -622,6 +627,14 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
             </div>
 
             {showComments && <CommentsPanel taskId={task.id} token={token} />}
+            {showAttachments && (
+                <AttachmentsPanel
+                    taskId={task.id}
+                    token={token}
+                    currentUserId={currentUserId}
+                    canDelete={currentRole === "admin" || currentRole === "manager"}
+                />
+            )}
             {showAudit && <AuditPanel taskId={task.id} token={token} />}
         </article>
     );
@@ -1533,7 +1546,7 @@ function TemplatesTab({ token }) {
 }
 
 // ─── ProjectsTab ──────────────────────────────────────────
-function ProjectsTab({ token, canManage }) {
+function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
     const [projects, setProjects] = useState([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -1985,6 +1998,8 @@ function ProjectsTab({ token, canManage }) {
                                     }}
                                     hideReassign
                                     collapsible
+                                    currentUserId={currentUserId}
+                                    currentRole={currentRole}
                                 />
                             ))}
                         </div>
@@ -2497,6 +2512,7 @@ function App() {
 
     const [filterType, setFilterType] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
     const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
     const [tasksPage, setTasksPage] = useState(1);
@@ -2520,6 +2536,18 @@ function App() {
     const currentUsername = useMemo(() => tokenPayload?.username || tokenPayload?.sub || "Пользователь", [tokenPayload]);
     const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
     const canManage = currentRole === "admin" || currentRole === "manager";
+
+    // Поиск по задачам — по id (точное совпадение или префикс) и по title (без учёта регистра).
+    // Фильтрация клиентская, в пределах уже загруженной страницы задач.
+    const visibleTasks = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return tasks;
+        return tasks.filter(t => {
+            const idMatch = String(t.id).includes(q);
+            const titleMatch = (t.title || "").toLowerCase().includes(q);
+            return idMatch || titleMatch;
+        });
+    }, [tasks, searchQuery]);
     const [showTooltip, setShowTooltip] = useState(false);
     const chipRef = React.useRef(null);
     const [tooltipPos, setTooltipPos] = useState({ top: 0, right: 0 });
@@ -3145,29 +3173,43 @@ function App() {
                                     <div>
                                         <div className="section-title">Задачи</div>
                                         <div className="section-sub">
-                                            {tasksTotal > 0
-                                                ? `${tasksTotal} задач · стр. ${tasksPage}/${tasksTotalPages}`
-                                                : "Нет задач"}
+                                            {searchQuery.trim()
+                                                ? `${visibleTasks.length} из ${tasks.length} на странице`
+                                                : tasksTotal > 0
+                                                    ? `${tasksTotal} задач · стр. ${tasksPage}/${tasksTotalPages}`
+                                                    : "Нет задач"}
                                         </div>
                                     </div>
                                     <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
                                         <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
                                     </button>
                                 </div>
+                                <div className="form-group" style={{ marginBottom: 12 }}>
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                        placeholder="Поиск по названию или ID задачи…"
+                                    />
+                                </div>
                                 {loading ? (
                                     <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка задач…</div>
                                 ) : tasks.length === 0 ? (
                                     <div className="empty-state"><div className="empty-icon">📋</div>Задач нет. Создайте первую!</div>
+                                ) : visibleTasks.length === 0 ? (
+                                    <div className="empty-state"><div className="empty-icon">🔍</div>Ничего не найдено по запросу «{searchQuery}»</div>
                                 ) : (
                                     <>
                                         <div className="task-list">
-                                            {tasks.map(task => (
+                                            {visibleTasks.map(task => (
                                                 <TaskCard key={task.id} task={task}
                                                     groups={groups} users={users} token={token}
                                                     onToggle={handleToggleTask}
                                                     onDelete={handleDeleteTask}
                                                     onUpdate={handleUpdateTask}
-                                                    onReassign={handleReassignTask} />
+                                                    onReassign={handleReassignTask}
+                                                    currentUserId={currentUserId}
+                                                    currentRole={currentRole} />
                                             ))}
                                         </div>
                                         <Pagination page={tasksPage} totalPages={tasksTotalPages}
@@ -3193,7 +3235,8 @@ function App() {
             {/* ── PROJECTS TAB ── */}
             {tab === "projects" && (
                 <div>
-                    <ProjectsTab token={token} canManage={canManage} />
+                    <ProjectsTab token={token} canManage={canManage}
+                                 currentUserId={currentUserId} currentRole={currentRole} />
                 </div>
             )}
             {/* ── KANBAN TAB ── */}

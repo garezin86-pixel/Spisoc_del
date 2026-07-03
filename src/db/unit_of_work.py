@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.repositories.attachment_repository import AttachmentRepository
 from src.repositories.audit_repository import AuditRepository
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.other_repositories import (
@@ -24,6 +25,7 @@ class UnitOfWork:
         self.notifications = NotificationRepository(self._session)
         self.notification_settings = NotificationSettingsRepository(self._session)
         self.audit = AuditRepository(self._session)
+        self.attachments = AttachmentRepository(self._session)
         return self
 
     def set_audit_user(self, user_id: int | None) -> None:

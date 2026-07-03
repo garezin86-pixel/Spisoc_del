@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 // ─── Ключи хранилища ──────────────────────────────────────────────────────────
 const TOKEN_KEY = "spisoc_token";

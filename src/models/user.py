@@ -8,6 +8,7 @@ from src.db import Base
 from src.models.group import user_group
 
 if TYPE_CHECKING:
+    from src.models.attachment_model import AttachmentModel
     from src.models.comment import CommentModel
     from src.models.group import GroupModel
     from src.models.project import ProjectModel
@@ -46,6 +47,10 @@ class UserModel(Base):
     notification_settings = relationship("NotificationSettingsModel", back_populates="user", uselist=False)
 
     notification_logs = relationship("NotificationLogModel", back_populates="user", cascade="all, delete-orphan")
+    attachments: Mapped[list["AttachmentModel"]] = relationship(
+        "AttachmentModel",
+        back_populates="uploader",
+    )
 
     __table_args__ = (Index("ix_users_telegram_active", "telegram_id", "is_active"),)
 

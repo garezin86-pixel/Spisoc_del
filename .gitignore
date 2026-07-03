@@ -31,3 +31,6 @@ alembic/versions/__pycache__/
 команды запуска.txt
 run2.py
 plan.md
+
+# Папка с файлами
+storage/

@@ -14,6 +14,7 @@ from src.models.audit import AuditMixin, SoftDeleteMixin
 from src.models.enums import TaskPriority, TaskStatus
 
 if TYPE_CHECKING:
+    from src.models.attachment_model import AttachmentModel
     from src.models.group import GroupModel
     from src.models.project import ProjectModel
     from src.models.user import (
@@ -88,6 +89,12 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         lazy="selectin",
     )
     notification_logs = relationship("NotificationLogModel", back_populates="task", cascade="all, delete-orphan")
+    attachments: Mapped[list["AttachmentModel"]] = relationship(
+        "AttachmentModel",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     __table_args__ = (
         # Простые индексы

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from .attachments_router import router as attachments_router
 from .auth_router import router as auth_router
 from .comments_router import router as comments_router
 from .group_router import router as group_router
@@ -18,4 +19,5 @@ api_router.include_router(group_router)
 api_router.include_router(comments_router)
 api_router.include_router(project_router)
 api_router.include_router(templates_router)
+api_router.include_router(attachments_router)
 api_router.include_router(ws_router)

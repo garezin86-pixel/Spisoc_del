@@ -1,6 +1,7 @@
 from aiogram import Dispatcher
 
 from src.bot.handlers.admin import router as admin_router
+from src.bot.handlers.attachments_handler import router as attachments_router
 from src.bot.handlers.commands import router as commands_router
 from src.bot.handlers.notification_actions import router as notification_actions_router
 from src.bot.handlers.notification_settings import router as notification_router
@@ -24,4 +25,5 @@ def register_handlers(dp: Dispatcher):
     dp.include_router(tasks_router)
     dp.include_router(admin_router)
     dp.include_router(registration_router)
+    dp.include_router(attachments_router)
     dp.include_router(trash_router)
