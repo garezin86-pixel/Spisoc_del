@@ -24,6 +24,10 @@ def main_menu_user() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="📁 Проекты"),
                 KeyboardButton(text="⚙️ Настройки \n уведомлений"),
             ],
+            [
+                KeyboardButton(text="📎 Вложения"),
+                KeyboardButton(text="❓ Шпаргалка"),
+            ],
         ],
         resize_keyboard=True,
     )
@@ -50,6 +54,10 @@ def main_menu_admin() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="📁 Проекты"),
             ],
             [KeyboardButton(text="⚙️ Настройки \n уведомлений")],
+            [
+                KeyboardButton(text="📎 Вложения"),
+                KeyboardButton(text="❓ Шпаргалка"),
+            ],
         ],
         resize_keyboard=True,
     )
@@ -192,6 +200,10 @@ def main_menu_manager() -> ReplyKeyboardMarkup:
             [
                 KeyboardButton(text="📁 Проекты"),
                 KeyboardButton(text="⚙️ Настройки \n уведомлений"),
+            ],
+            [
+                KeyboardButton(text="📎 Вложения"),
+                KeyboardButton(text="❓ Шпаргалка"),
             ],
         ],
         resize_keyboard=True,

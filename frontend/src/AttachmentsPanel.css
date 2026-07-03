@@ -1,0 +1,242 @@
+/* AttachmentsPanel.css — добавь в общий CSS-файл проекта рядом с .comments-panel */
+
+.attachments-panel {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color, #2a2a3a);
+}
+
+.attachments-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 10px;
+    color: var(--text-secondary, #a0a0b0);
+}
+
+.attachments-error {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.attachments-empty {
+    text-align: center;
+    color: var(--text-muted, #6b6b7b);
+    font-size: 13px;
+    padding: 16px 0;
+}
+
+.attachments-hint {
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+.attachments-hint code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.attachment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.attachment-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--card-bg, rgba(255, 255, 255, 0.03));
+    transition: background 0.15s;
+}
+
+.attachment-item:hover {
+    background: var(--card-bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.attachment-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
+}
+
+.attachment-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.attachment-filename {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.attachment-meta {
+    font-size: 11px;
+    color: var(--text-muted, #6b6b7b);
+    margin-top: 2px;
+}
+
+.attachment-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.btn-icon {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #a0a0b0);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn-icon:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.btn-icon-danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.btn-icon:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.attachments-add-hint {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-muted, #6b6b7b);
+    text-align: center;
+}
+
+.attachments-add-hint code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+/* ─── Дропзона ─────────────────────────────────────────────────────────────── */
+
+.dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px 12px;
+    margin-bottom: 8px;
+    border: 1.5px dashed var(--border-color, #2a2a3a);
+    border-radius: 10px;
+    color: var(--text-muted, #6b6b7b);
+    font-size: 13px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    user-select: none;
+}
+
+.dropzone:hover {
+    border-color: #3b82f6;
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.04);
+}
+
+.dropzone--over {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.08);
+    color: #3b82f6;
+}
+
+.dropzone--uploading {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.dropzone small {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* ─── Очередь загрузки ──────────────────────────────────────────────────────── */
+
+.upload-queue {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.upload-queue-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.upload-queue-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary, #a0a0b0);
+}
+
+.upload-queue-error {
+    font-size: 11px;
+    color: #ef4444;
+    flex-shrink: 0;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.upload-queue-done {
+    color: #22c55e;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.upload-progress {
+    width: 80px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.upload-progress-bar {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 2px;
+    transition: width 0.15s ease;
+}

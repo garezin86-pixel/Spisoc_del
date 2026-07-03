@@ -25,6 +25,10 @@ async def set_main_menu(bot):
         BotCommand(command="find", description="🔎 Найти задачу: /find текст"),
         BotCommand(command="voice", description="🎤 Голосовые команды — шпаргалка"),
         BotCommand(command="group", description="👥 Задачи группы: /group 3"),
+        BotCommand(command="attach", description="📎 Прикрепить файл: /attach 42"),
+        BotCommand(command="attachments", description="📎 Список вложений: /attachments 42"),
+        BotCommand(command="getfile", description="📤 Получить файл: /getfile 7"),
+        BotCommand(command="help", description="❓ Шпаргалка по командам"),
     ]
 
     await bot.set_my_commands(commands)

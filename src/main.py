@@ -230,6 +230,14 @@ app.include_router(health_router)
 setup_admin(app, get_engine())
 
 
+# ── Локальное хранилище вложений (временная замена R2, см. active_storage.py) ─
+from src.core.config import ATTACHMENTS_STORAGE_PATH  # noqa: E402
+
+ATTACHMENTS_DIR = Path(ATTACHMENTS_STORAGE_PATH).resolve()
+ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/attachments-storage", StaticFiles(directory=ATTACHMENTS_DIR), name="attachments-storage")
+
+
 # ── Статика фронтенда (только на проде) ──────────────────────────────────────
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if FRONTEND_DIST.exists():

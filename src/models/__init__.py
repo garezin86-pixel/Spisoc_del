@@ -1,4 +1,5 @@
 # src/models/__init__.py
+from src.models.attachment_model import AttachmentModel
 from src.models.audit import AuditAction, AuditLog
 from src.models.comment import CommentModel
 from src.models.group import GroupModel, user_group
@@ -22,4 +23,5 @@ __all__ = [
     "NotificationLogModel",
     "AuditLog",
     "AuditAction",
+    "AttachmentModel",
 ]

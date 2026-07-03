@@ -9,6 +9,14 @@ export default defineConfig({
                 target: "http://localhost:8000",
                 changeOrigin: true,
             },
+            // Локальное хранилище вложений — download-эндпоинт отдаёт
+            // 302-редирект на относительный /attachments-storage/..., и без
+            // этого правила Vite ловит его как неизвестный путь и отдаёт
+            // index.html вместо файла (SPA fallback).
+            "/attachments-storage": {
+                target: "http://localhost:8000",
+                changeOrigin: true,
+            },
         },
     },
 });

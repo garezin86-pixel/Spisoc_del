@@ -1,4 +1,3 @@
-import zoneinfo
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
@@ -7,7 +6,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    field_serializer,
     field_validator,
     model_validator,
 )
@@ -15,8 +13,6 @@ from pydantic import (
 from src.models.task import TaskPriority, TaskStatus
 from src.schemas.group import GroupSchema
 from src.schemas.user import UserSchemaForTask
-
-USER_TZ = zoneinfo.ZoneInfo("Europe/Kiev")
 
 
 class SpisokAddSchema(BaseModel):
@@ -74,14 +70,6 @@ class SpisokSchema(BaseModel):
     updated_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
-
-    @field_serializer("created_at", "updated_at", "deadline")
-    def serialize_dt(self, dt: datetime | None) -> str | None:
-        if dt is None:
-            return None
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(USER_TZ).strftime("%d.%m.%Y %H:%M")
 
 
 class SpisokUpdate(BaseModel):

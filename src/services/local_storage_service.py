@@ -1,0 +1,111 @@
+# src/services/local_storage_service.py
+"""
+Локальное файловое хранилище для вложений — временная замена R2.
+
+Используется, пока не подключён Cloudflare R2. Имеет тот же публичный
+интерфейс, что и R2StorageService (upload/get_public_url/delete), поэтому
+переключение между ними — это просто замена импорта в одном месте
+(src/bot/handlers/attachments.py и src/services/attachment_service.py).
+
+ВНИМАНИЕ:
+  На Render free tier файловая система ephemeral — все файлы пропадают
+  при каждом рестарте/редеплое сервиса. Для прод-использования сначала
+  переключайся на R2 (см. storage_service.py) или подключай Render
+  persistent disk (платный план).
+
+Файлы раздаются через FastAPI StaticFiles, примонтированный в src/main.py
+на путь /attachments-storage.
+"""
+
+from __future__ import annotations
+
+import uuid
+from pathlib import Path
+
+import aiofiles
+import aiofiles.os
+import structlog
+
+from src.core.config import ATTACHMENTS_STORAGE_PATH
+
+logger = structlog.get_logger()
+
+# Публичный URL-префикс, под которым StaticFiles раздаёт эти файлы
+PUBLIC_URL_PREFIX = "/attachments-storage"
+
+
+class LocalStorageService:
+    """
+    Хранит файлы на диске в ATTACHMENTS_STORAGE_PATH.
+
+    Структура: storage/attachments/<task_id>/<uuid-prefix>-<filename>
+    """
+
+    def __init__(self) -> None:
+        self.base_path = Path(ATTACHMENTS_STORAGE_PATH).resolve()
+
+    @property
+    def is_configured(self) -> bool:
+        # Локальное хранилище всегда "настроено" — папка создаётся лениво
+        return True
+
+    def _ensure_base_dir(self) -> None:
+        self.base_path.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def build_key(task_id: int, filename: str) -> str:
+        """
+        Формирует относительный путь файла.
+        Пример: 42/a1b2c3d4-photo.jpg
+        """
+        safe_name = filename.replace("/", "_").replace("\\", "_").strip() or "file"
+        unique_prefix = uuid.uuid4().hex[:8]
+        return f"{task_id}/{unique_prefix}-{safe_name}"
+
+    async def upload(
+        self,
+        key: str,
+        data: bytes,
+        content_type: str | None = None,  # noqa: ARG002 — не нужен для локального FS, оставлен для совместимости интерфейса
+    ) -> str:
+        """
+        Сохраняет файл на диск и возвращает публичный URL.
+        """
+        self._ensure_base_dir()
+
+        target_path = self.base_path / key
+        await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
+
+        async with aiofiles.open(target_path, "wb") as f:
+            await f.write(data)
+
+        url = self.get_public_url(key)
+        await logger.ainfo("local_storage_upload_success", key=key, size=len(data), path=str(target_path))
+        return url
+
+    def get_public_url(self, key: str) -> str:
+        """
+        URL вида /attachments-storage/42/a1b2c3d4-photo.jpg
+        Раздаётся через StaticFiles, примонтированный в main.py.
+        """
+        return f"{PUBLIC_URL_PREFIX}/{key}"
+
+    async def get_presigned_url(self, key: str, expires_in: int = 3600) -> str:  # noqa: ARG002
+        """
+        У локального хранилища нет приватных presigned ссылок —
+        просто возвращаем обычный публичный URL для единообразия интерфейса.
+        """
+        return self.get_public_url(key)
+
+    async def delete(self, key: str) -> None:
+        target_path = self.base_path / key
+        try:
+            await aiofiles.os.remove(target_path)
+            await logger.ainfo("local_storage_delete_success", key=key)
+        except FileNotFoundError:
+            await logger.awarning("local_storage_delete_not_found", key=key)
+
+
+# Синглтон — используется вместо storage_service из storage_service.py,
+# пока R2 не подключён.
+local_storage_service = LocalStorageService()

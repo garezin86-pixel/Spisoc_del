@@ -57,6 +57,19 @@ class Settings(BaseSettings):
     refresh_secret_key: str = Field(default="", alias="REFRESH_SECRET_KEY")
     refresh_token_expire_days: int = Field(default=30, alias="REFRESH_TOKEN_EXPIRE_DAYS")
 
+    # Cloudflare R2 (S3-совместимое хранилище для вложений) — на будущее
+    r2_account_id: str = Field(default="", alias="R2_ACCOUNT_ID")
+    r2_access_key_id: str = Field(default="", alias="R2_ACCESS_KEY_ID")
+    r2_secret_access_key: str = Field(default="", alias="R2_SECRET_ACCESS_KEY")
+    r2_bucket_name: str = Field(default="spisok-del-attachments", alias="R2_BUCKET_NAME")
+    r2_public_base_url: str = Field(default="", alias="R2_PUBLIC_BASE_URL")
+
+    # Локальное хранилище вложений (используется пока R2 не подключён).
+    # ВНИМАНИЕ: на Render free tier диск ephemeral — файлы пропадают
+    # при рестарте/редеплое. Подходит для разработки и для платных планов
+    # с persistent disk, не подходит для прод на free tier надолго.
+    attachments_storage_path: str = Field(default="storage/attachments", alias="ATTACHMENTS_STORAGE_PATH")
+
 
 settings = Settings()
 
@@ -80,3 +93,11 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
 REFRESH_SECRET_KEY = settings.refresh_secret_key
 REFRESH_TOKEN_EXPIRE_DAYS = settings.refresh_token_expire_days
+
+R2_ACCOUNT_ID = settings.r2_account_id
+R2_ACCESS_KEY_ID = settings.r2_access_key_id
+R2_SECRET_ACCESS_KEY = settings.r2_secret_access_key
+R2_BUCKET_NAME = settings.r2_bucket_name
+R2_PUBLIC_BASE_URL = settings.r2_public_base_url.rstrip("/")
+
+ATTACHMENTS_STORAGE_PATH = settings.attachments_storage_path
