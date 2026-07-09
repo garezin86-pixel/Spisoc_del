@@ -48,13 +48,17 @@ class AttachmentService:
 
     async def get_download_url(self, attachment_id: int, user: UserModel) -> str:
         """
-        Возвращает рабочую ссылку для скачивания.
+        Возвращает рабочую ссылку для скачивания — используется ботом.
 
         Приоритет:
-          1. storage_url — если файл уже синхронизирован с R2 и бакет публичный.
+          1. storage_url — если файл в R2 и бакет публичный (storage_url будет https://...).
           2. presigned URL по storage_key — если бакет приватный, но файл в R2.
-          3. fallback: пусто — фронт должен показать "файл доступен только в Telegram"
-             (бот может прислать его по /getfile).
+          3. "" — файл в локальном стораджа; бот сообщает пользователю скачать через веб-интерфейс.
+             (Веб-интерфейс использует эндпоинт /api/attachments/{id}/download напрямую,
+              он стримит файл через FileResponse без этого метода.)
+
+        Примечание: веб-роутер (download_attachment) больше не вызывает этот метод —
+        он сам делает FileResponse/RedirectResponse в зависимости от storage backend.
         """
         attachment = await self.attachment_repo.get_by_id(attachment_id)
         if not attachment:
@@ -62,12 +66,18 @@ class AttachmentService:
 
         await self._check_access(attachment.task_id, user)
 
+        # R2 с публичным бакетом
         if attachment.storage_url:
             return attachment.storage_url
 
+        # R2 с приватным бакетом
         if attachment.storage_key and storage.is_configured:
-            return await storage.get_presigned_url(attachment.storage_key)
+            url = await storage.get_presigned_url(attachment.storage_key)
+            if url:
+                return url
 
+        # Local storage — бот не может стримить файл напрямую,
+        # пусть отправит пользователя в веб-интерфейс
         return ""
 
     async def delete(self, attachment_id: int, user: UserModel) -> None:

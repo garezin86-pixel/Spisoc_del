@@ -27,6 +27,13 @@ class TemplateRepository:
                 template_id=template.id,
                 title=item_data.title,
                 priority=item_data.priority,
+                # ВАЖНО: сравнение с `is not None`, а не просто truthy-проверка.
+                # Раньше было `if item_data.order_index else i` — из-за этого
+                # order_index=0 (валидная позиция "первый пункт") считался falsy
+                # и молча подменялся на индекс перечисления `i`. Ломало
+                # drag-and-drop переупорядочивание в TemplatesTab, если
+                # перетащенный пункт получал order_index=0, но не был первым
+                # в переданном списке.
                 order_index=item_data.order_index if item_data.order_index is not None else i,
             )
             self.session.add(item)

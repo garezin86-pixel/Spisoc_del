@@ -30,8 +30,8 @@ from src.core.config import ATTACHMENTS_STORAGE_PATH
 
 logger = structlog.get_logger()
 
-# Публичный URL-префикс, под которым StaticFiles раздаёт эти файлы
-PUBLIC_URL_PREFIX = "/attachments-storage"
+# PUBLIC_URL_PREFIX убран — StaticFiles mount для вложений отключён.
+# Файлы доступны только через авторизованный эндпоинт /api/attachments/{id}/download.
 
 
 class LocalStorageService:
@@ -69,7 +69,15 @@ class LocalStorageService:
         content_type: str | None = None,  # noqa: ARG002 — не нужен для локального FS, оставлен для совместимости интерфейса
     ) -> str:
         """
-        Сохраняет файл на диск и возвращает публичный URL.
+        Сохраняет файл на диск.
+
+        Возвращает пустую строку — намеренно, чтобы AttachmentModel.storage_url
+        оставался None/пустым. Это является признаком «local storage» в роутере:
+        эндпоинт /api/attachments/{id}/download увидит storage_url=None и
+        стримит файл напрямую через FileResponse, без публичного URL.
+
+        Ранее возвращался /attachments-storage/... — публичный путь StaticFiles.
+        StaticFiles mount убран (файлы не должны быть доступны без авторизации).
         """
         self._ensure_base_dir()
 
@@ -79,23 +87,27 @@ class LocalStorageService:
         async with aiofiles.open(target_path, "wb") as f:
             await f.write(data)
 
-        url = self.get_public_url(key)
         await logger.ainfo("local_storage_upload_success", key=key, size=len(data), path=str(target_path))
-        return url
+        # Возвращаем "" — storage_url в БД будет NULL.
+        # Скачивание идёт через авторизованный эндпоинт, а не по прямой ссылке.
+        return ""
 
     def get_public_url(self, key: str) -> str:
         """
-        URL вида /attachments-storage/42/a1b2c3d4-photo.jpg
-        Раздаётся через StaticFiles, примонтированный в main.py.
+        Оставлен для совместимости интерфейса с R2StorageService.
+        Для локального стораджа публичных URL больше нет — используйте
+        эндпоинт /api/attachments/{id}/download.
         """
-        return f"{PUBLIC_URL_PREFIX}/{key}"
+        # Возвращаем пустую строку, а не /attachments-storage/... —
+        # StaticFiles mount отключён, прямой путь никуда не ведёт.
+        return ""
 
     async def get_presigned_url(self, key: str, expires_in: int = 3600) -> str:  # noqa: ARG002
         """
-        У локального хранилища нет приватных presigned ссылок —
-        просто возвращаем обычный публичный URL для единообразия интерфейса.
+        У локального хранилища нет presigned ссылок.
+        Возвращаем "" — вызывающий код должен стримить файл через FileResponse.
         """
-        return self.get_public_url(key)
+        return ""
 
     async def delete(self, key: str) -> None:
         target_path = self.base_path / key
