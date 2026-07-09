@@ -11,6 +11,11 @@ python-multipart==0.0.22
 # Database
 sqlalchemy==2.0.46
 asyncpg==0.31.0
+# psycopg2-binary — НЕ для рантайма FastAPI (тот использует asyncpg), а для Alembic:
+# alembic/env.py конвертирует DATABASE_URL из postgresql+asyncpg:// в
+# postgresql+psycopg2:// перед запуском миграций, т.к. Alembic работает синхронно.
+# Без этого пакета "alembic upgrade head" падает с ModuleNotFoundError на CI/деплое.
+psycopg2-binary==2.9.10
 alembic==1.18.0
 aiosqlite==0.22.0
 greenlet==3.3.1
