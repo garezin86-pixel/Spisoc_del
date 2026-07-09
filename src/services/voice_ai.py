@@ -7,6 +7,7 @@ LLM: Groq LLaMA 3.3 70B с tool calling + memory
 
 import json
 import logging
+import os
 import tempfile
 from datetime import date, timedelta
 
@@ -199,13 +200,20 @@ async def transcribe_voice(ogg_bytes: bytes) -> str:
         tmp.write(ogg_bytes)
         tmp_path = tmp.name
 
-    with open(tmp_path, "rb") as audio_file:
-        response = await groq.audio.transcriptions.create(
-            model="whisper-large-v3",
-            file=("voice.ogg", audio_file, "audio/ogg"),
-            language="ru",
-            response_format="text",
-        )
+    try:
+        with open(tmp_path, "rb") as audio_file:
+            response = await groq.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=("voice.ogg", audio_file, "audio/ogg"),
+                language="ru",
+                response_format="text",
+            )
+    finally:
+        # ВАЖНО: раньше временный файл никогда не удалялся (delete=False +
+        # отсутствие явной очистки) — при каждой голосовой команде на диске
+        # оставался orphan .ogg-файл. При активном использовании бота это
+        # постепенно забивало диск до следующего рестарта контейнера.
+        os.unlink(tmp_path)
 
     text = response if isinstance(response, str) else response.text
     logger.info("Transcribed: %s", text[:100])

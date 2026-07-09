@@ -345,6 +345,100 @@ const PRIORITY_COLORS = { critical: "#ef4444", high: "#f97316", medium: "#3b82f6
 const PRIORITY_LABELS = { critical: "Критический", high: "Высокий", medium: "Средний", low: "Низкий" };
 const PRIORITY_ICONS = { critical: "🔴", high: "🟠", medium: "🔵", low: "⚪" };
 
+// ─── Статусы задач (общий список для карточек, канбана и выпадающего меню) ───
+const STATUS_LIST = [
+    { key: "backlog", label: "Очередь", icon: "📥", color: "#6b7280" },
+    { key: "todo", label: "Новые", icon: "🆕", color: "#7c6af0" },
+    { key: "in_progress", label: "В работе", icon: "🚧", color: "#f59e0b" },
+    { key: "review", label: "На проверке", icon: "🔎", color: "#3b82f6" },
+    { key: "done", label: "Готово", icon: "✅", color: "#22c55e" },
+];
+const STATUS_META = Object.fromEntries(STATUS_LIST.map(s => [s.key, s]));
+
+// Выпадающее меню выбора статуса — заменяет кнопки "Вперёд"/"Назад"
+function StatusMenu({ status, onChange, disabled }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+    const current = STATUS_META[status] ?? STATUS_LIST[1];
+
+    useEffect(() => {
+        if (!open) return;
+        function handleClickOutside(e) {
+            if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [open]);
+
+    return (
+        <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+            <button
+                type="button"
+                className="btn btn-sm"
+                disabled={disabled}
+                onClick={() => setOpen(v => !v)}
+                style={{
+                    background: current.color + "22",
+                    color: current.color,
+                    border: `1px solid ${current.color}55`,
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                }}
+            >
+                <span style={{
+                    display: "inline-block", width: 8, height: 8,
+                    borderRadius: "50%", background: current.color, flexShrink: 0,
+                }} />
+                {current.icon} {current.label}
+                <span style={{ fontSize: 10, opacity: 0.8 }}>▾</span>
+            </button>
+
+            {open && (
+                <div style={{
+                    position: "absolute",
+                    top: "calc(100% + 4px)",
+                    left: 0,
+                    zIndex: 30,
+                    minWidth: 170,
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                    boxShadow: "var(--shadow-sm)",
+                    overflow: "hidden",
+                }}>
+                    {STATUS_LIST.map(s => (
+                        <div
+                            key={s.key}
+                            onClick={() => { if (s.key !== status) onChange(s.key); setOpen(false); }}
+                            style={{
+                                padding: "9px 12px",
+                                fontSize: 13,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                cursor: "pointer",
+                                color: "var(--text)",
+                                background: s.key === status ? "var(--surface2)" : "transparent",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "var(--surface2)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = s.key === status ? "var(--surface2)" : "transparent"; }}
+                        >
+                            <span style={{
+                                display: "inline-block", width: 8, height: 8,
+                                borderRadius: "50%", background: s.color, flexShrink: 0,
+                            }} />
+                            {s.icon} {s.label}
+                            {s.key === status && <span style={{ marginLeft: "auto", color: "var(--accent)" }}>✓</span>}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── TaskCard ─────────────────────────────────────────────
 function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole }) {
     const [expanded, setExpanded] = useState(!collapsible);
@@ -574,34 +668,10 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
             )}
 
             <div className="task-actions">
-                {/* Кнопка "Назад" — только если есть куда возвращаться */}
-                {task.status && task.status !== "backlog" && task.status !== "done" && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => onToggle(task, {
-                        backlog: null,
-                        todo: "backlog",
-                        in_progress: "todo",
-                        review: "in_progress",
-                        done: "review",
-                    }[task.status])}>
-                        ◀ Назад
-                    </button>
-                )}
-                <button className={`btn btn-sm ${task.status === "done" ? "btn-ghost" : "btn-success"}`}
-                    onClick={() => onToggle(task, {
-                        backlog: "todo",
-                        todo: "in_progress",
-                        in_progress: "review",
-                        review: "done",
-                        done: "todo",
-                    }[task.status || (task.is_done ? "done" : "todo")])}>
-                    <Icon d={ICONS.check} /> {{
-                        backlog: "▶ В новые",
-                        todo: "▶ В работу",
-                        in_progress: "▶ На проверку",
-                        review: "✓ Завершить",
-                        done: "↩ Переоткрыть",
-                    }[task.status || (task.is_done ? "done" : "todo")] ?? "▶ Далее"}
-                </button>
+                <StatusMenu
+                    status={task.status || (task.is_done ? "done" : "todo")}
+                    onChange={(newStatus) => onToggle(task, newStatus)}
+                />
                 {!editing && (
                     <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(true); setShowReassign(false); }}>
                         <Icon d={ICONS.edit} /> Изменить
@@ -909,16 +979,13 @@ function KanbanTab({ token }) {
         setDragOver(col);
     };
 
-    const onDrop = async (e, toCol) => {
-        e.preventDefault();
-        setDragOver(null);
-        if (!dragging || dragging.fromCol === toCol) { setDragging(null); return; }
-        const { taskId, fromCol } = dragging;
-        setDragging(null);
+    // Перемещение задачи в другую колонку (используется и при drag&drop, и при выборе из списка статусов)
+    const moveTask = async (taskId, fromCol, toCol) => {
+        if (!fromCol || fromCol === toCol) return;
 
         // Оптимистичное обновление
         setBoard(prev => {
-            const task = prev[fromCol].find(t => t.id === taskId);
+            const task = prev[fromCol]?.find(t => t.id === taskId);
             if (!task) return prev;
             return {
                 ...prev,
@@ -929,18 +996,27 @@ function KanbanTab({ token }) {
 
         setMovingId(taskId);
         try {
-            const r = await fetch(API(`/tasks/${taskId}/status`), {
+            await apiRequest({
+                path: `/tasks/${taskId}/status`,
                 method: "PATCH",
-                headers,
-                body: JSON.stringify({ status: toCol }),
+                token,
+                body: { status: toCol },
             });
-            if (!r.ok) throw new Error();
         } catch {
             // Откат при ошибке
-            loadBoard(projectId, onlyMine);
+            loadBoard(projectId, onlyMine, onlyAuthor);
         } finally {
             setMovingId(null);
         }
+    };
+
+    const onDrop = (e, toCol) => {
+        e.preventDefault();
+        setDragOver(null);
+        if (!dragging) return;
+        const { taskId, fromCol } = dragging;
+        setDragging(null);
+        moveTask(taskId, fromCol, toCol);
     };
 
     const onDragEnd = () => { setDragging(null); setDragOver(null); };
@@ -1089,6 +1165,7 @@ function KanbanTab({ token }) {
                                         col={col.key}
                                         onDragStart={onDragStart}
                                         onDragEnd={onDragEnd}
+                                        onChangeStatus={(newStatus) => moveTask(task.id, col.key, newStatus)}
                                         isMoving={movingId === task.id}
                                         isDragging={dragging?.taskId === task.id}
                                     />
@@ -1102,7 +1179,7 @@ function KanbanTab({ token }) {
     );
 }
 
-function KanbanCard({ task, col, onDragStart, onDragEnd, isMoving, isDragging }) {
+function KanbanCard({ task, col, onDragStart, onDragEnd, onChangeStatus, isMoving, isDragging }) {
     const priColor = PRIORITY_COLORS[task.priority] ?? "#3b82f6";
     const isOverdue = task.deadline && !task.is_done && new Date(task.deadline) < new Date();
 
@@ -1197,6 +1274,11 @@ function KanbanCard({ task, col, onDragStart, onDragEnd, isMoving, isDragging })
                         {task.user.username}
                     </span>
                 )}
+            </div>
+
+            {/* Смена статуса без перетаскивания */}
+            <div draggable={false} style={{ marginTop: 8 }} onMouseDown={e => e.stopPropagation()}>
+                <StatusMenu status={task.status || col} onChange={onChangeStatus} disabled={isMoving} />
             </div>
         </div>
     );

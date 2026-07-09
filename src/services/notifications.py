@@ -146,7 +146,10 @@ async def notify_task_assigned(task_id: int):
                     logger.info(f"User {user.id} disabled task notifications")
                     continue
 
-                if await _already_sent_within(uow, user.id, task.id, "task_assigned", hours=1):
+                # ВАЖНО: тип должен совпадать с тем, что реально пишется в лог ниже
+                # ("group_task_assigned"), иначе проверка никогда не находит совпадение
+                # и группе шлётся повторное уведомление на каждый вызов.
+                if await _already_sent_within(uow, user.id, task.id, "group_task_assigned", hours=1):
                     logger.info(f"Notification already sent to user {user.id} for task {task.id}")
                     continue
 

@@ -1,0 +1,25 @@
+# ─── Dev / CI dependencies ────────────────────────────────────────────────────
+# Устанавливаются только для разработки и в GitHub Actions CI.
+# В production-образе НЕ нужны.
+#
+# Установка: pip install -r requirements.txt -r requirements-dev.txt
+
+-r requirements.txt
+
+# Testing
+pytest==9.0.3
+pytest-asyncio==1.3.0
+pytest-cov==7.1.0
+coverage==7.14.1
+
+# Linting & formatting
+ruff==0.15.14
+
+# Pre-commit hooks
+pre-commit==4.6.0
+
+# Type checking (опционально)
+# mypy
+
+# Дополнительные тестовые утилиты
+httpx==0.28.1  # уже в requirements.txt, но явно для ясности
