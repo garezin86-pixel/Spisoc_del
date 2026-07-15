@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     # с persistent disk, не подходит для прод на free tier надолго.
     attachments_storage_path: str = Field(default="storage/attachments", alias="ATTACHMENTS_STORAGE_PATH")
 
+    # Web Push (VAPID) — генерируется ОДИН РАЗ через scripts/generate_vapid_keys.py
+    # и сохраняется в .env. Перегенерация ключей аннулирует ВСЕ существующие
+    # подписки браузеров пользователей — они будут вынуждены заново включить
+    # push-уведомления после смены ключей.
+    vapid_private_key: str = Field(default="", alias="VAPID_PRIVATE_KEY")
+    vapid_public_key: str = Field(default="", alias="VAPID_PUBLIC_KEY")
+    vapid_claims_email: str = Field(default="admin@example.com", alias="VAPID_CLAIMS_EMAIL")
+
 
 settings = Settings()
 
@@ -98,6 +106,10 @@ R2_ACCOUNT_ID = settings.r2_account_id
 R2_ACCESS_KEY_ID = settings.r2_access_key_id
 R2_SECRET_ACCESS_KEY = settings.r2_secret_access_key
 R2_BUCKET_NAME = settings.r2_bucket_name
+
+VAPID_PRIVATE_KEY = settings.vapid_private_key
+VAPID_PUBLIC_KEY = settings.vapid_public_key
+VAPID_CLAIMS_EMAIL = settings.vapid_claims_email
 R2_PUBLIC_BASE_URL = settings.r2_public_base_url.rstrip("/")
 
 ATTACHMENTS_STORAGE_PATH = settings.attachments_storage_path

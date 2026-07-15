@@ -170,6 +170,13 @@ async def notify_overdue() -> None:
     session_maker = get_session_maker()
     sender = NotificationSender(get_bot())
     sent = 0
+    # Считаем, скольким задачам на пользователя реально ушло текстовое
+    # уведомление в ЭТОМ прогоне джобы — нужно для агрегированного голосового
+    # "У вас N просроченных задач" (одно голосовое на пользователя, а не по
+    # одному на каждую просроченную задачу — это было бы избыточно и
+    # раздражало бы).
+    newly_notified_counts: dict[int, int] = {}
+    users_by_id = {}
 
     async with UnitOfWork(session_maker) as uow:
         now = datetime.now(timezone.utc)
@@ -195,11 +202,50 @@ async def notify_overdue() -> None:
             text = overdue_text(task)
             await _send_task_and_log(uow, sender, user, task, "overdue", text)
             sent += 1
+            newly_notified_counts[user.id] = newly_notified_counts.get(user.id, 0) + 1
+            users_by_id[user.id] = user
 
         await uow.commit()
 
+        # Агрегированные каналы поверх Telegram — после того, как все текстовые
+        # уже ушли и закоммичены.
+        for user_id, count in newly_notified_counts.items():
+            user = users_by_id[user_id]
+            phrase = _overdue_count_phrase(count)
+
+            # Голосовое — только если явно включена настройка (opt-in,
+            # см. NotificationSettingsModel.voice_notifications_enabled).
+            settings = await uow.notification_settings.get_by_user(user_id)
+            if settings and settings.voice_notifications_enabled:
+                await sender.send_voice(user, phrase, notification_type="voice_overdue")
+
+            # Веб-push — независимый канал, не завязан на voice-настройку.
+            # Best-effort: если VAPID не настроен или подписок нет, просто
+            # ничего не произойдёт (см. send_push_to_user).
+            from src.repositories.push_repository import PushRepository
+            from src.services.push_service import send_push_to_user
+
+            await send_push_to_user(
+                PushRepository(uow.session),
+                user_id,
+                title="Просроченные задачи",
+                body=phrase,
+                url="/tasks",
+            )
+
     logger.info("overdue: отправлено %d", sent)
     await event_logger.ainfo("reminder_job_finished", type="overdue", count=sent)
+
+
+def _overdue_count_phrase(count: int) -> str:
+    """Склонение "задача/задачи/задач" для голосовой фразы."""
+    if count % 10 == 1 and count % 100 != 11:
+        word = "просроченная задача"
+    elif 2 <= count % 10 <= 4 and not (12 <= count % 100 <= 14):
+        word = "просроченные задачи"
+    else:
+        word = "просроченных задач"
+    return f"У вас {count} {word}."
 
 
 async def send_weekly_report() -> None:

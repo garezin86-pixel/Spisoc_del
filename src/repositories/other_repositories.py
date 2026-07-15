@@ -395,6 +395,12 @@ class NotificationSettingsRepository:
             notify_task_assigned=False,
             notify_task_updated=False,
             notify_comment=False,
+            # ВАЖНО: voice_notifications_enabled явно НЕ включается в
+            # enable_all_notifications() выше (это opt-in, платный TTS-вызов
+            # на каждое уведомление — не должен включаться неявно кнопкой
+            # "включить всё"), но ВКЛЮЧЁН здесь: "выключить всё" обязано
+            # реально выключать всё, без исключений по соображениям безопасности.
+            voice_notifications_enabled=False,
         )
 
     async def get_users_with_enabled_notification(self, notification_type: str):

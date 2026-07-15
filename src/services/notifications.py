@@ -68,7 +68,7 @@ async def notify_task_assigned(task_id: int):
         sent_count = 0
 
         # Уведомление конкретному пользователю
-        if task.user and task.user.telegram_id:
+        if task.user:
             # Не отправляем уведомление автору задачи
             if task.user_id == task.author_id:
                 logger.info(f"Task {task_id}: author is executor, skip notification")
@@ -86,41 +86,64 @@ async def notify_task_assigned(task_id: int):
 
             success = True
             error = None
-            try:
-                await bot.send_message(
-                    chat_id=task.user.telegram_id,
-                    text=text,
-                    parse_mode="HTML",
-                    reply_markup=task_action_keyboard(task.id),
-                )
-                sent_count += 1
-                logger.info(
-                    "notification_sent",
-                    user_id=task.user_id,
-                    type="task_assigned",
-                    task_id=task.id,
-                )
-            except Exception as e:
-                await logger.aerror(
-                    "notification_failed",
-                    user_id=task.user_id,
-                    error=str(e),
-                )
-                logger.error(f"Failed to send task notification to user {task.user_id}: {e}")
-                success = False
-                error = str(e)[:500]
+            # Telegram-часть работает, только если у пользователя привязан
+            # telegram_id — раньше вся ветка (включая push ниже) требовала
+            # этого, из-за чего пользователь, подписанный ТОЛЬКО на веб-push
+            # (без Telegram), не получал вообще ничего. Теперь push
+            # отправляется независимо от наличия telegram_id.
+            if task.user.telegram_id:
+                try:
+                    await bot.send_message(
+                        chat_id=task.user.telegram_id,
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=task_action_keyboard(task.id),
+                    )
+                    sent_count += 1
+                    logger.info(
+                        "notification_sent",
+                        user_id=task.user_id,
+                        type="task_assigned",
+                        task_id=task.id,
+                    )
+                except Exception as e:
+                    await logger.aerror(
+                        "notification_failed",
+                        user_id=task.user_id,
+                        error=str(e),
+                    )
+                    logger.error(f"Failed to send task notification to user {task.user_id}: {e}")
+                    success = False
+                    error = str(e)[:500]
 
-            # ✅ Лог пишется всегда — и при успехе, и при ошибке
-            log = NotificationLogModel(
-                user_id=task.user_id,
-                notification_type="task_assigned",
-                task_id=task.id,
-                content=text,
-                success=success,
-                error=error,
+                # ✅ Лог пишется всегда — и при успехе, и при ошибке
+                log = NotificationLogModel(
+                    user_id=task.user_id,
+                    notification_type="task_assigned",
+                    task_id=task.id,
+                    content=text,
+                    success=success,
+                    error=error,
+                )
+                uow.session.add(log)
+                await uow.commit()
+
+            # Веб-push — независимый канал поверх Telegram: если у пользователя
+            # есть активные подписки браузера (см. push_subscriptions), они
+            # получат уведомление даже с закрытой вкладкой Telegram, а если
+            # Telegram вообще не привязан — push может быть единственным каналом.
+            from src.repositories.push_repository import PushRepository
+            from src.services.push_service import send_push_to_user
+
+            await send_push_to_user(
+                PushRepository(uow.session),
+                task.user.id,  # не task.user_id — та колонка типизирована как int | None (nullable FK);
+                # task.user здесь уже точно не None (проверено выше), а у самого
+                # объекта пользователя id — обычный int, без Optional.
+                title="Новая задача",
+                body=task.title,
+                url=f"/tasks/{task.id}",
             )
-            uow.session.add(log)
-            await uow.commit()
 
         # Уведомление группе
         elif task.group:

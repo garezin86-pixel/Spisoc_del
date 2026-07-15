@@ -151,3 +151,24 @@ class AbstractTaskRepository(ABC):
         only_author: bool = False,
     ) -> list[SpisokModel]:
         raise NotImplementedError
+
+    @abstractmethod
+    async def export_tasks(
+        self,
+        *,
+        user_id: int,
+        filter_user_group=None,
+        group_id: int | None = None,
+        project_id: int | None = None,
+        status=None,
+        priority: str | None = None,
+        tag_id: int | None = None,
+        deadline_from: datetime | None = None,
+        deadline_to: datetime | None = None,
+        max_rows: int = 10_000,
+    ) -> list[SpisokModel]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_tasks_for_analytics(self) -> list[SpisokModel]:
+        raise NotImplementedError

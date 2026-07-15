@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
+import { apiRequest, API_BASE, clearTokens, getRefreshToken, saveTokens } from "./api";
 import AttachmentsPanel from "./AttachmentsPanel";
 
 // ── WebSocket hook ────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ function useWebSocket(token, onEvent) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────
-const initialForm = { title: "", description: "", deadline: "", priority: "medium", project_id: "" };
+const initialForm = { title: "", description: "", deadline: "", priority: "medium", project_id: "", recurrence_rule: "none", status: "todo" };
 
 function decodeToken(token) {
     try {
@@ -340,6 +340,245 @@ function CommentsPanel({ taskId, token }) {
 }
 
 
+// ─── ChecklistPanel ────────────────────────────────────────
+function ChecklistPanel({ taskId, token }) {
+    const [items, setItems] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [newTitle, setNewTitle] = useState("");
+    const [adding, setAdding] = useState(false);
+
+    const loadingRef = React.useRef(false);
+    const load = useCallback(async () => {
+        if (loadingRef.current) return;
+        loadingRef.current = true;
+        setLoading(true);
+        try {
+            const data = await apiRequest({ path: `/tasks/${taskId}/checklist`, token });
+            setItems(Array.isArray(data) ? data : []);
+        } catch { /* ignore */ }
+        finally { setLoading(false); loadingRef.current = false; }
+    }, [taskId, token]);
+
+    useEffect(() => { load(); }, [load]);
+
+    async function handleAdd() {
+        if (!newTitle.trim()) return;
+        setAdding(true);
+        try {
+            await apiRequest({
+                path: `/tasks/${taskId}/checklist`, method: "POST", token,
+                body: { title: newTitle.trim() },
+            });
+            setNewTitle("");
+            await load();
+        } catch { /* ignore */ }
+        finally { setAdding(false); }
+    }
+
+    async function handleToggleDone(item) {
+        // Оптимистичное обновление — не ждём ответа сервера, чтобы галочка отзывалась мгновенно
+        setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_done: !i.is_done } : i));
+        try {
+            await apiRequest({
+                path: `/tasks/${taskId}/checklist/${item.id}`, method: "PATCH", token,
+                body: { is_done: !item.is_done },
+            });
+        } catch {
+            setItems(prev => prev.map(i => i.id === item.id ? item : i)); // откат при ошибке
+        }
+    }
+
+    async function handleDelete(item) {
+        setItems(prev => prev.filter(i => i.id !== item.id));
+        try {
+            await apiRequest({ path: `/tasks/${taskId}/checklist/${item.id}`, method: "DELETE", token });
+        } catch {
+            await load(); // откат — проще перезагрузить, чем восстанавливать позицию в списке
+        }
+    }
+
+    async function handleMove(item, direction) {
+        const idx = items.findIndex(i => i.id === item.id);
+        const swapIdx = idx + direction;
+        if (swapIdx < 0 || swapIdx >= items.length) return;
+
+        const reordered = [...items];
+        [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+        setItems(reordered);
+
+        try {
+            await apiRequest({
+                path: `/tasks/${taskId}/checklist/reorder`, method: "PATCH", token,
+                body: { items: reordered.map((i, idx2) => ({ id: i.id, order_index: idx2 })) },
+            });
+        } catch {
+            await load();
+        }
+    }
+
+    const doneCount = items.filter(i => i.is_done).length;
+
+    return (
+        <div className="comments-panel">
+            <div className="comments-title">
+                ☑️ Чек-лист
+                {items.length > 0 && <span className="count-badge">{doneCount}/{items.length}</span>}
+            </div>
+            {loading ? (
+                <div className="comments-empty">Загрузка…</div>
+            ) : items.length === 0 ? (
+                <div className="comments-empty">Пунктов пока нет</div>
+            ) : (
+                <div className="comment-list">
+                    {items.map((item, idx) => (
+                        <div key={item.id} className="comment-item" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input
+                                type="checkbox"
+                                checked={item.is_done}
+                                onChange={() => handleToggleDone(item)}
+                                style={{ flexShrink: 0, width: 16, height: 16, cursor: "pointer" }}
+                            />
+                            <span style={{
+                                flex: 1,
+                                textDecoration: item.is_done ? "line-through" : "none",
+                                color: item.is_done ? "var(--text-muted)" : "var(--text)",
+                            }}>
+                                {item.title}
+                            </span>
+                            <button className="btn btn-ghost btn-sm" style={{ padding: "2px 6px" }}
+                                disabled={idx === 0} onClick={() => handleMove(item, -1)}>▲</button>
+                            <button className="btn btn-ghost btn-sm" style={{ padding: "2px 6px" }}
+                                disabled={idx === items.length - 1} onClick={() => handleMove(item, 1)}>▼</button>
+                            <button className="btn btn-danger btn-sm" style={{ padding: "2px 6px" }}
+                                onClick={() => handleDelete(item)}>
+                                <Icon d={ICONS.trash} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <div className="comment-form">
+                <input
+                    value={newTitle}
+                    onChange={e => setNewTitle(e.target.value)}
+                    placeholder="Новый пункт… (Enter)"
+                    onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+                />
+                <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={adding || !newTitle.trim()}>
+                    <Icon d={ICONS.plus} /> {adding ? "…" : "Добавить"}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+
+// ─── TagsPanel ─────────────────────────────────────────────
+function TagsPanel({ task, allTags, token, onTagsCreated, onSaved }) {
+    const [selectedIds, setSelectedIds] = useState(new Set((task.tags || []).map(t => t.id)));
+    const [saving, setSaving] = useState(false);
+    const [newTagName, setNewTagName] = useState("");
+    const [creating, setCreating] = useState(false);
+    const [error, setError] = useState(null);
+
+    function toggle(tagId) {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(tagId)) next.delete(tagId); else next.add(tagId);
+            return next;
+        });
+    }
+
+    async function handleSave() {
+        setSaving(true);
+        setError(null);
+        try {
+            const updated = await apiRequest({
+                path: `/tags/tasks/${task.id}`, method: "PUT", token,
+                body: { tag_ids: Array.from(selectedIds) },
+            });
+            onSaved?.(updated.tags || []);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function handleCreateTag() {
+        if (!newTagName.trim()) return;
+        setCreating(true);
+        setError(null);
+        try {
+            const tag = await apiRequest({
+                path: "/tags", method: "POST", token,
+                body: { name: newTagName.trim() },
+            });
+            setNewTagName("");
+            await onTagsCreated?.();
+            setSelectedIds(prev => new Set(prev).add(tag.id));
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setCreating(false);
+        }
+    }
+
+    return (
+        <div className="comments-panel">
+            <div className="comments-title">🏷️ Теги</div>
+            {allTags.length === 0 ? (
+                <div className="comments-empty">В команде пока нет ни одного тега — создайте первый ниже</div>
+            ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                    {allTags.map(tag => {
+                        const isSelected = selectedIds.has(tag.id);
+                        return (
+                            <button
+                                key={tag.id}
+                                type="button"
+                                onClick={() => toggle(tag.id)}
+                                style={{
+                                    padding: "5px 12px",
+                                    borderRadius: 14,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    border: `1px solid ${isSelected ? tag.color : "var(--border)"}`,
+                                    background: isSelected ? tag.color + "22" : "transparent",
+                                    color: isSelected ? tag.color : "var(--text-muted)",
+                                }}
+                            >
+                                {isSelected ? "✓ " : ""}{tag.name}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+            {error && <div className="alert" style={{ marginBottom: 8 }}>{error}</div>}
+            <div className="comment-form" style={{ marginBottom: 12 }}>
+                <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                    <Icon d={ICONS.save} /> {saving ? "Сохранение…" : "Сохранить теги"}
+                </button>
+            </div>
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                <div className="comment-form">
+                    <input
+                        value={newTagName}
+                        onChange={e => setNewTagName(e.target.value)}
+                        placeholder="Новый тег (например, клиент-X)…"
+                        onKeyDown={e => { if (e.key === "Enter") handleCreateTag(); }}
+                    />
+                    <button className="btn btn-ghost btn-sm" onClick={handleCreateTag} disabled={creating || !newTagName.trim()}>
+                        <Icon d={ICONS.plus} /> {creating ? "…" : "Создать тег"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
 // ─── Priority config ──────────────────────────────────────
 const PRIORITY_COLORS = { critical: "#ef4444", high: "#f97316", medium: "#3b82f6", low: "#6b7280" };
 const PRIORITY_LABELS = { critical: "Критический", high: "Высокий", medium: "Средний", low: "Низкий" };
@@ -440,13 +679,15 @@ function StatusMenu({ status, onChange, disabled }) {
 }
 
 // ─── TaskCard ─────────────────────────────────────────────
-function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole }) {
+function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole }) {
     const [expanded, setExpanded] = useState(!collapsible);
     const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [showAudit, setShowAudit] = useState(false);
     const [showAttachments, setShowAttachments] = useState(false);
     const [showReassign, setShowReassign] = useState(false);
+    const [showChecklist, setShowChecklist] = useState(false);
+    const [showTags, setShowTags] = useState(false);
     const [saving, setSaving] = useState(false);
     const formatForInput = (value) => {
         if (!value) return "";
@@ -467,6 +708,7 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
         title: task.title, description: task.description || "",
         deadline: formatForInput(task.deadline),
         priority: task.priority || "medium",
+        recurrence_rule: task.recurrence_rule || "none",
     });
     const [reassignUserId, setReassignUserId] = useState("");
     const [reassignGroupId, setReassignGroupId] = useState("");
@@ -481,6 +723,7 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                 ? new Date(editForm.deadline).toISOString()
                 : null,
             priority: editForm.priority,
+            recurrence_rule: editForm.recurrence_rule,
         });
         setSaving(false); setEditing(false);
     }
@@ -572,6 +815,23 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                             {task.comments_count > 0 && (
                                 <span className="meta-chip"><Icon d={ICONS.comment} /> {task.comments_count}</span>
                             )}
+                            {task.recurrence_rule && task.recurrence_rule !== "none" && (
+                                <span className="meta-chip" title="Повторяющаяся задача">
+                                    🔁 {{ daily: "Ежедневно", weekly: "Еженедельно", monthly: "Ежемесячно" }[task.recurrence_rule]}
+                                </span>
+                            )}
+                            {task.checklist_items?.length > 0 && (
+                                <span className="meta-chip">
+                                    ☑️ {task.checklist_items.filter(i => i.is_done).length}/{task.checklist_items.length}
+                                </span>
+                            )}
+                            {(task.tags || []).map(tag => (
+                                <span key={tag.id} className="meta-chip" style={{
+                                    background: tag.color + "22", color: tag.color, borderColor: tag.color + "55",
+                                }}>
+                                    {tag.name}
+                                </span>
+                            ))}
                         </div>
                     </div>
                     <span className={`badge ${task.status === "done" ? "badge-done" : "badge-active"}`}>
@@ -623,6 +883,17 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                             <option value="medium">🔵 Средний</option>
                             <option value="high">🟠 Высокий</option>
                             <option value="critical">🔴 Критический</option>
+                        </select>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Повторение</label>
+                        <select value={editForm.recurrence_rule}
+                            onChange={e => setEditForm(f => ({ ...f, recurrence_rule: e.target.value }))}>
+                            <option value="none">Не повторяется</option>
+                            <option value="daily">🔁 Каждый день</option>
+                            <option value="weekly">🔁 Каждую неделю</option>
+                            <option value="monthly">🔁 Каждый месяц</option>
                         </select>
                     </div>
 
@@ -688,6 +959,12 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowAttachments(v => !v)}>
                     📎 {showAttachments ? "Скрыть" : "Вложения"}
                 </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowChecklist(v => !v)}>
+                    ☑️ {showChecklist ? "Скрыть" : "Чек-лист"}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowTags(v => !v)}>
+                    🏷️ {showTags ? "Скрыть" : "Теги"}
+                </button>
                 <button className="btn btn-ghost btn-sm" onClick={() => { setShowAudit(v => !v); setShowComments(false); }}>
                     📋 {showAudit ? "Скрыть" : "История"}
                 </button>
@@ -703,6 +980,16 @@ function TaskCard({ task, groups, users, token, onToggle, onDelete, onUpdate, on
                     token={token}
                     currentUserId={currentUserId}
                     canDelete={currentRole === "admin" || currentRole === "manager"}
+                />
+            )}
+            {showChecklist && <ChecklistPanel taskId={task.id} token={token} />}
+            {showTags && (
+                <TagsPanel
+                    task={task}
+                    allTags={allTags}
+                    token={token}
+                    onTagsCreated={onTagsCreated}
+                    onSaved={(updatedTags) => onTagsUpdated?.(task.id, updatedTags)}
                 />
             )}
             {showAudit && <AuditPanel taskId={task.id} token={token} />}
@@ -1275,6 +1562,28 @@ function KanbanCard({ task, col, onDragStart, onDragEnd, onChangeStatus, isMovin
                     </span>
                 )}
             </div>
+
+            {/* Теги + чек-лист + повторение (компактно) */}
+            {((task.tags?.length > 0) || (task.checklist_items?.length > 0) || (task.recurrence_rule && task.recurrence_rule !== "none")) && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                    {task.recurrence_rule && task.recurrence_rule !== "none" && (
+                        <span style={{ fontSize: 10, color: "var(--text-muted)" }} title="Повторяющаяся задача">🔁</span>
+                    )}
+                    {task.checklist_items?.length > 0 && (
+                        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                            ☑️ {task.checklist_items.filter(i => i.is_done).length}/{task.checklist_items.length}
+                        </span>
+                    )}
+                    {(task.tags || []).map(tag => (
+                        <span key={tag.id} style={{
+                            fontSize: 10, padding: "1px 6px", borderRadius: 8,
+                            background: tag.color + "22", color: tag.color, fontWeight: 600,
+                        }}>
+                            {tag.name}
+                        </span>
+                    ))}
+                </div>
+            )}
 
             {/* Смена статуса без перетаскивания */}
             <div draggable={false} style={{ marginTop: 8 }} onMouseDown={e => e.stopPropagation()}>
@@ -2448,10 +2757,322 @@ function GroupsTab({ token, currentRole }) {
 }
 
 
+// ─── Tokens Tab ───────────────────────────────────────────
+function formatTokenDate(iso) {
+    if (!iso) return "—";
+    try {
+        return new Date(iso).toLocaleString("ru-RU", {
+            day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+        });
+    } catch { return "—"; }
+}
+
+function TokensTab({ token }) {
+    const [tokens, setTokens] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [newName, setNewName] = useState("");
+    const [expiresInDays, setExpiresInDays] = useState("");
+    const [creating, setCreating] = useState(false);
+    const [justCreated, setJustCreated] = useState(null); // { token, name } — показываем один раз
+    const [copied, setCopied] = useState(false);
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const data = await apiRequest({ path: "/tokens", token });
+            setTokens(Array.isArray(data) ? data : []);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [token]);
+
+    useEffect(() => { load(); }, [load]);
+
+    async function handleCreate(e) {
+        e.preventDefault();
+        if (!newName.trim()) return;
+        setCreating(true);
+        setError(null);
+        try {
+            const body = { name: newName.trim() };
+            if (expiresInDays) body.expires_in_days = Number(expiresInDays);
+            const created = await apiRequest({ path: "/tokens", method: "POST", token, body });
+            setJustCreated({ token: created.token, name: created.name });
+            setNewName("");
+            setExpiresInDays("");
+            setCopied(false);
+            await load();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setCreating(false);
+        }
+    }
+
+    async function handleRevoke(tokenId, name) {
+        if (!window.confirm(`Отозвать токен «${name}»? Все интеграции, использующие его, сразу перестанут работать.`)) return;
+        try {
+            await apiRequest({ path: `/tokens/${tokenId}`, method: "DELETE", token });
+            if (justCreated && tokens.find(t => t.id === tokenId)?.name === justCreated.name) {
+                setJustCreated(null);
+            }
+            await load();
+        } catch (err) {
+            setError(err.message);
+        }
+    }
+
+    async function handleCopy() {
+        try {
+            await navigator.clipboard.writeText(justCreated.token);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch { /* clipboard недоступен — пользователь скопирует вручную */ }
+    }
+
+    return (
+        <div>
+            <div className="card" style={{ marginTop: 0 }}>
+                <div className="section-header">
+                    <div>
+                        <div className="section-title">🔑 Персональные API-токены</div>
+                        <div className="section-sub">
+                            Для скриптов и интеграций (Zapier-подобные сценарии), которым неудобно
+                            перелогиниваться каждые 30 минут, как обычной веб-сессии.
+                        </div>
+                    </div>
+                </div>
+
+                {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
+
+                {justCreated && (
+                    <div className="alert" style={{
+                        marginBottom: 16, display: "flex", flexDirection: "column", gap: 8,
+                        borderColor: "#22c55e", background: "#22c55e11",
+                    }}>                        <div>
+                            <strong>Токен «{justCreated.name}» создан.</strong> Сохраните его сейчас —
+                            повторно посмотреть не получится, хранится только хэш.
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <code style={{
+                                flex: 1, padding: "8px 12px", background: "var(--surface2)",
+                                borderRadius: 6, fontSize: 13, wordBreak: "break-all",
+                            }}>
+                                {justCreated.token}
+                            </code>
+                            <button type="button" className="btn btn-sm btn-primary" onClick={handleCopy}>
+                                {copied ? "✓ Скопировано" : "Скопировать"}
+                            </button>
+                        </div>
+                        <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start" }}
+                            onClick={() => setJustCreated(null)}>
+                            Скрыть
+                        </button>
+                    </div>
+                )}
+
+                <form className="form" onSubmit={handleCreate} style={{ marginBottom: 20 }}>
+                    <div className="form-two-col">
+                        <div className="form-group">
+                            <label className="form-label">Название</label>
+                            <input
+                                value={newName}
+                                onChange={e => setNewName(e.target.value)}
+                                placeholder="Например: Zapier, личный скрипт…"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Срок действия (дней)</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="3650"
+                                value={expiresInDays}
+                                onChange={e => setExpiresInDays(e.target.value)}
+                                placeholder="Пусто — бессрочный"
+                            />
+                        </div>
+                    </div>
+                    <button className="btn btn-primary" type="submit" disabled={creating || !newName.trim()}>
+                        <Icon d={ICONS.plus} /> {creating ? "Создание…" : "Создать токен"}
+                    </button>
+                </form>
+
+                {loading ? (
+                    <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                ) : tokens.length === 0 ? (
+                    <div className="empty-state"><div className="empty-icon">🔑</div>Токенов пока нет</div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {tokens.map(t => {
+                            const isExpired = t.expires_at && new Date(t.expires_at) < new Date();
+                            return (
+                                <div key={t.id} style={{
+                                    display: "flex", alignItems: "center", gap: 12,
+                                    padding: "10px 14px", borderRadius: 8,
+                                    background: "var(--surface2)", border: "1px solid var(--border)",
+                                }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                                            {t.name}
+                                            {isExpired && <span className="meta-chip" style={{ background: "#ef444422", color: "#ef4444" }}>Истёк</span>}
+                                        </div>
+                                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                                            <code>{t.token_prefix}…</code>
+                                            {" · создан "}{formatTokenDate(t.created_at)}
+                                            {" · истекает: "}{t.expires_at ? formatTokenDate(t.expires_at) : "никогда"}
+                                            {" · использован: "}{t.last_used_at ? formatTokenDate(t.last_used_at) : "ни разу"}
+                                        </div>
+                                    </div>
+                                    <button className="btn btn-danger btn-sm" onClick={() => handleRevoke(t.id, t.name)}>
+                                        <Icon d={ICONS.trash} /> Отозвать
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+
 // ─── Dashboard Tab ────────────────────────────────────────
-function DashboardTab({ stats, loading, username, role }) {
-    if (loading) return <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка дашборда…</div>;
-    if (!stats) return <div className="empty-state"><div className="empty-icon">📊</div>Нет данных</div>;
+// ─── Push Notifications Card ───────────────────────────────
+// Конвертирует VAPID public key из base64url в Uint8Array — именно в таком
+// виде браузерный Push API ожидает applicationServerKey.
+function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+function PushNotificationsCard({ token }) {
+    const [supported] = useState(() => "serviceWorker" in navigator && "PushManager" in window);
+    const [subscribed, setSubscribed] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [checked, setChecked] = useState(false);
+
+    useEffect(() => {
+        if (!supported) { setChecked(true); return; }
+        (async () => {
+            try {
+                const reg = await navigator.serviceWorker.getRegistration();
+                const sub = reg ? await reg.pushManager.getSubscription() : null;
+                setSubscribed(!!sub);
+            } catch { /* ignore — просто считаем неподписанным */ }
+            finally { setChecked(true); }
+        })();
+    }, [supported]);
+
+    async function handleEnable() {
+        setBusy(true);
+        setError(null);
+        try {
+            if (Notification.permission === "denied") {
+                throw new Error("Уведомления заблокированы в настройках браузера для этого сайта.");
+            }
+            const permission = await Notification.requestPermission();
+            if (permission !== "granted") {
+                throw new Error("Разрешение на уведомления не получено.");
+            }
+
+            const reg = await navigator.serviceWorker.register("/sw.js");
+            await navigator.serviceWorker.ready;
+
+            const { public_key } = await apiRequest({ path: "/push/vapid-public-key", token });
+            if (!public_key) {
+                throw new Error("Push не настроен на сервере (нет VAPID-ключа).");
+            }
+
+            const subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(public_key),
+            });
+
+            await apiRequest({ path: "/push/subscribe", method: "POST", token, body: subscription.toJSON() });
+            setSubscribed(true);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function handleDisable() {
+        setBusy(true);
+        setError(null);
+        try {
+            const reg = await navigator.serviceWorker.getRegistration();
+            const sub = reg ? await reg.pushManager.getSubscription() : null;
+            if (sub) {
+                await apiRequest({ path: "/push/unsubscribe", method: "POST", token, body: { endpoint: sub.endpoint } });
+                await sub.unsubscribe();
+            }
+            setSubscribed(false);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    if (!supported) {
+        return null; // старые браузеры / iOS Safari < 16.4 — молча не показываем блок
+    }
+
+    if (!checked) return null; // не мигаем состоянием, пока не проверили реальную подписку
+
+    return (
+        <div className="card">
+            <div className="section-header">
+                <div>
+                    <div className="section-title">🔔 Push-уведомления в браузере</div>
+                    <div className="section-sub">
+                        Работает даже если вкладка закрыта — дублирует часть уведомлений Telegram-бота
+                        для тех, кто не хочет держать Telegram открытым.
+                    </div>
+                </div>
+                <button
+                    className={`btn btn-sm ${subscribed ? "btn-ghost" : "btn-primary"}`}
+                    onClick={subscribed ? handleDisable : handleEnable}
+                    disabled={busy}
+                >
+                    {busy ? "…" : subscribed ? "Выключить" : "Включить"}
+                </button>
+            </div>
+            {error && <div className="alert">{error}</div>}
+        </div>
+    );
+}
+
+function DashboardTab({ stats, loading, username, role, token }) {
+    const isManagerOrAdmin = role === "admin" || role === "manager";
+
+    if (loading) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 0 32px" }}>
+                <PushNotificationsCard token={token} />
+                <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка дашборда…</div>
+                {isManagerOrAdmin && <ManagerAnalyticsSection token={token} />}
+            </div>
+        );
+    }
+    if (!stats) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 0 32px" }}>
+                <PushNotificationsCard token={token} />
+                <div className="empty-state"><div className="empty-icon">📊</div>Нет данных</div>
+                {isManagerOrAdmin && <ManagerAnalyticsSection token={token} />}
+            </div>
+        );
+    }
 
     const completionPercent = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
     const authorPercent = stats.a_total > 0 ? Math.round((stats.a_done / stats.a_total) * 100) : 0;
@@ -2470,6 +3091,8 @@ function DashboardTab({ stats, loading, username, role }) {
                     </div>
                 </div>
             </div>
+
+            <PushNotificationsCard token={token} />
 
             {/* Мои задачи (исполнитель) */}
             <div className="card">
@@ -2553,7 +3176,126 @@ function DashboardTab({ stats, loading, username, role }) {
                     </div>
                 </div>
             )}
+
+            {/* Аналитика для менеджера/админа — отдельная секция, подгружает свои данные сама */}
+            {isManagerOrAdmin && <ManagerAnalyticsSection token={token} />}
         </div>
+    );
+}
+
+// ─── Manager Analytics Section ─────────────────────────────
+function ManagerAnalyticsSection({ token }) {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            setLoading(true);
+            try {
+                const result = await apiRequest({ path: "/analytics/dashboard", token });
+                if (!cancelled) setData(result);
+            } catch (err) {
+                if (!cancelled) setError(err.message);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [token]);
+
+    if (loading) {
+        return (
+            <div className="card">
+                <div className="section-title" style={{ marginBottom: 12 }}>📊 Аналитика команды</div>
+                <div className="empty-state"><div className="empty-icon">⏳</div>Считаем метрики…</div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="card">
+                <div className="section-title" style={{ marginBottom: 12 }}>📊 Аналитика команды</div>
+                <div className="alert">{error}</div>
+            </div>
+        );
+    }
+
+    const executors = data?.executor_completion || [];
+    const projects = data?.project_overdue || [];
+
+    return (
+        <>
+            <div className="card">
+                <div className="section-header">
+                    <div>
+                        <div className="section-title">📊 Закрытие задач в срок — по исполнителям</div>
+                        <div className="section-sub">Только задачи с дедлайном, которые уже завершены</div>
+                    </div>
+                </div>
+                {executors.length === 0 ? (
+                    <div className="empty-state"><div className="empty-icon">📊</div>Пока нет завершённых задач с дедлайном</div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {executors.map(e => (
+                            <div key={e.user_id}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 13 }}>
+                                    <span style={{ fontWeight: 600 }}>{e.username}</span>
+                                    <span style={{ color: "var(--text-muted)" }}>
+                                        {e.on_time}/{e.total_completed} в срок ({e.on_time_rate}%)
+                                    </span>
+                                </div>
+                                <div className="progress-track">
+                                    <div
+                                        className="progress-fill"
+                                        style={{
+                                            width: `${e.on_time_rate}%`,
+                                            background: e.on_time_rate >= 80 ? "var(--green)" : e.on_time_rate >= 50 ? "#f59e0b" : "#ef4444",
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div className="card">
+                <div className="section-header">
+                    <div>
+                        <div className="section-title">📊 Средняя просрочка — по проектам</div>
+                        <div className="section-sub">Среди задач, закрытых с опозданием (в днях)</div>
+                    </div>
+                </div>
+                {projects.length === 0 ? (
+                    <div className="empty-state"><div className="empty-icon">📊</div>Пока нет данных по проектам</div>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {projects.map(p => (
+                            <div key={p.project_id} style={{
+                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                padding: "8px 12px", borderRadius: 8, background: "var(--surface2)",
+                            }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{p.project_name}</div>
+                                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                        {p.completed_late}/{p.total_completed} закрыто с опозданием
+                                    </div>
+                                </div>
+                                <span style={{
+                                    fontSize: 16, fontWeight: 700,
+                                    color: p.avg_overdue_days === 0 ? "var(--green)" : p.avg_overdue_days > 3 ? "#ef4444" : "#f59e0b",
+                                }}>
+                                    {p.avg_overdue_days === 0 ? "✓ вовремя" : `+${p.avg_overdue_days} дн.`}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </>
     );
 }
 
@@ -2606,12 +3348,13 @@ function App() {
 
     const [groups, setGroups] = useState([]);
     const [users, setUsers] = useState([]);
+    const [allTags, setAllTags] = useState([]);
+    const [tagFilter, setTagFilter] = useState("");
 
     const [form, setForm] = useState(initialForm);
     const [assignType, setAssignType] = useState("self");
     const [selectedGroupId, setSelectedGroupId] = useState("");
     const [selectedUserId, setSelectedUserId] = useState("");
-    const [taskDone, setTaskDone] = useState(false);
 
     const tokenPayload = useMemo(() => decodeToken(token), [token]);
     const currentUserId = useMemo(() => tokenPayload?.sub ? Number(tokenPayload.sub) : null, [tokenPayload]);
@@ -2619,17 +3362,11 @@ function App() {
     const currentRole = useMemo(() => tokenPayload?.role ?? "user", [tokenPayload]);
     const canManage = currentRole === "admin" || currentRole === "manager";
 
-    // Поиск по задачам — по id (точное совпадение или префикс) и по title (без учёта регистра).
-    // Фильтрация клиентская, в пределах уже загруженной страницы задач.
-    const visibleTasks = useMemo(() => {
-        const q = searchQuery.trim().toLowerCase();
-        if (!q) return tasks;
-        return tasks.filter(t => {
-            const idMatch = String(t.id).includes(q);
-            const titleMatch = (t.title || "").toLowerCase().includes(q);
-            return idMatch || titleMatch;
-        });
-    }, [tasks, searchQuery]);
+    // Поиск теперь серверный (см. searchDebounceRef useEffect выше) — полнотекстовый
+    // по title+description на всех страницах, а не только по уже загруженной.
+    // Раньше здесь была клиентская фильтрация по подстроке в title/id —
+    // это скрывало бы результаты, найденные сервером по description.
+    const visibleTasks = tasks;
     const [showTooltip, setShowTooltip] = useState(false);
     const chipRef = React.useRef(null);
     const [tooltipPos, setTooltipPos] = useState({ top: 0, right: 0 });
@@ -2664,6 +3401,10 @@ function App() {
 
     const filterPriorityRef = React.useRef(filterPriority);
     filterPriorityRef.current = filterPriority;
+    const searchQueryRef = React.useRef(searchQuery);
+    searchQueryRef.current = searchQuery;
+    const tagFilterRef = React.useRef(tagFilter);
+    tagFilterRef.current = tagFilter;
     // AbortController отменяет предыдущий запрос при новом вызове
     const tasksAbortRef = React.useRef(null);
     const trashAbortRef = React.useRef(null);
@@ -2684,6 +3425,8 @@ function App() {
             if (filterTypeRef.current) q.set("filter_type", filterTypeRef.current);
             if (filterPriorityRef.current) q.set("priority", filterPriorityRef.current);
             if (statusFilterRef.current) q.set("status", statusFilterRef.current);
+            if (searchQueryRef.current.trim()) q.set("search", searchQueryRef.current.trim());
+            if (tagFilterRef.current) q.set("tag_id", tagFilterRef.current);
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
             // Если запрос был отменён — игнорируем результат
             if (controller.signal.aborted) return;
@@ -2753,6 +3496,15 @@ function App() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const loadTags = useCallback(async () => {
+        try {
+            const data = await apiRequest({ path: "/tags", token: tokenRef.current });
+            // /tags отдаёт плоский массив (не пагинированный список), extractItems тут не нужен
+            setAllTags(Array.isArray(data) ? data : []);
+        } catch { setAllTags([]); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Один эффект — все загрузки. Используем ref чтобы отделить
     // первый запуск (логин) от последующих (смена фильтров/вкладки).
     // isFirstRender объявлен ВНЕ useEffect и НЕ пересоздаётся при ре-рендере.
@@ -2775,9 +3527,9 @@ function App() {
             didInitRef.current = true;
             loadGroups();
             loadUsers();
+            loadTags();
             if (tab === "tasks") loadTasks(1);
             if (tab === "trash") loadTrash(1);
-            if (tab === "dashboard") loadDashboard();
             if (tab === "dashboard") loadDashboard();
         } else {
             // Смена фильтров/вкладки — только задачи
@@ -2786,7 +3538,21 @@ function App() {
             if (tab === "dashboard") loadDashboard();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, tab, filterType, statusFilter, viewMode, filterPriority]);
+    }, [token, tab, filterType, statusFilter, viewMode, filterPriority, tagFilter]);
+
+    // Полнотекстовый поиск — дебаунс 400мс, серверный (title+description),
+    // а не клиентская фильтрация по уже загруженной странице (та не видела бы
+    // совпадения в description и не искала бы по остальным страницам).
+    const searchDebounceRef = React.useRef(null);
+    useEffect(() => {
+        if (!didInitRef.current) return;
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = setTimeout(() => {
+            if (tab === "tasks") loadTasks(1);
+        }, 400);
+        return () => clearTimeout(searchDebounceRef.current);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchQuery]);
 
     // ── auth ─────────────────────────────────────────────
     function handleAuthError(err) {
@@ -2831,10 +3597,11 @@ function App() {
             const payload = {
                 title: form.title.trim(),
                 description: form.description.trim() || null,
-                is_done: taskDone,
+                status: form.status || "todo",
                 priority: form.priority || "medium",
                 project_id: form.project_id ? Number(form.project_id) : null,
                 deadline: form.deadline ? `${form.deadline}:00` : null,
+                recurrence_rule: form.recurrence_rule || "none",
             };
             if (assignType === "self") { payload.user_id = currentUserId; payload.group_id = null; }
             else if (assignType === "user") { payload.user_id = selectedUserId ? Number(selectedUserId) : null; payload.group_id = null; }
@@ -2843,7 +3610,7 @@ function App() {
 
             await apiRequest({ path: "/tasks", method: "POST", token, body: payload });
             setForm(initialForm); setAssignType("self");
-            setSelectedGroupId(""); setSelectedUserId(""); setTaskDone(false);
+            setSelectedGroupId(""); setSelectedUserId("");
             await loadTasks(1);
         } catch (err) { handleAuthError(err); }
     }
@@ -2905,6 +3672,52 @@ function App() {
         } catch (err) {
             await loadTasks(tasksPage);
             handleAuthError(err);
+        }
+    }
+
+    // TagsPanel сам делает PUT /tags/tasks/{id} — этот колбэк только
+    // синхронизирует локальный кэш tasks[], чтобы чипы тегов в мета-строке
+    // карточки обновились сразу, без повторной загрузки всей страницы.
+    function handleTaskTagsUpdated(taskId, updatedTags) {
+        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, tags: updatedTags } : t));
+    }
+
+    const [exporting, setExporting] = useState(false);
+    async function handleExportCsv() {
+        // Экспорт отдаёт CSV-файл, а не JSON — apiRequest() из ./api не подходит
+        // (он всегда пытается JSON.parse ответ), поэтому здесь прямой fetch с
+        // ручной обработкой Blob и скачиванием через временную ссылку <a>.
+        setExporting(true);
+        try {
+            const q = new URLSearchParams();
+            if (statusFilter) q.set("status", statusFilter);
+            if (filterPriority) q.set("priority", filterPriority);
+            if (tagFilter) q.set("tag_id", tagFilter);
+
+            const response = await fetch(`${API_BASE}/tasks/export?${q}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || `Ошибка ${response.status}`);
+            }
+            const blob = await response.blob();
+            const disposition = response.headers.get("Content-Disposition") || "";
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            const filename = match ? match[1] : "tasks_export.csv";
+
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setExporting(false);
         }
     }
 
@@ -3072,6 +3885,9 @@ function App() {
                                 <Icon d={ICONS.trash} /> Корзина
                                 {trashTotal > 0 && <span className="count-badge">{trashTotal}</span>}
                             </button>
+                            <button className={`tab-btn${tab === "tokens" ? " active" : ""}`} onClick={() => setTab("tokens")}>
+                                🔑 Токены
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -3193,10 +4009,11 @@ function App() {
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Статус</label>
-                                            <select value={taskDone ? "done" : "new"}
-                                                onChange={e => setTaskDone(e.target.value === "done")}>
-                                                <option value="new">В работе</option>
-                                                <option value="done">Выполнено</option>
+                                            <select value={form.status || "todo"}
+                                                onChange={e => setForm({ ...form, status: e.target.value })}>
+                                                {STATUS_LIST.map(s => (
+                                                    <option key={s.key} value={s.key}>{s.icon} {s.label}</option>
+                                                ))}
                                             </select>
                                         </div>
                                     </div>
@@ -3207,6 +4024,15 @@ function App() {
                                             <option value="medium">🔵 Средний</option>
                                             <option value="high">🟠 Высокий</option>
                                             <option value="critical">🔴 Критический</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Повторение</label>
+                                        <select value={form.recurrence_rule || "none"} onChange={e => setForm({ ...form, recurrence_rule: e.target.value })}>
+                                            <option value="none">Не повторяется</option>
+                                            <option value="daily">🔁 Каждый день</option>
+                                            <option value="weekly">🔁 Каждую неделю</option>
+                                            <option value="monthly">🔁 Каждый месяц</option>
                                         </select>
                                     </div>
                                     <div className="form-group">
@@ -3255,37 +4081,54 @@ function App() {
                                     <div>
                                         <div className="section-title">Задачи</div>
                                         <div className="section-sub">
-                                            {searchQuery.trim()
-                                                ? `${visibleTasks.length} из ${tasks.length} на странице`
-                                                : tasksTotal > 0
-                                                    ? `${tasksTotal} задач · стр. ${tasksPage}/${tasksTotalPages}`
-                                                    : "Нет задач"}
+                                            {tasksTotal > 0
+                                                ? `${tasksTotal} задач${searchQuery.trim() ? " (по запросу)" : ""} · стр. ${tasksPage}/${tasksTotalPages}`
+                                                : "Нет задач"}
                                         </div>
                                     </div>
-                                    <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
-                                        <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
-                                    </button>
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                        <button className="btn btn-ghost btn-sm" onClick={handleExportCsv} disabled={exporting}>
+                                            📄 {exporting ? "Экспорт…" : "Экспорт в CSV"}
+                                        </button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
+                                            <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="form-group" style={{ marginBottom: 12 }}>
-                                    <input
-                                        type="text"
-                                        value={searchQuery}
-                                        onChange={e => setSearchQuery(e.target.value)}
-                                        placeholder="Поиск по названию или ID задачи…"
-                                    />
+                                <div className="form-two-col" style={{ marginBottom: 12 }}>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <input
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                            placeholder="Поиск по названию и описанию…"
+                                        />
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <select value={tagFilter} onChange={e => setTagFilter(e.target.value)}>
+                                            <option value="">Все теги</option>
+                                            {allTags.map(t => (
+                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                                 {loading ? (
                                     <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка задач…</div>
                                 ) : tasks.length === 0 ? (
-                                    <div className="empty-state"><div className="empty-icon">📋</div>Задач нет. Создайте первую!</div>
-                                ) : visibleTasks.length === 0 ? (
-                                    <div className="empty-state"><div className="empty-icon">🔍</div>Ничего не найдено по запросу «{searchQuery}»</div>
+                                    <div className="empty-state">
+                                        <div className="empty-icon">{searchQuery.trim() ? "🔍" : "📋"}</div>
+                                        {searchQuery.trim() ? `Ничего не найдено по запросу «${searchQuery}»` : "Задач нет. Создайте первую!"}
+                                    </div>
                                 ) : (
                                     <>
                                         <div className="task-list">
                                             {visibleTasks.map(task => (
                                                 <TaskCard key={task.id} task={task}
                                                     groups={groups} users={users} token={token}
+                                                    allTags={allTags}
+                                                    onTagsCreated={loadTags}
+                                                    onTagsUpdated={handleTaskTagsUpdated}
                                                     onToggle={handleToggleTask}
                                                     onDelete={handleDeleteTask}
                                                     onUpdate={handleUpdateTask}
@@ -3311,6 +4154,7 @@ function App() {
                         loading={dashLoading}
                         username={currentUsername}
                         role={currentRole}
+                        token={token}
                     />
                 </div>
             )}
@@ -3336,6 +4180,11 @@ function App() {
             {tab === "templates" && (
                 <div>
                     <TemplatesTab token={token} />
+                </div>
+            )}
+            {tab === "tokens" && (
+                <div>
+                    <TokensTab token={token} />
                 </div>
             )}
             {/* ── TRASH TAB ── */}

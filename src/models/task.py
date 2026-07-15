@@ -11,12 +11,14 @@ from src.db import Base
 
 # from enum import Enum
 from src.models.audit import AuditMixin, SoftDeleteMixin
-from src.models.enums import TaskPriority, TaskStatus
+from src.models.enums import RecurrenceRule, TaskPriority, TaskStatus
 
 if TYPE_CHECKING:
     from src.models.attachment_model import AttachmentModel
+    from src.models.checklist import TaskChecklistItemModel
     from src.models.group import GroupModel
     from src.models.project import ProjectModel
+    from src.models.tag import TagModel
     from src.models.user import (
         UserModel,
     )
@@ -63,6 +65,17 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         server_default="todo",
         nullable=False,
     )
+    recurrence_rule: Mapped[RecurrenceRule] = mapped_column(
+        SAEnum(RecurrenceRule, name="recurrencerule"),
+        default=RecurrenceRule.none,
+        server_default="none",
+        nullable=False,
+    )
+    # Момент перехода в status=done — НЕ то же самое, что updated_at (тот
+    # трогается при ЛЮБОМ изменении задачи, включая правки после завершения).
+    # Нужен отдельно для точной аналитики "закрыто в срок/не в срок".
+    # Обнуляется, если задачу переоткрыли (done -> любой другой статус).
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["UserModel"] = relationship(
         "UserModel",
@@ -93,6 +106,19 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
         "AttachmentModel",
         back_populates="task",
         cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    checklist_items: Mapped[list["TaskChecklistItemModel"]] = relationship(
+        "TaskChecklistItemModel",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskChecklistItemModel.order_index",
+        lazy="selectin",
+    )
+    tags: Mapped[list["TagModel"]] = relationship(
+        "TagModel",
+        secondary="task_tags",
+        back_populates="tasks",
         lazy="selectin",
     )
 

@@ -2,15 +2,24 @@
 src/services/voice_ai.py
 
 STT: Groq Whisper large-v3
+TTS: Microsoft Edge TTS (ru-RU-DmitryNeural по умолчанию) — синтез голосовых
+     уведомлений. НЕ Groq: Groq Orpheus умеет только английский (и отдельно
+     саудовский арабский) — реальный прогон на русской фразе "У вас 8
+     просроченных задач" дал "У вас eight просроченных задач" — числа читались
+     по-английски прямо посреди русского текста. Edge TTS — бесплатный сервис
+     от Microsoft (тот же движок, что в Windows Narrator/Edge browser),
+     с нормальными русским и украинским голосами.
 LLM: Groq LLaMA 3.3 70B с tool calling + memory
 """
 
+import asyncio
 import json
 import logging
 import os
 import tempfile
 from datetime import date, timedelta
 
+import edge_tts
 from groq import AsyncGroq
 from groq.types.chat import ChatCompletionMessageParam  # type: ignore[import]
 
@@ -20,12 +29,79 @@ logger = logging.getLogger(__name__)
 
 _groq_client: AsyncGroq | None = None
 
+# ru-RU-DmitryNeural — мужской голос, звучит естественно для системных
+# уведомлений. Женская альтернатива: ru-RU-SvetlanaNeural.
+# Полный список: `edge-tts --list-voices` или edge_tts.list_voices().
+DEFAULT_TTS_VOICE = "ru-RU-DmitryNeural"
+
 
 def _get_groq() -> AsyncGroq:
     global _groq_client
     if _groq_client is None:
         _groq_client = AsyncGroq(api_key=GROQ_API_KEY)
     return _groq_client
+
+
+async def _mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes:
+    """
+    Перекодирует MP3 в OGG/Opus через ffmpeg — Telegram принимает как
+    голосовое сообщение (`send_voice`) только Opus в контейнере OGG, а
+    Edge TTS отдаёт только MP3 (формат сервиса Microsoft, без вариантов).
+
+    Работает через pipe (stdin/stdout), без временных файлов — быстрее и
+    не оставляет мусора на диске при сбое до удаления temp-файла.
+
+    ВАЖНО: требует установленный ffmpeg в системе/контейнере (см.
+    Dockerfile — добавлен `apt-get install ffmpeg`). Без него этот вызов
+    упадёт с FileNotFoundError.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-i",
+        "pipe:0",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "32k",
+        "-vbr",
+        "on",
+        "-f",
+        "ogg",
+        "pipe:1",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate(input=mp3_bytes)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg mp3->ogg conversion failed: {stderr.decode(errors='replace')[:500]}")
+    return stdout
+
+
+async def synthesize_speech(text: str, voice: str = DEFAULT_TTS_VOICE) -> bytes:
+    """
+    Синтезирует речь через Microsoft Edge TTS, возвращает байты в формате
+    OGG/Opus — готовом для отправки как `voice` (голосовое сообщение) в
+    Telegram. Edge TTS отдаёт только MP3, поэтому внутри есть перекодирование
+    через ffmpeg (см. _mp3_to_ogg_opus).
+
+    Не ловит исключения сама — вызывающий код (бот) должен сам решить,
+    как реагировать на сбой TTS (например, откатиться на обычный текст).
+    """
+    communicate = edge_tts.Communicate(text, voice)
+    mp3_chunks = []
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            data = chunk.get("data")
+            if data:
+                mp3_chunks.append(data)
+                # mp3_chunks.append(chunk["data"])
+
+    if not mp3_chunks:
+        raise RuntimeError("Edge TTS не вернул аудио (пустой ответ)")
+
+    mp3_bytes = b"".join(mp3_chunks)
+    return await _mp3_to_ogg_opus(mp3_bytes)
 
 
 # ── Tools definition ──────────────────────────────────────────────────────────

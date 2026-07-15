@@ -23,6 +23,9 @@ from src.core.security import hash_password
 from src.db import Base
 from src.models import CommentModel, GroupModel, SpisokModel, UserModel  # noqa: F401
 
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 warnings.filterwarnings(
     "ignore",
     message="coroutine '.*' was never awaited",
@@ -31,8 +34,8 @@ warnings.filterwarnings(
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# if sys.platform == "win32":
+#     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @pytest_asyncio.fixture

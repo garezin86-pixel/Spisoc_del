@@ -20,6 +20,10 @@ class NotificationSettingsModel(Base):
     notify_task_updated: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_comment: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_group_assigned: Mapped[bool] = mapped_column(Boolean, default=True)  # Добавить
+    # Голосовые уведомления (TTS через Groq) — по умолчанию выключены (opt-in):
+    # синтез речи стоит денег за каждый вызов API, не всем нужен голосовой
+    # формат, и качество синтеза русского текста менее проверено, чем STT.
+    voice_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())

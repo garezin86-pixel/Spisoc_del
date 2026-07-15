@@ -10,8 +10,11 @@ from pydantic import (
     model_validator,
 )
 
+from src.models.enums import RecurrenceRule
 from src.models.task import TaskPriority, TaskStatus
+from src.schemas.checklist import ChecklistItemSchema
 from src.schemas.group import GroupSchema
+from src.schemas.tag import TagSchema
 from src.schemas.user import UserSchemaForTask
 
 
@@ -25,6 +28,7 @@ class SpisokAddSchema(BaseModel):
     project_id: Optional[int] = Field(default=None, ge=1)
     priority: TaskPriority = TaskPriority.medium
     status: TaskStatus = TaskStatus.todo
+    recurrence_rule: RecurrenceRule = RecurrenceRule.none
 
     @field_validator("user_id", "group_id")
     def validate_ids(cls, v):
@@ -65,6 +69,9 @@ class SpisokSchema(BaseModel):
     project_id: Optional[int] = None
     priority: TaskPriority = TaskPriority.medium
     status: TaskStatus = TaskStatus.todo
+    recurrence_rule: RecurrenceRule = RecurrenceRule.none
+    tags: list[TagSchema] = []
+    checklist_items: list[ChecklistItemSchema] = []
 
     created_at: datetime
     updated_at: datetime | None
@@ -80,6 +87,7 @@ class SpisokUpdate(BaseModel):
     deadline: Optional[datetime] = None
     priority: Optional[TaskPriority] = None
     status: Optional[TaskStatus] = None
+    recurrence_rule: Optional[RecurrenceRule] = None
 
     @field_validator("deadline")
     @classmethod

@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi.responses import StreamingResponse
 from fastapi_cache.decorator import cache
 
 from src.core.dependencies import get_current_user
@@ -22,6 +25,7 @@ from src.schemas.task import (
     TaskStatusUpdate,
 )
 from src.services.notifications import notify_task_assigned
+from src.services.task_export_service import TaskExportService
 from src.services.task_service import TaskService
 from src.services.ws_events import (
     emit_kanban_moved,
@@ -70,6 +74,10 @@ async def filter_tasks(
     filter_type: TaskFilter | None = Query(None),
     priority: TaskPriorityFilter | None = Query(None),
     status: TaskStatus | None = Query(None, description="Фильтр по статусу канбана"),
+    search: str | None = Query(
+        None, min_length=1, max_length=200, description="Полнотекстовый поиск по названию и описанию"
+    ),
+    tag_id: int | None = Query(None, description="Фильтр по тегу"),
     limit: int | None = Query(None, ge=1, le=100),
 ):
     final_limit = limit or pagination.size
@@ -83,6 +91,8 @@ async def filter_tasks(
         filter_type=filter_type,
         priority=priority,
         status=status,
+        search=search,
+        tag_id=tag_id,
     )
 
     return PaginatedResponse.create(
@@ -112,6 +122,44 @@ async def list_deleted_tasks(
         search=search,
     )
     return PaginatedResponse.create(items=tasks, total=total, page=pagination.page, size=pagination.size)
+
+
+@router.get(
+    "/export",
+    summary="Экспорт задач в CSV",
+    description=(
+        "Выгружает задачи в CSV-файл (для отчётности перед начальством и т.п.). "
+        "Обычный пользователь всегда видит в выгрузке только свои задачи "
+        "(автор или исполнитель) — это проверяется на сервере, независимо от "
+        "переданных фильтров. admin/manager видят всё, что подпадает под фильтры."
+    ),
+)
+async def export_tasks_csv(
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+    project_id: int | None = Query(None),
+    status: TaskStatus | None = Query(None),
+    priority: TaskPriorityFilter | None = Query(None),
+    tag_id: int | None = Query(None),
+    deadline_from: datetime | None = Query(None, description="Начало периода (по дедлайну)"),
+    deadline_to: datetime | None = Query(None, description="Конец периода (по дедлайну)"),
+):
+    csv_content = await TaskExportService(TaskRepository(session)).export_tasks_csv(
+        current_user,
+        project_id=project_id,
+        status=status,
+        priority=priority,
+        tag_id=tag_id,
+        deadline_from=deadline_from,
+        deadline_to=deadline_to,
+    )
+
+    filename = f"tasks_export_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return StreamingResponse(
+        iter([csv_content.encode("utf-8")]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── Канбан GET — должен быть до /{task_id} ────────────────────────────────────

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 from src.admin.views.admin_auth import AdminAuth
+from src.admin.views.attachment_admin import AttachmentAdmin
 from src.admin.views.comment_admin import CommentAdmin
 from src.admin.views.group_admin import GroupAdmin
 from src.admin.views.notification_stats_view import NotificationStatsView
@@ -40,12 +41,14 @@ def setup_admin(app, engine):
     UserAdmin._session_maker = session_maker  # ← до регистрации
     TaskTemplateAdmin._session_maker = session_maker
     admin.add_view(UserAdmin)
+    admin.add_view(GroupAdmin)
     admin.add_view(TaskAdmin)
+    admin.add_view(CommentAdmin)
     admin.add_view(ProjectAdmin)
     admin.add_view(TaskTemplateAdmin)
     admin.add_view(TaskTemplateItemAdmin)
-    admin.add_view(GroupAdmin)
-    admin.add_view(CommentAdmin)
+    admin.add_view(AttachmentAdmin)
+    admin.add_view(TrashTaskAdmin)
     admin.add_view(NotificationLogAdmin)
 
     StatsView._session_maker = session_maker
@@ -55,4 +58,3 @@ def setup_admin(app, engine):
     admin.add_base_view(NotificationStatsView)
     admin.add_base_view(StatsView)
     admin.add_base_view(StatusView)
-    admin.add_view(TrashTaskAdmin)

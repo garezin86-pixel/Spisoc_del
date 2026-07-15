@@ -11,7 +11,9 @@ if TYPE_CHECKING:
     from src.models.attachment_model import AttachmentModel
     from src.models.comment import CommentModel
     from src.models.group import GroupModel
+    from src.models.personal_access_token import PersonalAccessTokenModel
     from src.models.project import ProjectModel
+    from src.models.push_subscription import PushSubscriptionModel
 
 
 class UserRole(str, Enum):
@@ -47,6 +49,16 @@ class UserModel(Base):
     notification_settings = relationship("NotificationSettingsModel", back_populates="user", uselist=False)
 
     notification_logs = relationship("NotificationLogModel", back_populates="user", cascade="all, delete-orphan")
+    personal_access_tokens: Mapped[list["PersonalAccessTokenModel"]] = relationship(
+        "PersonalAccessTokenModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    push_subscriptions: Mapped[list["PushSubscriptionModel"]] = relationship(
+        "PushSubscriptionModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     attachments: Mapped[list["AttachmentModel"]] = relationship(
         "AttachmentModel",
         back_populates="uploader",
