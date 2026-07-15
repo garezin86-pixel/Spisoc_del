@@ -280,6 +280,56 @@ class MockTaskRepository(AbstractTaskRepository):
 
         return tasks
 
+    # === Экспорт и аналитика ===
+    async def export_tasks(
+        self,
+        *,
+        user_id: int,
+        filter_user_group=None,
+        group_id: int | None = None,
+        project_id: int | None = None,
+        status=None,
+        priority: str | None = None,
+        tag_id: int | None = None,
+        deadline_from=None,
+        deadline_to=None,
+        max_rows: int = 10_000,
+    ) -> list[SpisokModel]:
+        """
+        Упрощённая версия для юнит-тестов: без ролевой фильтрации
+        (filter_user_group игнорируется — TaskExportService сам решает,
+        передавать его или нет, это тестируется отдельно через реальный
+        TaskRepository в tests/test_task_export.py, не через мок).
+        """
+        tasks = self._tasks.copy()
+
+        if project_id is not None:
+            tasks = [t for t in tasks if t.project_id == project_id]
+        if status is not None:
+            tasks = [t for t in tasks if t.status == status]
+        if priority is not None:
+            tasks = [t for t in tasks if getattr(t, "priority", None) == priority]
+        if tag_id is not None:
+            tasks = [
+                t for t in tasks if any(getattr(tag, "id", None) == tag_id for tag in getattr(t, "tags", []) or [])
+            ]
+        if deadline_from is not None:
+            tasks = [t for t in tasks if t.deadline and t.deadline >= deadline_from]
+        if deadline_to is not None:
+            tasks = [t for t in tasks if t.deadline and t.deadline <= deadline_to]
+
+        return tasks[:max_rows]
+
+    async def get_tasks_for_analytics(self) -> list[SpisokModel]:
+        """
+        Упрощённая версия для юнит-тестов: как и в реальном TaskRepository,
+        отдаёт только задачи, у которых есть и deadline, и completed_at —
+        сама агрегация считается в AnalyticsService, не здесь. Подробное
+        тестирование расчётов — через реальный TaskRepository в
+        tests/test_analytics_service.py, не через мок.
+        """
+        return [t for t in self._tasks if getattr(t, "deadline", None) and getattr(t, "completed_at", None)]
+
 
 # ---------------------------------------------------------------------------
 # Group

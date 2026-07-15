@@ -1,6 +1,7 @@
 from typing import Any
 
 import structlog
+from aiogram.types import BufferedInputFile
 
 from src.bot.keyboards.notification_keyboard import task_action_keyboard
 from src.core.metrics import notifications_failed, notifications_sent
@@ -48,4 +49,25 @@ class NotificationSender:
             return True, None
         except Exception as exc:
             logger.error("Ошибка отправки уведомления", user_id=user.id, error=str(exc))
+            return False, str(exc)[:500]
+
+    async def send_voice(self, user, text: str, notification_type: str = "voice_reminder"):
+        """
+        Синтезирует текст в речь (Groq PlayAI TTS) и отправляет как голосовое
+        сообщение в Telegram. Ошибка TTS/отправки НЕ пробрасывается наружу —
+        голосовое уведомление всегда идёт "бонусом" поверх уже отправленного
+        текстового, а не вместо него; если TTS недоступен (сбой Groq API,
+        превышена квота и т.п.), пользователь всё равно получил текст.
+        """
+        try:
+            from src.services.voice_ai import synthesize_speech
+
+            audio_bytes = await synthesize_speech(text)
+            voice_file = BufferedInputFile(audio_bytes, filename="reminder.ogg")
+            await self.bot.send_voice(chat_id=user.telegram_id, voice=voice_file)
+            notifications_sent.labels(type=notification_type).inc()
+            return True, None
+        except Exception as exc:
+            logger.warning("Ошибка синтеза/отправки голосового уведомления", user_id=user.id, error=str(exc))
+            notifications_failed.labels(type=notification_type).inc()
             return False, str(exc)[:500]

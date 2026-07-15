@@ -7,6 +7,7 @@ Groq-клиент везде мокается: реальные сетевые �
 инструментов и построение system-prompt с датами, что вполне тестируется без сети.
 """
 
+import asyncio
 import json
 import os
 from types import SimpleNamespace
@@ -15,9 +16,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.services.voice_ai import (
+    _mp3_to_ogg_opus,
     _system_prompt,
     call_llm_with_tools,
     process_voice_message,
+    synthesize_speech,
     transcribe_voice,
 )
 
@@ -30,6 +33,11 @@ def make_chat_response(finish_reason="tool_calls", tool_calls=None, content=None
     message = SimpleNamespace(tool_calls=tool_calls, content=content)
     choice = SimpleNamespace(finish_reason=finish_reason, message=message)
     return SimpleNamespace(choices=[choice])
+
+
+async def _async_gen(items):
+    for item in items:
+        yield item
 
 
 @pytest.fixture
@@ -52,6 +60,155 @@ class TestGetGroqSingleton:
             assert client1 is client2
         finally:
             voice_ai_module._groq_client = None
+
+
+class TestSynthesizeSpeech:
+    """
+    TTS теперь Edge TTS (Microsoft), не Groq — Groq Orpheus не поддерживает
+    русский язык (реальный прогон на "У вас 8 просроченных задач" читал "8"
+    как английское "eight" посреди русской фразы). edge_tts.Communicate и
+    ffmpeg-конвертация мокаются — реальная сеть/бинарник недопустимы в юнит-тестах.
+    """
+
+    @pytest.mark.asyncio
+    async def test_calls_edge_tts_with_correct_text_and_voice(self):
+        fake_communicate = AsyncMock()
+        fake_communicate.stream = lambda: _async_gen([{"type": "audio", "data": b"mp3-bytes"}])
+
+        with (
+            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate) as mock_communicate,
+            patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock) as mock_convert,
+        ):
+            mock_convert.return_value = b"ogg-bytes"
+            result = await synthesize_speech("Привет, мир", voice="ru-RU-SvetlanaNeural")
+
+        mock_communicate.assert_called_once_with("Привет, мир", "ru-RU-SvetlanaNeural")
+        assert result == b"ogg-bytes"
+
+    @pytest.mark.asyncio
+    async def test_uses_default_voice_when_not_specified(self):
+        fake_communicate = AsyncMock()
+        fake_communicate.stream = lambda: _async_gen([{"type": "audio", "data": b"x"}])
+
+        with (
+            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate) as mock_communicate,
+            patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock, return_value=b"ogg"),
+        ):
+            await synthesize_speech("Текст")
+
+        assert mock_communicate.call_args.args[1] == "ru-RU-DmitryNeural"
+
+    @pytest.mark.asyncio
+    async def test_concatenates_multiple_audio_chunks(self):
+        fake_communicate = AsyncMock()
+        fake_communicate.stream = lambda: _async_gen(
+            [
+                {"type": "audio", "data": b"chunk1-"},
+                {"type": "audio", "data": b"chunk2-"},
+                {"type": "audio", "data": b"chunk3"},
+            ]
+        )
+
+        with (
+            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate),
+            patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock) as mock_convert,
+        ):
+            mock_convert.return_value = b"ogg"
+            await synthesize_speech("Текст")
+
+        mock_convert.assert_called_once_with(b"chunk1-chunk2-chunk3")
+
+    @pytest.mark.asyncio
+    async def test_ignores_non_audio_chunks(self):
+        """edge-tts также шлёт WordBoundary-метаданные вперемешку с аудио — их нужно игнорировать."""
+        fake_communicate = AsyncMock()
+        fake_communicate.stream = lambda: _async_gen(
+            [
+                {"type": "WordBoundary", "offset": 0, "duration": 100, "text": "У"},
+                {"type": "audio", "data": b"real-audio"},
+                {"type": "WordBoundary", "offset": 100, "duration": 100, "text": "вас"},
+            ]
+        )
+
+        with (
+            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate),
+            patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock) as mock_convert,
+        ):
+            mock_convert.return_value = b"ogg"
+            await synthesize_speech("У вас")
+
+        mock_convert.assert_called_once_with(b"real-audio")
+
+    @pytest.mark.asyncio
+    async def test_empty_audio_raises_runtime_error(self):
+        fake_communicate = AsyncMock()
+        fake_communicate.stream = lambda: _async_gen([])  # сервис ничего не вернул
+
+        with patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate):
+            with pytest.raises(RuntimeError, match="Edge TTS"):
+                await synthesize_speech("Текст")
+
+
+class TestMp3ToOggOpus:
+    @pytest.mark.asyncio
+    async def test_calls_ffmpeg_with_expected_args(self):
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"ogg-output", b""))
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc) as mock_exec:
+            result = await _mp3_to_ogg_opus(b"fake-mp3-bytes")
+
+        assert result == b"ogg-output"
+        args = mock_exec.call_args.args
+        assert args[0] == "ffmpeg"
+        assert "libopus" in args
+        mock_proc.communicate.assert_called_once_with(input=b"fake-mp3-bytes")
+
+    @pytest.mark.asyncio
+    async def test_nonzero_return_code_raises(self):
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", b"ffmpeg: invalid data"))
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc):
+            with pytest.raises(RuntimeError, match="ffmpeg"):
+                await _mp3_to_ogg_opus(b"garbage")
+
+    @pytest.mark.asyncio
+    async def test_real_ffmpeg_conversion_end_to_end(self):
+        """
+        Настоящий вызов ffmpeg (не мок) — пропускается, если ffmpeg не
+        установлен в системе (например, в этом конкретном CI-раннере).
+        Полезен как быстрая ручная проверка, что бинарник действительно
+        умеет то, что от него ожидается (libopus, вывод через pipe).
+        """
+        import shutil
+
+        if not shutil.which("ffmpeg"):
+            pytest.skip("ffmpeg не установлен в этом окружении")
+
+        # Генерируем короткий синус в MP3 через сам ffmpeg — не нужен edge-tts
+        gen_proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.5",
+            "-c:a",
+            "libmp3lame",
+            "-f",
+            "mp3",
+            "pipe:1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        mp3_bytes, _ = await gen_proc.communicate()
+        assert len(mp3_bytes) > 0
+
+        ogg_bytes = await _mp3_to_ogg_opus(mp3_bytes)
+
+        assert ogg_bytes[:4] == b"OggS"  # магическое число формата OGG
 
 
 class TestTranscribeVoice:

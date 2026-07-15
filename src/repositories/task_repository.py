@@ -1,11 +1,12 @@
 from datetime import date, datetime, time
 from typing import Optional
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.models.comment import CommentModel
+from src.models.tag import TagModel
 from src.models.task import SpisokModel, TaskStatus
 from src.repositories.abstract.base_task_repository import AbstractTaskRepository
 
@@ -143,6 +144,32 @@ class TaskRepository(AbstractTaskRepository):
         total = await self.session.scalar(select(func.count()).select_from(base_query.subquery()))
         return total if total is not None else 0
 
+    def _apply_fulltext_search(self, query, search: str):
+        """Добавляет полнотекстовый поиск по title+description.
+
+        На PostgreSQL используется GIN-индекс по to_tsvector('russian', title || ' ' || description)
+        (см. миграцию f2a3b4c5d6e7) — быстрый поиск с учётом словоформ.
+        На SQLite (юнит-тесты, aiosqlite) tsvector недоступен, поэтому используется
+        обычный ILIKE по обоим полям — функционально эквивалентно для тестовых целей,
+        просто без ранжирования по релевантности.
+        """
+        dialect = self.session.get_bind().dialect.name
+        if dialect == "postgresql":
+            combined = func.to_tsvector(
+                "russian",
+                func.coalesce(SpisokModel.title, "") + " " + func.coalesce(SpisokModel.description, ""),
+            )
+            ts_query = func.plainto_tsquery("russian", search)
+            return query.where(combined.op("@@")(ts_query))
+        else:
+            pattern = f"%{search}%"
+            return query.where(
+                or_(
+                    SpisokModel.title.ilike(pattern),
+                    SpisokModel.description.ilike(pattern),
+                )
+            )
+
     def _build_filtered_tasks_query(
         self,
         *,
@@ -154,12 +181,18 @@ class TaskRepository(AbstractTaskRepository):
         is_done: Optional[bool] = None,
         priority: str | None = None,
         status=None,
+        search: str | None = None,
+        tag_id: Optional[int] = None,
+        deadline_from: Optional[datetime] = None,
+        deadline_to: Optional[datetime] = None,
     ):
         query = select(SpisokModel).options(
             selectinload(SpisokModel.author),
             selectinload(SpisokModel.user),
             selectinload(SpisokModel.group),
             selectinload(SpisokModel.project),
+            selectinload(SpisokModel.tags),
+            selectinload(SpisokModel.checklist_items),
         )
 
         filter_user_group_value = getattr(filter_user_group, "value", filter_user_group)
@@ -215,6 +248,17 @@ class TaskRepository(AbstractTaskRepository):
 
         if project_id is not None:
             query = query.where(SpisokModel.project_id == project_id)
+
+        if deadline_from is not None:
+            query = query.where(SpisokModel.deadline.is_not(None), SpisokModel.deadline >= deadline_from)
+        if deadline_to is not None:
+            query = query.where(SpisokModel.deadline.is_not(None), SpisokModel.deadline <= deadline_to)
+
+        if search:
+            query = self._apply_fulltext_search(query, search)
+
+        if tag_id is not None:
+            query = query.join(SpisokModel.tags).where(TagModel.id == tag_id)
 
         return query.where(SpisokModel.not_deleted_filter())
 
@@ -306,6 +350,39 @@ class TaskRepository(AbstractTaskRepository):
         )
         return await self.filter_tasks_paginated_total(query)
 
+    async def export_tasks(
+        self,
+        *,
+        user_id: int,
+        filter_user_group=None,
+        group_id: Optional[int] = None,
+        project_id: Optional[int] = None,
+        status=None,
+        priority: str | None = None,
+        tag_id: Optional[int] = None,
+        deadline_from: Optional[datetime] = None,
+        deadline_to: Optional[datetime] = None,
+        max_rows: int = 10_000,
+    ) -> list[SpisokModel]:
+        """
+        Возвращает задачи для CSV-экспорта — без пагинации, но с защитным
+        потолком max_rows (чтобы случайный экспорт "всего за всё время" не
+        свалил процесс на многомиллионной выборке).
+        """
+        query = self._build_filtered_tasks_query(
+            user_id=user_id,
+            filter_user_group=filter_user_group,
+            group_id=group_id,
+            project_id=project_id,
+            status=status,
+            priority=priority,
+            tag_id=tag_id,
+            deadline_from=deadline_from,
+            deadline_to=deadline_to,
+        ).order_by(SpisokModel.id)
+        result = await self.session.execute(query.limit(max_rows))
+        return list(result.unique().scalars().all())
+
     async def get_filtered_tasks_with_total(
         self,
         *,
@@ -319,6 +396,8 @@ class TaskRepository(AbstractTaskRepository):
         is_done: Optional[bool] = None,
         priority: str | None = None,
         status=None,
+        search: str | None = None,
+        tag_id: Optional[int] = None,
     ) -> tuple[list[SpisokModel], int]:
         query = self._build_filtered_tasks_query(
             user_id=user_id,
@@ -329,6 +408,8 @@ class TaskRepository(AbstractTaskRepository):
             is_done=is_done,
             priority=priority,
             status=status,
+            search=search,
+            tag_id=tag_id,
         )
         total = await self.filter_tasks_paginated_total(query)
         tasks = await self.get_tasks_limit(query, limit, offset)
@@ -386,6 +467,27 @@ class TaskRepository(AbstractTaskRepository):
         return result.scalar_one_or_none()
 
     # ── Канбан ────────────────────────────────────────────────────────────────
+
+    async def get_tasks_for_analytics(self) -> list[SpisokModel]:
+        """
+        Возвращает задачи, у которых есть и дедлайн, и отметка завершения —
+        сырьё для аналитики "закрыто в срок" / "средняя просрочка".
+        Агрегация делается в Python (analytics_service), не в SQL — простая
+        версия, без завязки на диалект БД (в отличие от полнотекстового
+        поиска, тут объём данных достаточно мал для команды из нескольких
+        человек, чтобы не думать о производительности агрегации в БД).
+        """
+        query = (
+            select(SpisokModel)
+            .options(selectinload(SpisokModel.user), selectinload(SpisokModel.project))
+            .where(
+                SpisokModel.deadline.is_not(None),
+                SpisokModel.completed_at.is_not(None),
+                SpisokModel.not_deleted_filter(),
+            )
+        )
+        result = await self.session.execute(query)
+        return list(result.unique().scalars().all())
 
     async def get_kanban_tasks(
         self,

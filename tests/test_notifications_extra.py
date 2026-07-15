@@ -379,3 +379,52 @@ class TestNotifyCommentAddedExtra:
         await notify_comment_added(comment.id)
 
         mock_bot.send_message.assert_not_called()
+
+
+class TestNotifyTaskAssignedPush:
+    @pytest.mark.asyncio
+    async def test_push_sent_regardless_of_telegram_id(self, session, mock_bot):
+        """
+        До рефакторинга вся ветка (включая push) требовала task.user.telegram_id —
+        пользователь, подписанный ТОЛЬКО на веб-push (без Telegram), не получал
+        вообще ничего. Теперь push отправляется независимо от Telegram.
+        """
+        author = await make_user(session, username=f"author_{uuid.uuid4().hex[:6]}", password="pass123")
+        user_without_telegram = await make_user(
+            session, username=f"pushonly_{uuid.uuid4().hex[:6]}", password="pass123"
+        )
+        assert user_without_telegram.telegram_id is None
+
+        task = SpisokModel(
+            title="Задача для push-пользователя",
+            author_id=author.id,
+            user_id=user_without_telegram.id,
+            status=TaskStatus.todo,
+        )
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+
+        with patch("src.services.push_service.send_push_to_user", new_callable=AsyncMock) as mock_push:
+            await notify_task_assigned(task.id)
+
+        mock_push.assert_called_once()
+        assert mock_push.call_args.args[1] == user_without_telegram.id
+
+    @pytest.mark.asyncio
+    async def test_telegram_and_push_both_attempted_when_telegram_id_present(self, session, mock_bot):
+        author = await make_user(session, username=f"author_{uuid.uuid4().hex[:6]}", password="pass123")
+        user = await make_user(session, username=f"user_{uuid.uuid4().hex[:6]}", password="pass123")
+        user.telegram_id = unique_tg_id()
+        await session.commit()
+
+        task = SpisokModel(title="X", author_id=author.id, user_id=user.id, status=TaskStatus.todo)
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+
+        with patch("src.services.push_service.send_push_to_user", new_callable=AsyncMock) as mock_push:
+            await notify_task_assigned(task.id)
+
+        mock_bot.send_message.assert_called_once()
+        mock_push.assert_called_once()

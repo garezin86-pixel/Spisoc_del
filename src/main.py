@@ -196,6 +196,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Content-Disposition не входит в CORS-safelisted response headers по
+    # умолчанию — без этого фронт не смог бы прочитать имя файла из
+    # response.headers для скачивания CSV-экспорта при кросс-доменном
+    # деплое (раздельные домены фронта и бэка на Render).
+    expose_headers=["Content-Disposition"],
 )
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────

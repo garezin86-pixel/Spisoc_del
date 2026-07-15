@@ -15,6 +15,7 @@ from wtforms import SelectField
 from src.admin.utils.url_helpers import URLS
 from src.core.exceptions import incorrect_valueerror
 from src.core.metrics import tasks_created
+from src.core.task_labels import PRIORITY_LABELS, STATUS_LABELS
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models import GroupModel, SpisokModel, UserModel
@@ -50,21 +51,6 @@ _FIELD_LABELS = {
     "deadline": "Дедлайн",
     "deleted_at": "Удалено",
     "priority": "Приоритет",
-}
-
-PRIORITY_LABELS = {
-    "low": "⚪ Низкий",
-    "medium": "🔵 Средний",
-    "high": "🟠 Высокий",
-    "critical": "🔴 Критический",
-}
-
-STATUS_LABELS = {
-    "backlog": "Очередь",
-    "todo": "Новые",
-    "in_progress": "В работе",
-    "review": "На проверке",
-    "done": "Готово",
 }
 
 

@@ -245,12 +245,24 @@ def _changed_fields(instance: Any) -> tuple[dict, dict]:
 
     try:
         attrs = sa_inspect(instance).attrs
+        relationship_keys = set(sa_inspect(type(instance)).relationships.keys())
     except Exception:
         return old, new
 
     for attr in attrs:
         key = attr.key
         if key in _SKIP_FIELDS:
+            continue
+        # ВАЖНО: пропускаем relationship-атрибуты (tags, checklist_items,
+        # attachments, user, group, author, project и т.п.) — раньше их
+        # историю тоже пытались протащить через _serialize(), а она не умеет
+        # сериализовать сырые ORM-объекты/списки объектов в JSON. Это не
+        # всплывало, пока никто не присваивал relationship напрямую
+        # (task.tags = [...]), но с появлением тегов ловилось падением на
+        # каждом изменении набора тегов задачи. Аудит должен покрывать только
+        # простые колонки — изменения состава тегов/чек-листа логируются
+        # (при необходимости) отдельно, на уровне соответствующего сервиса.
+        if key in relationship_keys:
             continue
         hist = attr.history
         if not hist.has_changes():

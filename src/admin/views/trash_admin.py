@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from starlette.datastructures import URL
 
 from src.admin.views.task_admin import _fetch_audit_entries, _render_audit_history
+from src.core.task_labels import PRIORITY_LABELS, STATUS_LABELS
 from src.models import SpisokModel
 from src.models import SpisokModel as _RealModel
 from src.services.task_admin_service import task_admin_service
@@ -48,6 +49,8 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
 
     column_formatters = {
         "deleted_at": lambda m, a: to_local(m.deleted_at) if getattr(m, "deleted_at", None) else "—",
+        "priority": lambda m, a: PRIORITY_LABELS.get(m.priority, m.priority),
+        "status": lambda m, a: STATUS_LABELS.get(m.status, m.status),
     }
 
     column_list = ["id", "title", "status", "deleted_at"]
@@ -59,6 +62,7 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         "id",
         "title",
         "description",
+        "priority",
         "status",
         "deadline",
         "created_at",
@@ -71,6 +75,7 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         "title": "Название",
         "description": "Описание",
         "status": "Статус",
+        "priority": "Приоритет",
         "deadline": "Дедлайн",
         "created_at": "Добавлено",
         "updated_at": "Изменено",
@@ -83,6 +88,8 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
         "deadline": lambda m, a: to_local(m.deadline) if getattr(m, "deadline", None) else "—",
         "created_at": lambda m, a: to_local(m.created_at) if getattr(m, "created_at", None) else "—",
         "updated_at": lambda m, a: to_local(m.updated_at) if getattr(m, "updated_at", None) else "—",
+        "priority": column_formatters["priority"],
+        "status": column_formatters["status"],
     }
 
     def list_query(self, request: Request):

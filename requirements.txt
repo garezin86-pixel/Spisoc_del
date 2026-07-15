@@ -43,6 +43,15 @@ aiohttp==3.13.5
 # AI (Groq — STT + LLM)
 groq==1.5.0
 
+# TTS для голосовых уведомлений — НЕ Groq (Orpheus не поддерживает русский,
+# см. комментарий в src/services/voice_ai.py). Требует ffmpeg в системе
+# (см. Dockerfile) для конвертации MP3 -> OGG/Opus под Telegram.
+edge-tts==7.2.8
+
+# Web Push (VAPID)
+pywebpush==2.3.0
+py-vapid==1.9.4
+
 # Cloudflare R2 (S3-совместимое хранилище для вложений)
 aioboto3==15.5.0
 aiobotocore>=2.13.0

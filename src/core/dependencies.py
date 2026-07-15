@@ -12,6 +12,7 @@ from src.core.constants import (
 from src.core.exceptions import current_admin, unauthorized, user_not_found
 from src.db import SessionDep
 from src.models.user import UserModel, UserRole
+from src.services.pat_service import TOKEN_PREFIX, authenticate_by_pat
 
 security = HTTPBearer()
 
@@ -21,6 +22,17 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> UserModel:
     token = credentials.credentials
+
+    # Персональный API-токен (pat_...) — отдельная ветка аутентификации,
+    # независимая от JWT/SECRET_KEY. Проверяется первой, т.к. по префиксу
+    # сразу понятно, что это не JWT (JWT никогда не начинается с "pat_").
+    if token.startswith(TOKEN_PREFIX):
+        user = await authenticate_by_pat(session, token)
+        if user is None:
+            unauthorized("Токен недействителен, отозван или истёк")
+            raise AssertionError("unreachable")  # unauthorized() всегда бросает исключение
+        return user
+
     if not SECRET_KEY or not ALGORITHM:
         raise RuntimeError("JWT config missing")
 

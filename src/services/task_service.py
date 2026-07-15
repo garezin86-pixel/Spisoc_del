@@ -1,4 +1,7 @@
+from datetime import datetime, timedelta, timezone
+
 import structlog
+from dateutil.relativedelta import relativedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import (
@@ -25,6 +28,7 @@ from src.core.metrics import (
     tasks_hard_deleted,
     tasks_restored,
 )
+from src.models.enums import RecurrenceRule
 from src.models.task import SpisokModel, TaskStatus
 from src.models.user import UserModel, UserRole
 from src.repositories.abstract import (
@@ -106,6 +110,11 @@ class TaskService:
             author_id=current_user.id,
             project_id=data.project_id,
             status=data.status,
+            priority=data.priority,
+            recurrence_rule=data.recurrence_rule,
+            # Редкий, но возможный случай: задачу создают сразу со status=done
+            # (например, задним числом фиксируют уже сделанную работу).
+            completed_at=datetime.now(timezone.utc) if data.status == TaskStatus.done else None,
         )
         task = await self.task_repo.create(task)
         await logger.ainfo(
@@ -122,6 +131,70 @@ class TaskService:
             asyncio.create_task(notify_task_assigned(task.id))
         tasks_created.inc()
         return task
+
+    @staticmethod
+    def _next_deadline(current_deadline: datetime | None, rule: RecurrenceRule) -> datetime | None:
+        """Вычисляет дедлайн следующего повторения.
+
+        Если у исходной задачи не было дедлайна — у следующего повторения
+        тоже не будет (интервал отсчитывается не от "текущего момента",
+        а сохраняет прежнее отсутствие дедлайна, чтобы не навязывать срок
+        задачам, где его изначально не было).
+        """
+        if current_deadline is None:
+            return None
+        base = current_deadline
+        if rule == RecurrenceRule.daily:
+            return base + timedelta(days=1)
+        if rule == RecurrenceRule.weekly:
+            return base + timedelta(weeks=1)
+        if rule == RecurrenceRule.monthly:
+            return base + relativedelta(months=1)
+        return None
+
+    async def _spawn_next_recurrence(self, completed_task: SpisokModel) -> SpisokModel | None:
+        """Создаёт следующее повторение задачи после завершения текущего.
+
+        Зачем: избавляет от необходимости вручную пересоздавать регулярные
+        задачи ("каждый понедельник — созвон"). Срабатывает синхронно в
+        момент перевода в done — не требует отдельной scheduled-джобы и
+        рисков двойного порождения при её повторном запуске.
+
+        Копируется: title, description, priority, user_id, group_id,
+        project_id, recurrence_rule (правило продолжает действовать дальше).
+        НЕ копируется: status (всегда todo для нового повторения).
+        """
+        if completed_task.recurrence_rule == RecurrenceRule.none:
+            return None
+
+        next_deadline = self._next_deadline(completed_task.deadline, completed_task.recurrence_rule)
+
+        next_task = SpisokModel(
+            title=completed_task.title,
+            description=completed_task.description,
+            user_id=completed_task.user_id,
+            group_id=completed_task.group_id,
+            author_id=completed_task.author_id,
+            project_id=completed_task.project_id,
+            priority=completed_task.priority,
+            status=TaskStatus.todo,
+            deadline=next_deadline,
+            recurrence_rule=completed_task.recurrence_rule,
+        )
+        next_task = await self.task_repo.create(next_task)
+        await logger.ainfo(
+            "recurrence_spawned",
+            source_task_id=completed_task.id,
+            new_task_id=next_task.id,
+            rule=completed_task.recurrence_rule.value,
+        )
+
+        if self.session is not None:
+            import asyncio
+
+            asyncio.create_task(notify_task_assigned(next_task.id))
+
+        return next_task
 
     async def _validate_task_filters(self, filter_user_group, group_id) -> None:
         """Валидирует комбинацию фильтров перед запросом к БД.
@@ -256,10 +329,19 @@ class TaskService:
         was_status = task.status
 
         # Простые поля — обновляем через setattr (легко расширять)
-        simple_fields = {"title", "description", "priority", "status"}
+        simple_fields = {"title", "description", "priority", "status", "recurrence_rule"}
         for field in simple_fields:
             if field in update_data:
                 setattr(task, field, update_data[field])
+
+        # completed_at — точная отметка перехода в done, для аналитики
+        # "закрыто в срок". Обновляем ДО task_repo.update(), чтобы попало
+        # в тот же commit. При переоткрытии (done -> другой статус) чистим.
+        if "status" in update_data:
+            if update_data["status"] == TaskStatus.done and was_status != TaskStatus.done:
+                task.completed_at = datetime.now(timezone.utc)
+            elif update_data["status"] != TaskStatus.done and was_status == TaskStatus.done:
+                task.completed_at = None
 
         # Дедлайн — требует проверки прав и нормализации секунд
         if "deadline" in update_data:
@@ -284,6 +366,7 @@ class TaskService:
         if "status" in update_data and update_data["status"] == TaskStatus.done and was_status != TaskStatus.done:
             tasks_completed.inc()
             await self._notify_task_done(updated_task, current_user)
+            await self._spawn_next_recurrence(updated_task)
         return updated_task
 
     async def delete_task(self, task_id: int, current_user: UserModel) -> dict:
@@ -527,6 +610,12 @@ class TaskService:
         old_status = task.status
         task.status = new_status
 
+        # Та же логика completed_at, что и в update_task — см. комментарий там
+        if new_status == TaskStatus.done and old_status != TaskStatus.done:
+            task.completed_at = datetime.now(timezone.utc)
+        elif new_status != TaskStatus.done and old_status == TaskStatus.done:
+            task.completed_at = None
+
         if self.session is not None:
             self.session.info["audit_user_id"] = current_user.id  # ← добавить
 
@@ -542,4 +631,5 @@ class TaskService:
         if new_status == TaskStatus.done and old_status != TaskStatus.done:
             tasks_completed.inc()
             await self._notify_task_done(updated_task, current_user)
+            await self._spawn_next_recurrence(updated_task)
         return updated_task
