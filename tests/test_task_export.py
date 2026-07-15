@@ -8,7 +8,7 @@ import pytest
 
 from src.models.tag import TagModel
 from src.models.task import SpisokModel, TaskStatus
-from src.models.user import UserRole
+from src.models.user import UserModel, UserRole
 from src.repositories.task_repository import TaskRepository
 from src.services.task_export_service import TaskExportService
 from tests.conftest import make_user
@@ -143,13 +143,14 @@ class TestExportCsvContent:
 
     @pytest.mark.asyncio
     async def test_author_and_executor_usernames_included(self, session):
-        author = await make_user(session)
+        author: UserModel = await make_user(session)
         executor = await make_user(session)
-        # author.role остаётся "user" по умолчанию — экспорт для него отфильтрует
-        # по assignee, поэтому назначим задачу на самого автора и отдельно
-        # проверим поля author/executor на объекте
 
-        # Экспортируем от лица executor (у него эта задача "назначена мне")
+        # Задача создана author'ом, но назначена executor'у —
+        # именно executor должен увидеть её в своём экспорте
+        # ("назначено мне" — filter_user_group=user фильтрует по user_id).
+        await make_task(session, author, title="X", user_id=executor.id)
+
         service = TaskExportService(TaskRepository(session))
         csv_content = await service.export_tasks_csv(executor)
         rows = parse_csv(csv_content)
