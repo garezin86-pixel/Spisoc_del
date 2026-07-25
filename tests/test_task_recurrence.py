@@ -6,6 +6,7 @@ import pytest
 from src.models.enums import RecurrenceRule
 from src.models.task import SpisokModel, TaskStatus
 from src.repositories.groups_repository import GroupRepository
+from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.schemas.task import SpisokUpdate
 from src.services.task_service import TaskService
@@ -19,6 +20,7 @@ def build_service(session):
         task_repo=TaskRepository(session),
         user_repo=UserRepository(session),
         group_repo=GroupRepository(session),
+        tag_repo=TagRepository(session),
         session=session,
     )
 

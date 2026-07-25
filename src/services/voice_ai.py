@@ -48,34 +48,52 @@ async def _mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes:
     голосовое сообщение (`send_voice`) только Opus в контейнере OGG, а
     Edge TTS отдаёт только MP3 (формат сервиса Microsoft, без вариантов).
 
-    Работает через pipe (stdin/stdout), без временных файлов — быстрее и
-    не оставляет мусора на диске при сбое до удаления temp-файла.
-
     ВАЖНО: требует установленный ffmpeg в системе/контейнере (см.
     Dockerfile — добавлен `apt-get install ffmpeg`). Без него этот вызов
     упадёт с FileNotFoundError.
+
+    Раньше здесь был asyncio.create_subprocess_exec (через pipe, без
+    временных файлов) — но asyncio-сабпроцессы на Windows работают ТОЛЬКО
+    под ProactorEventLoop; если где-то в процессе (например, ради другой
+    библиотеки) стоит asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy),
+    любой create_subprocess_exec падает с "NotImplementedError" без
+    дополнительного текста — именно так тихо ломалось голосовое уведомление
+    в фоновой джобе APScheduler, хотя ручной asyncio.run() в REPL (со своим,
+    отдельным event loop'ом на Proactor по умолчанию) отрабатывал нормально.
+
+    Синхронный subprocess.run(), запущенный в отдельном потоке через
+    run_in_executor, не зависит от типа event loop вообще — работает
+    одинаково что на Proactor, что на Selector, и на Windows, и на Linux.
     """
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-i",
-        "pipe:0",
-        "-c:a",
-        "libopus",
-        "-b:a",
-        "32k",
-        "-vbr",
-        "on",
-        "-f",
-        "ogg",
-        "pipe:1",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _run_ffmpeg_sync, mp3_bytes)
+
+
+def _run_ffmpeg_sync(mp3_bytes: bytes) -> bytes:
+    """Синхронная часть конвертации — выполняется в executor-потоке."""
+    import subprocess
+
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-i",
+            "pipe:0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "32k",
+            "-vbr",
+            "on",
+            "-f",
+            "ogg",
+            "pipe:1",
+        ],
+        input=mp3_bytes,
+        capture_output=True,
     )
-    stdout, stderr = await proc.communicate(input=mp3_bytes)
-    if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg mp3->ogg conversion failed: {stderr.decode(errors='replace')[:500]}")
-    return stdout
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg mp3->ogg conversion failed: {result.stderr.decode(errors='replace')[:500]}")
+    return result.stdout
 
 
 async def synthesize_speech(text: str, voice: str = DEFAULT_TTS_VOICE) -> bytes:

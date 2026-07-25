@@ -44,6 +44,18 @@ FIELD_LABELS = {
 }
 
 
+def _action_value(action: object) -> str:
+    """Приводит action (Enum с .value, готовая строка, либо None) к str —
+    ДО передачи в ACTION_LABELS.get()/ACTION_ICONS.get(). getattr(...) вместо
+    hasattr+доступа к атрибуту — hasattr не сужает статический тип object для
+    pyright, поэтому action.value внутри ветки hasattr всё равно считался бы
+    обращением к неизвестному атрибуту."""
+    if action is None:
+        return ""
+    value = getattr(action, "value", None)
+    return value if isinstance(value, str) else str(action)
+
+
 class AuditUserSchema(BaseModel):
     id: int
     username: str
@@ -71,17 +83,13 @@ class AuditLogSchema(BaseModel):
             for key in entry.new_values:
                 fields[key] = FIELD_LABELS.get(key, key)
 
+        action_value = _action_value(entry.action)
+
         return cls(
             id=entry.id,
-            action=(entry.action.value if hasattr(entry.action, "value") else entry.action),
-            action_label=ACTION_LABELS.get(
-                entry.action.value if hasattr(entry.action, "value") else entry.action,
-                str(entry.action) if entry.action is not None else "",
-            ),
-            action_icon=ACTION_ICONS.get(
-                entry.action.value if hasattr(entry.action, "value") else entry.action,
-                "📝",
-            ),
+            action=action_value,
+            action_label=ACTION_LABELS.get(action_value, action_value),
+            action_icon=ACTION_ICONS.get(action_value, "📝"),
             user=(AuditUserSchema(id=entry.user.id, username=entry.user.username) if entry.user else None),
             old_values=entry.old_values,
             new_values=entry.new_values,

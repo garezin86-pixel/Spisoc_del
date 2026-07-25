@@ -7,6 +7,7 @@ from collections import namedtuple
 
 from src.models.comment import CommentModel
 from src.models.group import GroupModel
+from src.models.tag import TagModel
 from src.models.task import SpisokModel, TaskStatus
 from src.models.user import UserModel
 from src.repositories.abstract.base_group_repository import AbstractGroupRepository
@@ -330,6 +331,23 @@ class MockTaskRepository(AbstractTaskRepository):
         """
         return [t for t in self._tasks if getattr(t, "deadline", None) and getattr(t, "completed_at", None)]
 
+    # === Импорт CSV/Excel и массовые действия (bulk actions) ===
+    async def bulk_create(self, tasks: list[SpisokModel]) -> list[SpisokModel]:
+        for task in tasks:
+            task.id = self._next_task_id
+            self._next_task_id += 1
+            self._tasks.append(task)
+        return tasks
+
+    async def get_by_ids(self, task_ids: list[int]) -> list[SpisokModel]:
+        wanted = set(task_ids)
+        return [t for t in self._tasks if t.id in wanted]
+
+    async def bulk_update(self, tasks: list[SpisokModel]) -> list[SpisokModel]:
+        """Как и update() — задачи в моке хранятся по ссылке и уже изменены
+        к моменту вызова, поэтому реального персиста не требуется."""
+        return tasks
+
 
 # ---------------------------------------------------------------------------
 # Group
@@ -424,6 +442,49 @@ class MockGroupRepository(AbstractGroupRepository):
         if exclude_user_id is not None:
             users = [user for user in users if user.id != exclude_user_id]
         return [user for user in users if getattr(user, "telegram_id", None)]
+
+
+# ---------------------------------------------------------------------------
+# Tag
+# ---------------------------------------------------------------------------
+
+
+class MockTagRepository:
+    """Без Abstract-обёртки — реальный TagRepository (src/repositories/tag_repository.py)
+    тоже без ABC, поэтому здесь не от кого наследоваться."""
+
+    def __init__(self, tags: list[TagModel] | None = None):
+        self._tags: list[TagModel] = tags or []
+        self._next_tag_id = max((t.id for t in self._tags), default=0) + 1
+
+    async def get_all(self) -> list[TagModel]:
+        return list(self._tags)
+
+    async def get_by_id(self, tag_id: int) -> TagModel | None:
+        return next((t for t in self._tags if t.id == tag_id), None)
+
+    async def get_by_ids(self, tag_ids: list[int]) -> list[TagModel]:
+        wanted = set(tag_ids)
+        return [t for t in self._tags if t.id in wanted]
+
+    async def get_by_name(self, name: str) -> TagModel | None:
+        target = name.lower()
+        return next((t for t in self._tags if t.name.lower() == target), None)
+
+    async def create(self, name: str, color: str) -> TagModel:
+        tag = TagModel(id=self._next_tag_id, name=name, color=color)
+        self._next_tag_id += 1
+        self._tags.append(tag)
+        return tag
+
+    async def get_or_create(self, name: str, color: str) -> TagModel:
+        existing = await self.get_by_name(name)
+        if existing:
+            return existing
+        return await self.create(name, color)
+
+    async def delete(self, tag: TagModel) -> None:
+        self._tags = [t for t in self._tags if t.id != tag.id]
 
 
 # ---------------------------------------------------------------------------

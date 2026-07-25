@@ -21,6 +21,7 @@ from src.repositories.other_repositories import (
     NotificationRepository,
     StatsRepository,
 )
+from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.services.auth_service import AuthService
@@ -42,6 +43,10 @@ def get_task_repo(session: AsyncSession = Depends(get_session)) -> TaskRepositor
 
 def get_group_repo(session: AsyncSession = Depends(get_session)) -> GroupRepository:
     return GroupRepository(session)
+
+
+def get_tag_repo(session: AsyncSession = Depends(get_session)) -> TagRepository:
+    return TagRepository(session)
 
 
 def get_comment_repo(session: AsyncSession = Depends(get_session)) -> CommentRepository:
@@ -78,9 +83,10 @@ def get_task_service(
     task_repo: TaskRepository = Depends(get_task_repo),
     user_repo: UserRepository = Depends(get_user_repo),
     group_repo: GroupRepository = Depends(get_group_repo),
+    tag_repo: TagRepository = Depends(get_tag_repo),
     session: AsyncSession = Depends(get_session),
 ) -> TaskService:
-    return TaskService(task_repo, user_repo, group_repo, session)
+    return TaskService(task_repo, user_repo, group_repo, tag_repo, session)
 
 
 def get_group_service(

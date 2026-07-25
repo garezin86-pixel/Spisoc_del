@@ -1,26 +1,46 @@
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi_cache.decorator import cache
+from sqlalchemy.exc import IntegrityError
 
+from src.core.constants import (
+    PRESET_NAME_ALREADY_EXISTS,
+    PRESET_NOT_FOUND,
+)
+
+# (добавить константы — см. ниже)
 from src.core.dependencies import get_current_user
+from src.core.exceptions import (
+    incorrect_request,
+    not_found,
+)
+
+# (not_found и/или incorrect_request — если ещё не импортированы в этом файле)
 from src.db import SessionDep
+from src.models.filter_preset import FilterPresetModel
 from src.models.task import TaskStatus
 from src.models.user import UserModel
 from src.repositories.audit_repository import AuditRepository
+from src.repositories.filter_preset_repository import FilterPresetRepository
 from src.repositories.groups_repository import GroupRepository
+from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
+from src.schemas.filter_preset_schema import FilterPresetCreate, FilterPresetSchema
 from src.schemas.pagination import PaginatedResponse, PaginationParams
 from src.schemas.schemas_audit import AuditLogSchema
 from src.schemas.task import (
+    BulkTaskUpdate,
+    BulkTaskUpdateResult,
     FilterUserGroup,
     KanbanResponse,
     SpisokAddSchema,
     SpisokSchema,
     SpisokUpdate,
     TaskFilter,
+    TaskImportSummary,
     TaskPriorityFilter,
     TaskStatusUpdate,
 )
@@ -45,6 +65,7 @@ def get_task_service(session: SessionDep) -> TaskService:
         task_repo=TaskRepository(session),
         user_repo=UserRepository(session),
         group_repo=GroupRepository(session),
+        tag_repo=TagRepository(session),  # ← новая строка
         session=session,
     )
 
@@ -75,7 +96,10 @@ async def filter_tasks(
     priority: TaskPriorityFilter | None = Query(None),
     status: TaskStatus | None = Query(None, description="Фильтр по статусу канбана"),
     search: str | None = Query(
-        None, min_length=1, max_length=200, description="Полнотекстовый поиск по названию и описанию"
+        None,
+        min_length=1,
+        max_length=200,
+        description="Полнотекстовый поиск по названию и описанию",
     ),
     tag_id: int | None = Query(None, description="Фильтр по тегу"),
     limit: int | None = Query(None, ge=1, le=100),
@@ -162,6 +186,36 @@ async def export_tasks_csv(
     )
 
 
+@router.post(
+    "/import",
+    response_model=TaskImportSummary,
+    summary="Импорт задач из CSV/Excel",
+    description=(
+        "Пачечное создание задач из файла с колонками Название/Дедлайн/Приоритет "
+        "(регистр и порядок колонок не важны, лишние колонки игнорируются — можно "
+        "загрузить в том числе файл, ранее экспортированный этой же системой). "
+        "Поддерживаются .csv и .xlsx. Опциональный project_id — все созданные "
+        "задачи попадут в указанный проект."
+    ),
+)
+async def import_tasks(
+    session: SessionDep,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    project_id: int | None = Query(None),
+):
+    content = await file.read()
+    session.info["audit_user_id"] = current_user.id
+    summary = await get_task_service(session).import_tasks(
+        filename=file.filename or "",
+        content=content,
+        current_user=current_user,
+        project_id=project_id,
+    )
+    await cache_manager.invalidate_tasks()
+    return summary
+
+
 # ── Канбан GET — должен быть до /{task_id} ────────────────────────────────────
 
 
@@ -191,6 +245,74 @@ async def get_kanban(
     )
 
 
+def get_filter_preset_repo(session: SessionDep) -> FilterPresetRepository:
+    return FilterPresetRepository(session)
+
+
+@router.get(
+    "/presets",
+    response_model=list[FilterPresetSchema],
+    summary="Список сохранённых пресетов фильтров",
+)
+async def list_filter_presets(
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    return await get_filter_preset_repo(session).get_all_for_user(current_user.id)
+
+
+@router.post(
+    "/presets",
+    response_model=FilterPresetSchema,
+    status_code=201,
+    summary="Сохранить текущую комбинацию фильтров как именной пресет",
+)
+async def create_filter_preset(
+    data: FilterPresetCreate,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    preset = FilterPresetModel(
+        user_id=current_user.id,
+        name=data.name,
+        status=data.status,
+        priority=data.priority,
+        tag_id=data.tag_id,
+        project_id=data.project_id,
+        filter_user_group=(data.filter_user_group.value if data.filter_user_group else None),
+        filter_type=(data.filter_type.value if data.filter_type else None),
+    )
+    try:
+        return await get_filter_preset_repo(session).create(preset)
+    except IntegrityError:
+        # UniqueConstraint(user_id, name) — у пользователя уже есть пресет
+        # с таким именем. Откатываем сессию (иначе она "отравлена" после
+        # неудачного commit и следующий запрос в этой же сессии упадёт),
+        # затем отдаём внятный 400 вместо голого 500.
+        await session.rollback()
+        incorrect_request(PRESET_NAME_ALREADY_EXISTS)
+
+
+@router.delete(
+    "/presets/{preset_id}",
+    response_model=dict,
+    summary="Удалить сохранённый пресет",
+)
+async def delete_filter_preset(
+    preset_id: int,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    repo = get_filter_preset_repo(session)
+    preset = await repo.get_by_id(preset_id)
+    if preset is None or preset.user_id != current_user.id:
+        # Пресет либо не существует, либо принадлежит другому пользователю —
+        # в обоих случаях отдаём одинаковый 404, чтобы не палить чужие id.
+        not_found(PRESET_NOT_FOUND)
+    await repo.delete(preset)
+    return {"message": f"Preset {preset_id} deleted"}
+
+
 # ── Обычные CRUD ──────────────────────────────────────────────────────────────
 
 
@@ -201,6 +323,27 @@ async def get_task(
     current_user: UserModel = Depends(get_current_user),
 ):
     return await get_task_service(session).get_task(task_id, current_user)
+
+
+@router.patch(
+    "/bulk",
+    response_model=BulkTaskUpdateResult,
+    summary="Массовое изменение задач",
+    description=(
+        "Меняет статус/приоритет/тег/исполнителя у пачки задач одним запросом. "
+        "Задачи, к которым нет доступа (или которых не существует), не прерывают "
+        "операцию — попадают в skipped."
+    ),
+)
+async def bulk_update_tasks(
+    data: BulkTaskUpdate,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    session.info["audit_user_id"] = current_user.id
+    result = await get_task_service(session).bulk_update_tasks(data, current_user)
+    await cache_manager.invalidate_tasks()
+    return result
 
 
 @router.patch("/{task_id}/reassign", response_model=SpisokSchema)

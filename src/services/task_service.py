@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Protocol
 
 import structlog
 from dateutil.relativedelta import relativedelta
@@ -8,6 +9,7 @@ from src.core.constants import (
     ENTER_GROUP_ID,
     GROUP_NOT_FOUND,
     NO_ACCESS,
+    TAG_NOT_FOUND,  # (добавить в существующий импорт)
     TASK_NOT_FOUND,
     USER_ID_OR_GROUP_ID,
     USER_NOT_FOUND,
@@ -29,6 +31,7 @@ from src.core.metrics import (
     tasks_restored,
 )
 from src.models.enums import RecurrenceRule
+from src.models.tag import TagModel
 from src.models.task import SpisokModel, TaskStatus
 from src.models.user import UserModel, UserRole
 from src.repositories.abstract import (
@@ -36,7 +39,16 @@ from src.repositories.abstract import (
     AbstractTaskRepository,
     AbstractUserRepository,
 )
-from src.schemas.task import FilterUserGroup, SpisokAddSchema
+from src.schemas.task import (
+    BulkTaskUpdate,
+    BulkTaskUpdateResult,
+    FilterUserGroup,
+    SpisokAddSchema,
+    TaskImportIssueSchema,
+    TaskImportSummary,
+)
+
+# (добавить в существующий импорт)
 from src.services.notifications import notify_task_assigned
 from src.services.permissions import (
     can_delete_task,
@@ -44,8 +56,13 @@ from src.services.permissions import (
     can_reassign_task,
     can_update_task_deadline,
 )
+from src.services.task_import_service import TaskImportParseError, parse_import_file
 
 logger = structlog.get_logger()
+
+
+class TagRepositoryProtocol(Protocol):
+    async def get_by_id(self, tag_id: int) -> TagModel | None: ...
 
 
 class TaskService:
@@ -60,11 +77,13 @@ class TaskService:
         task_repo: AbstractTaskRepository,
         user_repo: AbstractUserRepository,
         group_repo: AbstractGroupRepository,
+        tag_repo: TagRepositoryProtocol,
         session: AsyncSession,
     ):
         self.task_repo = task_repo
         self.user_repo = user_repo
         self.group_repo = group_repo
+        self.tag_repo = tag_repo  # ← новая строка
         self.session = session
 
     async def add_task(self, data: SpisokAddSchema, current_user: UserModel) -> SpisokModel:
@@ -114,7 +133,7 @@ class TaskService:
             recurrence_rule=data.recurrence_rule,
             # Редкий, но возможный случай: задачу создают сразу со status=done
             # (например, задним числом фиксируют уже сделанную работу).
-            completed_at=datetime.now(timezone.utc) if data.status == TaskStatus.done else None,
+            completed_at=(datetime.now(timezone.utc) if data.status == TaskStatus.done else None),
         )
         task = await self.task_repo.create(task)
         await logger.ainfo(
@@ -329,7 +348,13 @@ class TaskService:
         was_status = task.status
 
         # Простые поля — обновляем через setattr (легко расширять)
-        simple_fields = {"title", "description", "priority", "status", "recurrence_rule"}
+        simple_fields = {
+            "title",
+            "description",
+            "priority",
+            "status",
+            "recurrence_rule",
+        }
         for field in simple_fields:
             if field in update_data:
                 setattr(task, field, update_data[field])
@@ -633,3 +658,150 @@ class TaskService:
             await self._notify_task_done(updated_task, current_user)
             await self._spawn_next_recurrence(updated_task)
         return updated_task
+
+    async def import_tasks(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        current_user: UserModel,
+        project_id: int | None = None,
+    ) -> TaskImportSummary:
+        """Пачечное создание задач из CSV/Excel — зеркально к export_tasks_csv.
+
+        В отличие от add_task(), здесь НЕ проверяется "дедлайн не в прошлом" —
+        типичный сценарий импорта это перенос исторических данных из другого
+        трекера, где просроченные дедлайны — нормальное явление, а не ошибка.
+
+        project_id, как и в add_task(), не проверяется на существование —
+        поведение согласовано с текущим add_task(), где project_id тоже не
+        валидируется через репозиторий проектов.
+
+        Raises:
+            HTTPException 400: неверный формат файла, нет колонки с названием,
+                файл повреждён/пуст, либо строк больше лимита.
+        """
+        try:
+            parsed = parse_import_file(filename, content)
+        except TaskImportParseError as exc:
+            incorrect_request(str(exc))
+
+        tasks = [
+            SpisokModel(
+                title=row.title,
+                author_id=current_user.id,
+                project_id=project_id,
+                deadline=row.deadline,
+                priority=row.priority,
+                status=TaskStatus.todo,
+                recurrence_rule=RecurrenceRule.none,
+            )
+            for row in parsed.rows
+        ]
+
+        created = await self.task_repo.bulk_create(tasks)
+
+        tasks_created.inc(len(created))
+        await logger.ainfo(
+            "tasks_imported",
+            count=len(created),
+            user_id=current_user.id,
+            errors=len(parsed.errors),
+            warnings=len(parsed.warnings),
+        )
+
+        return TaskImportSummary(
+            created=len(created),
+            errors=[TaskImportIssueSchema(row=e.row_number, message=e.message) for e in parsed.errors],
+            warnings=[TaskImportIssueSchema(row=w.row_number, message=w.message) for w in parsed.warnings],
+        )
+
+    async def bulk_update_tasks(
+        self,
+        data: BulkTaskUpdate,
+        current_user: UserModel,
+    ) -> BulkTaskUpdateResult:
+        """Массово меняет статус/приоритет/тег/исполнителя у пачки задач.
+
+        Права проверяются НА КАЖДУЮ задачу отдельно (can_edit_task для
+        status/priority/tag_id, can_reassign_task для user_id) — задачи без
+        доступа не прерывают всю операцию, а попадают в result.skipped.
+        Так же обрабатываются id, которых не существует или которые удалены.
+
+        tag_id ДОБАВЛЯЕТ тег к существующим (не заменяет список тегов задачи).
+
+        completed_at и tasks_completed обновляются по тем же правилам, что и в
+        update_task() — переход в done проставляет метку и инкрементирует счётчик,
+        выход из done её сбрасывает.
+
+        Raises:
+            HTTPException 404: ни одна из переданных задач не найдена, либо
+                указан несуществующий tag_id или user_id.
+        """
+        tasks = await self.task_repo.get_by_ids(data.task_ids)
+
+        found_ids = {t.id for t in tasks}
+        skipped: list[int] = [tid for tid in data.task_ids if tid not in found_ids]
+
+        if not tasks:
+            task_not_found(TASK_NOT_FOUND)
+
+        tag_model = None
+        if data.tag_id is not None:
+            tag_model = await self.tag_repo.get_by_id(data.tag_id)
+            if tag_model is None:
+                not_found(TAG_NOT_FOUND)
+
+        needs_edit_check = data.status is not None or data.priority is not None or data.tag_id is not None
+        needs_reassign_check = data.user_id is not None
+
+        if data.user_id is not None and not await self.user_repo.get_by_id(data.user_id):
+            not_found(USER_NOT_FOUND)
+
+        to_persist: list[SpisokModel] = []
+        became_done_count = 0
+
+        for task in tasks:
+            if needs_edit_check and not await can_edit_task(task, current_user, self.group_repo):
+                skipped.append(task.id)
+                continue
+            if needs_reassign_check and not can_reassign_task(task, current_user):
+                skipped.append(task.id)
+                continue
+
+            was_status = task.status
+
+            if data.status is not None:
+                task.status = data.status
+                if data.status == TaskStatus.done and was_status != TaskStatus.done:
+                    task.completed_at = datetime.now(timezone.utc)
+                    became_done_count += 1
+                elif data.status != TaskStatus.done and was_status == TaskStatus.done:
+                    task.completed_at = None
+
+            if data.priority is not None:
+                task.priority = data.priority
+
+            if tag_model is not None and tag_model not in task.tags:
+                task.tags.append(tag_model)
+
+            if data.user_id is not None:
+                task.user_id = data.user_id
+                task.group_id = None
+
+            to_persist.append(task)
+
+        updated = await self.task_repo.bulk_update(to_persist)
+
+        if became_done_count:
+            tasks_completed.inc(became_done_count)
+
+        await logger.ainfo(
+            "tasks_bulk_updated",
+            user_id=current_user.id,
+            requested=len(data.task_ids),
+            updated=len(updated),
+            skipped=len(skipped),
+        )
+
+        return BulkTaskUpdateResult(updated=len(updated), skipped=skipped)

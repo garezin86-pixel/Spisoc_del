@@ -3,6 +3,7 @@ from src.models.attachment_model import AttachmentModel
 from src.models.audit import AuditAction, AuditLog
 from src.models.checklist import TaskChecklistItemModel
 from src.models.comment import CommentModel
+from src.models.filter_preset import FilterPresetModel
 from src.models.group import GroupModel, user_group
 from src.models.notification_log import NotificationLogModel
 from src.models.notification_settings import NotificationSettingsModel
@@ -33,4 +34,5 @@ __all__ = [
     "AuditLog",
     "AuditAction",
     "AttachmentModel",
+    "FilterPresetModel",
 ]

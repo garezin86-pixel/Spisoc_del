@@ -22,6 +22,7 @@ from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.task import SpisokModel, TaskPriority, TaskStatus
 from src.repositories.groups_repository import GroupRepository
+from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.task import FilterUserGroup, TaskFilter
@@ -41,6 +42,7 @@ def make_task_service(uow: UnitOfWork) -> TaskService:
         task_repo=TaskRepository(uow.session),
         user_repo=UserRepository(uow.session),
         group_repo=GroupRepository(uow.session),
+        tag_repo=TagRepository(uow.session),
         session=uow.session,
     )
 

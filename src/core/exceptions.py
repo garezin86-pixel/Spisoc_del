@@ -36,7 +36,7 @@ def no_access(detail: str = "No access"):
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
-def incorrect_request(detail: str = "Incorrect request"):
+def incorrect_request(detail: str = "Incorrect request") -> NoReturn:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
