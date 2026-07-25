@@ -23,3 +23,10 @@ USER_OR_GROUP_NOT_FOUND = "User or group not found"
 # Goup
 GROUP_NOT_FOUND = "Group not found"
 USER_ID_OR_GROUP_ID = "Укажите либо user_id либо group_id"
+
+# Tag
+TAG_NOT_FOUND = "Tag not found"
+
+# Filter preset
+PRESET_NOT_FOUND = "Filter preset not found"
+PRESET_NAME_ALREADY_EXISTS = "У вас уже есть пресет с таким именем"

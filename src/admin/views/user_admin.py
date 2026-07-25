@@ -18,6 +18,7 @@ from src.core.metrics import users_registered
 from src.models import UserModel
 from src.models.user import UserRole
 from src.repositories.groups_repository import GroupRepository
+from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.services.task_service import TaskService
@@ -202,6 +203,7 @@ class UserAdmin(ModelView, model=UserModel):
                 task_repo=TaskRepository(session),
                 user_repo=UserRepository(session),
                 group_repo=GroupRepository(session),
+                tag_repo=TagRepository(session),
                 session=session,  # передаём для возможных дополнительных запросов внутри сервиса
             )
             stats = await task_service.get_user_stats(pk)

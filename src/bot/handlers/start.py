@@ -12,6 +12,7 @@ from src.bot.keyboards.main import (
 )
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
+from src.repositories.tag_repository import TagRepository
 from src.utils.datetime_utils import to_local
 
 router = Router()
@@ -58,6 +59,7 @@ async def cmd_start_deeplink(message: Message, command: CommandObject, state: FS
                 task_repo=TaskRepository(uow.session),
                 user_repo=UserRepository(uow.session),
                 group_repo=GroupRepository(uow.session),
+                tag_repo=TagRepository(uow.session),
                 session=uow.session,
             )
 

@@ -85,6 +85,9 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.add_job(notify_overdue, IntervalTrigger(hours=1), id="overdue", replace_existing=True)
+    # scheduler.add_job(
+    #     notify_overdue, IntervalTrigger(minutes=2), id="overdue", replace_existing=True
+    # )
     scheduler.add_job(
         send_weekly_report,
         CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="UTC"),

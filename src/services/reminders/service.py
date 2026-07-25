@@ -170,12 +170,13 @@ async def notify_overdue() -> None:
     session_maker = get_session_maker()
     sender = NotificationSender(get_bot())
     sent = 0
-    # Считаем, скольким задачам на пользователя реально ушло текстовое
-    # уведомление в ЭТОМ прогоне джобы — нужно для агрегированного голосового
-    # "У вас N просроченных задач" (одно голосовое на пользователя, а не по
-    # одному на каждую просроченную задачу — это было бы избыточно и
-    # раздражало бы).
-    newly_notified_counts: dict[int, int] = {}
+    # total_overdue_counts — ВСЕ активные просрочки пользователя в этом
+    # прогоне джобы, независимо от того, ушёл ли новый текст (см. ниже).
+    # Голосовое уведомление должно приходить бонусом на каждом прогоне, пока
+    # у пользователя есть хоть одна просроченная задача — а не только когда
+    # появляется новая, иначе оно молчит все 24 часа между отправками текста
+    # (см. check_already_sent(..., hours_back=24) для текстового канала).
+    total_overdue_counts: dict[int, int] = {}
     users_by_id = {}
 
     async with UnitOfWork(session_maker) as uow:
@@ -191,6 +192,11 @@ async def notify_overdue() -> None:
             if settings and not settings.notify_overdue:
                 continue
 
+            # Считаем ЛЮБУЮ активную просрочку пользователя — до проверки
+            # текстовой дедупликации, чтобы голосовой канал не зависел от неё.
+            total_overdue_counts[user.id] = total_overdue_counts.get(user.id, 0) + 1
+            users_by_id[user.id] = user
+
             if await uow.notifications.check_already_sent(
                 user.id,
                 task.id,
@@ -202,14 +208,14 @@ async def notify_overdue() -> None:
             text = overdue_text(task)
             await _send_task_and_log(uow, sender, user, task, "overdue", text)
             sent += 1
-            newly_notified_counts[user.id] = newly_notified_counts.get(user.id, 0) + 1
-            users_by_id[user.id] = user
 
         await uow.commit()
 
         # Агрегированные каналы поверх Telegram — после того, как все текстовые
-        # уже ушли и закоммичены.
-        for user_id, count in newly_notified_counts.items():
+        # уже ушли и закоммичены. Идём по ВСЕМ пользователям с активной
+        # просрочкой (total_overdue_counts), а не только по тем, кому только
+        # что ушёл новый текст.
+        for user_id, count in total_overdue_counts.items():
             user = users_by_id[user_id]
             phrase = _overdue_count_phrase(count)
 
@@ -217,7 +223,9 @@ async def notify_overdue() -> None:
             # см. NotificationSettingsModel.voice_notifications_enabled).
             settings = await uow.notification_settings.get_by_user(user_id)
             if settings and settings.voice_notifications_enabled:
-                await sender.send_voice(user, phrase, notification_type="voice_overdue")
+                success, error = await sender.send_voice(user, phrase, notification_type="voice_overdue")
+                if not success:
+                    await event_logger.awarning("voice_overdue_failed", user_id=user_id, error=error)
 
             # Веб-push — независимый канал, не завязан на voice-настройку.
             # Best-effort: если VAPID не настроен или подписок нет, просто

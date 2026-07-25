@@ -31,6 +31,39 @@ class TaskRepository(AbstractTaskRepository):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_ids(self, task_ids: list[int]) -> list[SpisokModel]:
+        """Загружает пачку задач по id одним запросом — для bulk-действий.
+        Мягко удалённые задачи не возвращаются (как и в get_by_id)."""
+        result = await self.session.execute(
+            select(SpisokModel)
+            .options(
+                selectinload(SpisokModel.author),
+                selectinload(SpisokModel.user),
+                selectinload(SpisokModel.tags),
+            )
+            .where(SpisokModel.id.in_(task_ids))
+            .where(SpisokModel.not_deleted_filter())
+        )
+        return list(result.scalars().all())
+
+    async def bulk_update(self, tasks: list[SpisokModel]) -> list[SpisokModel]:
+        """Персистит уже изменённые ORM-объекты одним commit — для bulk-действий.
+
+        ВАЖНО: это НЕ "UPDATE ... WHERE id IN (...)" одним SQL-выражением.
+        Такой запрос обошёл бы ORM-инструментацию, из-за чего не сработал бы
+        AuditMixin.after_flush (аудит-лог перестал бы фиксировать эти изменения)
+        и side-эффекты вроде completed_at. Поэтому задачи сначала загружаются и
+        мутируются как обычные ORM-объекты (в TaskService.bulk_update_tasks),
+        а здесь просто один commit на всю пачку вместо одного на задачу (как в
+        update(), который коммитит на каждый вызов).
+        """
+        if not tasks:
+            return []
+        await self.session.commit()
+        for task in tasks:
+            await self.session.refresh(task)
+        return tasks
+
     async def get_by_id_include_deleted(self, task_id: int) -> SpisokModel | None:
         result = await self.session.execute(
             select(SpisokModel)
@@ -47,6 +80,16 @@ class TaskRepository(AbstractTaskRepository):
         await self.session.commit()
         await self.session.refresh(task)
         return task
+
+    async def bulk_create(self, tasks: list[SpisokModel]) -> list[SpisokModel]:
+        """Создаёт пачку задач одним commit — используется импортом CSV/Excel,
+        чтобы не делать по коммиту на каждую строку файла (в отличие от create(),
+        который коммитит по одной задаче)."""
+        self.session.add_all(tasks)
+        await self.session.commit()
+        for task in tasks:
+            await self.session.refresh(task)
+        return tasks
 
     async def delete(self, task: SpisokModel) -> None:
         await self.session.delete(task)

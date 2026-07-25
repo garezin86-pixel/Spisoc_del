@@ -12,6 +12,7 @@ from src.models.task import SpisokModel
 from src.models.user import UserModel
 from src.repositories.mock_repositories import (
     MockGroupRepository,
+    MockTagRepository,
     MockTaskRepository,
     MockUserRepository,
 )
@@ -167,6 +168,7 @@ class TestTaskService:
             task_repo=MockTaskRepository(tasks=tasks),
             user_repo=MockUserRepository(users=users),
             group_repo=MockGroupRepository(groups=groups),
+            tag_repo=MockTagRepository(),
             session=session,  # теперь не None
         )
 

@@ -68,6 +68,15 @@ class NotificationSender:
             notifications_sent.labels(type=notification_type).inc()
             return True, None
         except Exception as exc:
-            logger.warning("Ошибка синтеза/отправки голосового уведомления", user_id=user.id, error=str(exc))
+            # str(exc) может быть пустым (напр. голый asyncio.TimeoutError()
+            # или обрыв сокета без сообщения) — тогда без типа исключения и
+            # traceback непонятно, что вообще упало. logger.exception сама
+            # подхватывает sys.exc_info() и допишет traceback в лог.
+            error_detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            logger.exception(
+                "Ошибка синтеза/отправки голосового уведомления",
+                user_id=user.id,
+                error_type=type(exc).__name__,
+            )
             notifications_failed.labels(type=notification_type).inc()
-            return False, str(exc)[:500]
+            return False, error_detail[:500]

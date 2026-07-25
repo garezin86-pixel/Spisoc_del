@@ -9,6 +9,7 @@ from src.core.dependencies import (
 from src.db import SessionDep
 from src.models.user import UserModel
 from src.repositories.groups_repository import GroupRepository
+from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.pagination import PaginatedResponse, PaginationParams
@@ -58,6 +59,7 @@ async def get_user_stats(
         task_repo=TaskRepository(session),
         user_repo=UserRepository(session),
         group_repo=GroupRepository(session),
+        tag_repo=TagRepository(session),
         session=session,
     ).get_user_stats(user_id)
 

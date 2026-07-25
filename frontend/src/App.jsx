@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiRequest, API_BASE, clearTokens, getRefreshToken, saveTokens } from "./api";
+import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
 import AttachmentsPanel from "./AttachmentsPanel";
 
 // ── WebSocket hook ────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ function useWebSocket(token, onEvent) {
                 const msg = JSON.parse(e.data);
                 if (msg.event === "pong") return;
                 onEvent(msg.event, msg.data);
-            } catch {}
+            } catch { }
         };
 
         ws.onclose = (e) => {
@@ -679,7 +679,7 @@ function StatusMenu({ status, onChange, disabled }) {
 }
 
 // ─── TaskCard ─────────────────────────────────────────────
-function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole }) {
+function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole, selected, onToggleSelect }) {
     const [expanded, setExpanded] = useState(!collapsible);
     const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
@@ -790,9 +790,25 @@ function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUp
             <div className="task-main-info"> {/* НОВЫЙ ИЗОЛИРУЮЩИЙ КОНТЕЙНЕР ДЛЯ ВЕРХНЕЙ ЧАСТИ */}
                 <div className="task-top">
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="task-title">
-                            <span className="task-id">#{task.id}</span>
-                            {task.title}
+                        <div className="task-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {onToggleSelect && (
+                                <input
+                                    type="checkbox"
+                                    checked={!!selected}
+                                    onChange={() => onToggleSelect(task.id)}
+                                    onClick={e => e.stopPropagation()}
+                                    style={{
+                                        width: 16, height: 16, minWidth: 16, minHeight: 16,
+                                        flexShrink: 0, margin: 0, padding: 0,
+                                        border: "1px solid var(--border)", borderRadius: 4,
+                                        cursor: "pointer", accentColor: "var(--accent)",
+                                    }}
+                                />
+                            )}
+                            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                <span className="task-id">#{task.id}</span>
+                                {task.title}
+                            </span>
                         </div>
                         {task.description && <div className="task-desc">{task.description}</div>}
                         <div className="task-meta-row">
@@ -3351,6 +3367,10 @@ function App() {
     const [allTags, setAllTags] = useState([]);
     const [tagFilter, setTagFilter] = useState("");
 
+    const [filterPresets, setFilterPresets] = useState([]);
+    const [presetNameInput, setPresetNameInput] = useState("");
+    const [savingPreset, setSavingPreset] = useState(false);
+
     const [form, setForm] = useState(initialForm);
     const [assignType, setAssignType] = useState("self");
     const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -3367,6 +3387,67 @@ function App() {
     // Раньше здесь была клиентская фильтрация по подстроке в title/id —
     // это скрывало бы результаты, найденные сервером по description.
     const visibleTasks = tasks;
+
+    const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+    const [bulkStatus, setBulkStatus] = useState("");
+    const [bulkPriority, setBulkPriority] = useState("");
+    const [bulkTagId, setBulkTagId] = useState("");
+    const [bulkUserId, setBulkUserId] = useState("");
+    const [bulkApplying, setBulkApplying] = useState(false);
+
+    function toggleTaskSelection(taskId) {
+        setSelectedTaskIds(prev => {
+            const next = new Set(prev);
+            if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+            return next;
+        });
+    }
+
+    function toggleSelectAllVisible() {
+        setSelectedTaskIds(prev => {
+            const allSelected = visibleTasks.every(t => prev.has(t.id));
+            if (allSelected) return new Set(); // все выбраны — снимаем всё
+            return new Set(visibleTasks.map(t => t.id)); // иначе выбираем все видимые
+        });
+    }
+
+    async function handleBulkApply() {
+        if (!bulkStatus && !bulkPriority && !bulkTagId && !bulkUserId) {
+            setError("Выберите хотя бы одно поле для изменения");
+            return;
+        }
+
+        const body = { task_ids: Array.from(selectedTaskIds) };
+        if (bulkStatus) body.status = bulkStatus;
+        if (bulkPriority) body.priority = bulkPriority;
+        if (bulkTagId) body.tag_id = Number(bulkTagId);
+        if (bulkUserId) body.user_id = Number(bulkUserId);
+
+        setBulkApplying(true);
+        try {
+            const response = await fetch(`${API_BASE}/tasks/bulk`, {
+                method: "PATCH",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || `Ошибка ${response.status}`);
+            }
+            const result = await response.json();
+            if (result.skipped.length > 0) {
+                setError(`Обновлено: ${result.updated}. Пропущено (нет доступа или удалены): ${result.skipped.join(", ")}`);
+            }
+            setSelectedTaskIds(new Set());
+            setBulkStatus(""); setBulkPriority(""); setBulkTagId(""); setBulkUserId("");
+            await loadTasks(tasksPage, viewMode);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBulkApplying(false);
+        }
+    }
+
     const [showTooltip, setShowTooltip] = useState(false);
     const chipRef = React.useRef(null);
     const [tooltipPos, setTooltipPos] = useState({ top: 0, right: 0 });
@@ -3441,6 +3522,68 @@ function App() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    const loadFilterPresets = useCallback(async () => {
+        try {
+            const data = await apiRequest({ path: "/tasks/presets", token: tokenRef.current });
+            setFilterPresets(Array.isArray(data) ? data : []);
+        } catch (err) {
+            handleAuthError(err);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    async function handleSavePreset() {
+        const name = presetNameInput.trim();
+        if (!name) {
+            setError("Введите название пресета");
+            return;
+        }
+        setSavingPreset(true);
+        try {
+            await apiRequest({
+                path: "/tasks/presets",
+                method: "POST",
+                token,
+                body: {
+                    name,
+                    status: statusFilter || null,
+                    priority: filterPriority || null,
+                    tag_id: tagFilter ? Number(tagFilter) : null,
+                    filter_user_group: viewMode || null,
+                    filter_type: filterType || null,
+                },
+            });
+            setPresetNameInput("");
+            await loadFilterPresets();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSavingPreset(false);
+        }
+    }
+
+    function handleApplyPreset(preset) {
+        // Выставляем все стейты фильтров разом и перезагружаем список.
+        setStatusFilter(preset.status || "");
+        setFilterPriority(preset.priority || null);
+        setTagFilter(preset.tag_id ? String(preset.tag_id) : "");
+        setFilterType(preset.filter_type || "");
+        if (preset.filter_user_group) setViewMode(preset.filter_user_group);
+        // Рефы (statusFilterRef и т.д.) обновятся синхронно с ре-рендером на
+        // следующий тик, поэтому передаём filter_user_group явным аргументом,
+        // а не полагаемся на viewModeRef, который ещё не успеет обновиться.
+        loadTasks(1, preset.filter_user_group || undefined);
+    }
+
+    async function handleDeletePreset(presetId) {
+        try {
+            await apiRequest({ path: `/tasks/presets/${presetId}`, method: "DELETE", token });
+            setFilterPresets(prev => prev.filter(p => p.id !== presetId));
+        } catch (err) {
+            setError(err.message);
+        }
+    }
 
     const loadTrash = useCallback(async (page = 1) => {
         if (trashAbortRef.current) trashAbortRef.current.abort();
@@ -3528,6 +3671,7 @@ function App() {
             loadGroups();
             loadUsers();
             loadTags();
+            loadFilterPresets();
             if (tab === "tasks") loadTasks(1);
             if (tab === "trash") loadTrash(1);
             if (tab === "dashboard") loadDashboard();
@@ -3718,6 +3862,43 @@ function App() {
             setError(err.message);
         } finally {
             setExporting(false);
+        }
+    }
+
+    const [importing, setImporting] = useState(false);
+    const [importSummary, setImportSummary] = useState(null); // { created, errors, warnings } | null
+    const importInputRef = useRef(null);
+
+    async function handleImportFile(e) {
+        const file = e.target.files?.[0];
+        e.target.value = ""; // сбрасываем, чтобы можно было выбрать тот же файл повторно
+        if (!file) return;
+
+        setImporting(true);
+        setImportSummary(null);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const q = new URLSearchParams();
+            if (projectId) q.set("project_id", projectId); // если на странице выбран проект — импортируем в него
+
+            const response = await fetch(`${API_BASE}/tasks/import?${q}`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` }, // Content-Type НЕ ставим — fetch сам
+                body: formData,                                // проставит multipart boundary
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || `Ошибка ${response.status}`);
+            }
+            const summary = await response.json();
+            setImportSummary(summary);
+            await loadTasks(1); // перезагружаем список — импортированные задачи должны появиться
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setImporting(false);
         }
     }
 
@@ -4090,6 +4271,20 @@ function App() {
                                         <button className="btn btn-ghost btn-sm" onClick={handleExportCsv} disabled={exporting}>
                                             📄 {exporting ? "Экспорт…" : "Экспорт в CSV"}
                                         </button>
+                                        <input
+                                            ref={importInputRef}
+                                            type="file"
+                                            accept=".csv,.xlsx"
+                                            style={{ display: "none" }}
+                                            onChange={handleImportFile}
+                                        />
+                                        <button
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() => importInputRef.current?.click()}
+                                            disabled={importing}
+                                        >
+                                            📥 {importing ? "Импорт…" : "Импорт из CSV/Excel"}
+                                        </button>
                                         <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
                                             <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
                                         </button>
@@ -4113,6 +4308,45 @@ function App() {
                                         </select>
                                     </div>
                                 </div>
+
+                                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                                    {filterPresets.map(preset => (
+                                        <span key={preset.id} style={{
+                                            display: "inline-flex", alignItems: "center", gap: 4,
+                                            background: "var(--surface2)", border: "1px solid var(--border)",
+                                            borderRadius: "var(--radius-sm)", overflow: "hidden",
+                                        }}>
+                                            <button
+                                                className="btn btn-ghost btn-sm"
+                                                style={{ border: "none" }}
+                                                onClick={() => handleApplyPreset(preset)}
+                                                title="Применить пресет"
+                                            >
+                                                {preset.name}
+                                            </button>
+                                            <button
+                                                className="btn btn-ghost btn-sm"
+                                                style={{ border: "none", padding: "4px 8px", color: "var(--red)" }}
+                                                onClick={() => handleDeletePreset(preset.id)}
+                                                title="Удалить пресет"
+                                            >
+                                                ×
+                                            </button>
+                                        </span>
+                                    ))}
+
+                                    <input
+                                        type="text"
+                                        value={presetNameInput}
+                                        onChange={e => setPresetNameInput(e.target.value)}
+                                        placeholder="Название пресета…"
+                                        style={{ width: 160, padding: "6px 10px" }}
+                                    />
+                                    <button className="btn btn-ghost btn-sm" onClick={handleSavePreset} disabled={savingPreset}>
+                                        💾 {savingPreset ? "Сохраняю…" : "Сохранить как пресет"}
+                                    </button>
+                                </div>
+
                                 {loading ? (
                                     <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка задач…</div>
                                 ) : tasks.length === 0 ? (
@@ -4122,6 +4356,61 @@ function App() {
                                     </div>
                                 ) : (
                                     <>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={visibleTasks.length > 0 && visibleTasks.every(t => selectedTaskIds.has(t.id))}
+                                                    onChange={toggleSelectAllVisible}
+                                                />
+                                                Выбрать все на странице
+                                            </label>
+                                        </div>
+
+                                        {selectedTaskIds.size > 0 && (
+                                            <div style={{
+                                                display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
+                                                padding: "10px 12px", marginBottom: 12,
+                                                background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                                            }}>
+                                                <span style={{ fontWeight: 600, fontSize: 13 }}>Выбрано: {selectedTaskIds.size}</span>
+
+                                                <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ maxWidth: 140 }}>
+                                                    <option value="">Статус…</option>
+                                                    <option value="backlog">Бэклог</option>
+                                                    <option value="todo">Todo</option>
+                                                    <option value="in_progress">В работе</option>
+                                                    <option value="review">Ревью</option>
+                                                    <option value="done">Готово</option>
+                                                </select>
+
+                                                <select value={bulkPriority} onChange={e => setBulkPriority(e.target.value)} style={{ maxWidth: 140 }}>
+                                                    <option value="">Приоритет…</option>
+                                                    <option value="low">Низкий</option>
+                                                    <option value="medium">Средний</option>
+                                                    <option value="high">Высокий</option>
+                                                    <option value="critical">Критический</option>
+                                                </select>
+
+                                                <select value={bulkTagId} onChange={e => setBulkTagId(e.target.value)} style={{ maxWidth: 140 }}>
+                                                    <option value="">Тег…</option>
+                                                    {allTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                </select>
+
+                                                <select value={bulkUserId} onChange={e => setBulkUserId(e.target.value)} style={{ maxWidth: 160 }}>
+                                                    <option value="">Исполнитель…</option>
+                                                    {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                                                </select>
+
+                                                <button className="btn btn-primary btn-sm" onClick={handleBulkApply} disabled={bulkApplying}>
+                                                    {bulkApplying ? "Применяю…" : "Применить"}
+                                                </button>
+                                                <button className="btn btn-ghost btn-sm" onClick={() => setSelectedTaskIds(new Set())} disabled={bulkApplying}>
+                                                    Отменить выбор
+                                                </button>
+                                            </div>
+                                        )}
+
                                         <div className="task-list">
                                             {visibleTasks.map(task => (
                                                 <TaskCard key={task.id} task={task}
@@ -4134,7 +4423,9 @@ function App() {
                                                     onUpdate={handleUpdateTask}
                                                     onReassign={handleReassignTask}
                                                     currentUserId={currentUserId}
-                                                    currentRole={currentRole} />
+                                                    currentRole={currentRole}
+                                                    selected={selectedTaskIds.has(task.id)}
+                                                    onToggleSelect={toggleTaskSelection} />
                                             ))}
                                         </div>
                                         <Pagination page={tasksPage} totalPages={tasksTotalPages}
@@ -4142,6 +4433,52 @@ function App() {
                                     </>
                                 )}
                             </div>
+
+                            {importSummary && (
+                                <div style={{
+                                    position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    zIndex: 1000, padding: 16,
+                                }} onClick={e => { if (e.target === e.currentTarget) setImportSummary(null); }}>
+                                    <div style={{
+                                        background: "var(--bg-card)", border: "1px solid var(--border)",
+                                        borderRadius: 16, padding: 24, width: "100%", maxWidth: 480,
+                                    }}>
+                                        <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 12 }}>Импорт завершён</div>
+                                        <div style={{ marginBottom: 16 }}>Создано задач: <b>{importSummary.created}</b></div>
+
+                                        {importSummary.errors.length > 0 && (
+                                            <div style={{ marginBottom: 16 }}>
+                                                <div style={{ color: "var(--red)", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                                                    Пропущено строк: {importSummary.errors.length}
+                                                </div>
+                                                <ul style={{ maxHeight: 140, overflowY: "auto", fontSize: 13, margin: 0, paddingLeft: 18 }}>
+                                                    {importSummary.errors.map((e, i) => (
+                                                        <li key={i}>Строка {e.row}: {e.message}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        {importSummary.warnings.length > 0 && (
+                                            <div style={{ marginBottom: 16 }}>
+                                                <div style={{ color: "var(--text-muted)", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                                                    Предупреждения: {importSummary.warnings.length}
+                                                </div>
+                                                <ul style={{ maxHeight: 140, overflowY: "auto", fontSize: 13, margin: 0, paddingLeft: 18 }}>
+                                                    {importSummary.warnings.map((w, i) => (
+                                                        <li key={i}>Строка {w.row}: {w.message}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => setImportSummary(null)}>
+                                            Закрыть
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </main>
                     </div>
                 </div>
@@ -4162,7 +4499,7 @@ function App() {
             {tab === "projects" && (
                 <div>
                     <ProjectsTab token={token} canManage={canManage}
-                                 currentUserId={currentUserId} currentRole={currentRole} />
+                        currentUserId={currentUserId} currentRole={currentRole} />
                 </div>
             )}
             {/* ── KANBAN TAB ── */}

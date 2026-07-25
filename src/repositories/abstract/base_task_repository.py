@@ -172,3 +172,21 @@ class AbstractTaskRepository(ABC):
     @abstractmethod
     async def get_tasks_for_analytics(self) -> list[SpisokModel]:
         raise NotImplementedError
+
+    @abstractmethod
+    async def bulk_create(self, tasks: list[SpisokModel]) -> list[SpisokModel]:
+        """Создаёт пачку задач одним commit — используется импортом CSV/Excel,
+        чтобы не делать по коммиту на каждую строку файла (в отличие от create(),
+        который коммитит по одной задаче)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_by_ids(self, task_ids: list[int]) -> list[SpisokModel]:
+        """Загружает пачку задач по id одним запросом — для bulk-действий.
+        Мягко удалённые задачи не возвращаются (как и в get_by_id)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def bulk_update(self, tasks: list[SpisokModel]) -> list[SpisokModel]:
+        """Персистит уже изменённые ORM-объекты одним commit — для bulk-действий."""
+        raise NotImplementedError
