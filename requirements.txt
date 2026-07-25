@@ -61,6 +61,7 @@ APScheduler==3.11.2
 
 # File handling
 aiofiles==25.1.0
+openpyxl==3.1.5
 
 # Admin panel
 sqladmin==0.23.0
