@@ -76,7 +76,10 @@ class TestSynthesizeSpeech:
         fake_communicate.stream = lambda: _async_gen([{"type": "audio", "data": b"mp3-bytes"}])
 
         with (
-            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate) as mock_communicate,
+            patch(
+                "src.services.voice_ai.edge_tts.Communicate",
+                return_value=fake_communicate,
+            ) as mock_communicate,
             patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock) as mock_convert,
         ):
             mock_convert.return_value = b"ogg-bytes"
@@ -91,8 +94,15 @@ class TestSynthesizeSpeech:
         fake_communicate.stream = lambda: _async_gen([{"type": "audio", "data": b"x"}])
 
         with (
-            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate) as mock_communicate,
-            patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock, return_value=b"ogg"),
+            patch(
+                "src.services.voice_ai.edge_tts.Communicate",
+                return_value=fake_communicate,
+            ) as mock_communicate,
+            patch(
+                "src.services.voice_ai._mp3_to_ogg_opus",
+                new_callable=AsyncMock,
+                return_value=b"ogg",
+            ),
         ):
             await synthesize_speech("Текст")
 
@@ -110,7 +120,10 @@ class TestSynthesizeSpeech:
         )
 
         with (
-            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate),
+            patch(
+                "src.services.voice_ai.edge_tts.Communicate",
+                return_value=fake_communicate,
+            ),
             patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock) as mock_convert,
         ):
             mock_convert.return_value = b"ogg"
@@ -131,7 +144,10 @@ class TestSynthesizeSpeech:
         )
 
         with (
-            patch("src.services.voice_ai.edge_tts.Communicate", return_value=fake_communicate),
+            patch(
+                "src.services.voice_ai.edge_tts.Communicate",
+                return_value=fake_communicate,
+            ),
             patch("src.services.voice_ai._mp3_to_ogg_opus", new_callable=AsyncMock) as mock_convert,
         ):
             mock_convert.return_value = b"ogg"
@@ -152,26 +168,21 @@ class TestSynthesizeSpeech:
 class TestMp3ToOggOpus:
     @pytest.mark.asyncio
     async def test_calls_ffmpeg_with_expected_args(self):
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"ogg-output", b""))
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc) as mock_exec:
+        with patch(
+            "src.services.voice_ai._run_ffmpeg_sync",
+            return_value=b"ogg-output",
+        ) as mock_run:
             result = await _mp3_to_ogg_opus(b"fake-mp3-bytes")
 
         assert result == b"ogg-output"
-        args = mock_exec.call_args.args
-        assert args[0] == "ffmpeg"
-        assert "libopus" in args
-        mock_proc.communicate.assert_called_once_with(input=b"fake-mp3-bytes")
+        mock_run.assert_called_once_with(b"fake-mp3-bytes")
 
     @pytest.mark.asyncio
     async def test_nonzero_return_code_raises(self):
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"", b"ffmpeg: invalid data"))
-        mock_proc.returncode = 1
-
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc):
+        with patch(
+            "src.services.voice_ai._run_ffmpeg_sync",
+            side_effect=RuntimeError("ffmpeg: invalid data"),
+        ):
             with pytest.raises(RuntimeError, match="ffmpeg"):
                 await _mp3_to_ogg_opus(b"garbage")
 

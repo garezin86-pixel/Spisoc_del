@@ -54,7 +54,13 @@ def mock_reminder_bot(engine):
 
 
 async def make_task_with_deadline(session, user, deadline, status=TaskStatus.todo, title="Тестовая задача"):
-    task = SpisokModel(title=title, user_id=user.id, author_id=user.id, deadline=deadline, status=status)
+    task = SpisokModel(
+        title=title,
+        user_id=user.id,
+        author_id=user.id,
+        deadline=deadline,
+        status=status,
+    )
     session.add(task)
     await session.commit()
     await session.refresh(task)
@@ -442,23 +448,61 @@ class TestNotifyOverdue:
         mock_reminder_bot.send_message.assert_called_once()
         mock_reminder_bot.send_voice.assert_not_called()
 
+    # @pytest.mark.asyncio
+    # async def test_voice_not_sent_when_all_tasks_already_notified(self, session, mock_reminder_bot):
+    #     """Если все задачи уже были уведомлены в прошлый прогон (дедуп) — новый голосовой агрегат не шлётся."""
+    #     with patch("src.services.voice_ai.synthesize_speech", new_callable=AsyncMock) as mock_tts:
+    #         mock_tts.return_value = b"audio"
+
+    #         user = await make_active_user(session)
+    #         await make_settings(session, user.id, voice_notifications_enabled=True)
+    #         deadline = datetime.now(timezone.utc) - timedelta(hours=2)
+    #         await make_task_with_deadline(session, user, deadline)
+
+    #         await notify_overdue()  # первый прогон — текст + голос
+    #         mock_reminder_bot.send_voice.reset_mock()
+
+    #         await notify_overdue()  # второй прогон — дедуп по тексту, голос не должен слаться повторно
+
+    #     mock_reminder_bot.send_voice.assert_not_called()
+
     @pytest.mark.asyncio
-    async def test_voice_not_sent_when_all_tasks_already_notified(self, session, mock_reminder_bot):
-        """Если все задачи уже были уведомлены в прошлый прогон (дедуп) — новый голосовой агрегат не шлётся."""
-        with patch("src.services.voice_ai.synthesize_speech", new_callable=AsyncMock) as mock_tts:
+    async def test_voice_sent_every_run_when_overdue_tasks_exist(
+        self,
+        session,
+        mock_reminder_bot,
+    ):
+        """Голосовая сводка отправляется на каждом прогоне,
+        пока у пользователя есть просроченные задачи."""
+
+        with patch(
+            "src.services.voice_ai.synthesize_speech",
+            new_callable=AsyncMock,
+        ) as mock_tts:
             mock_tts.return_value = b"audio"
 
             user = await make_active_user(session)
-            await make_settings(session, user.id, voice_notifications_enabled=True)
+            await make_settings(
+                session,
+                user.id,
+                voice_notifications_enabled=True,
+            )
+
             deadline = datetime.now(timezone.utc) - timedelta(hours=2)
             await make_task_with_deadline(session, user, deadline)
 
-            await notify_overdue()  # первый прогон — текст + голос
+            # Первый прогон
+            await notify_overdue()
+            mock_reminder_bot.send_voice.assert_called_once()
+
             mock_reminder_bot.send_voice.reset_mock()
 
-            await notify_overdue()  # второй прогон — дедуп по тексту, голос не должен слаться повторно
+            # Второй прогон
+            await notify_overdue()
 
-        mock_reminder_bot.send_voice.assert_not_called()
+            # Голосовая сводка должна отправиться снова,
+            # хотя текстовое уведомление уже подавлено дедупликацией.
+            mock_reminder_bot.send_voice.assert_called_once()
 
 
 class TestSendWeeklyReport:
