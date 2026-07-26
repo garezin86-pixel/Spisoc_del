@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.enums import PatScope
 from src.models.personal_access_token import PersonalAccessTokenModel
 
 
@@ -18,6 +19,7 @@ class PatRepository:
         token_hash: str,
         token_prefix: str,
         expires_at: datetime | None,
+        scope: PatScope = PatScope.read_write,
     ) -> PersonalAccessTokenModel:
         pat = PersonalAccessTokenModel(
             user_id=user_id,
@@ -25,6 +27,7 @@ class PatRepository:
             token_hash=token_hash,
             token_prefix=token_prefix,
             expires_at=expires_at,
+            scope=scope,
         )
         self.session.add(pat)
         await self.session.commit()

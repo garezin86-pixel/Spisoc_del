@@ -19,6 +19,7 @@ from src.core.exceptions import (
 
 # (not_found и/или incorrect_request — если ещё не импортированы в этом файле)
 from src.db import SessionDep
+from src.models.enums import WebhookEvent
 from src.models.filter_preset import FilterPresetModel
 from src.models.task import TaskStatus
 from src.models.user import UserModel
@@ -47,12 +48,15 @@ from src.schemas.task import (
 from src.services.notifications import notify_task_assigned
 from src.services.task_export_service import TaskExportService
 from src.services.task_service import TaskService
+from src.services.webhook_dispatcher import dispatch_webhook_event
 from src.services.ws_events import (
+    affected_users,
     emit_kanban_moved,
     emit_task_created,
     emit_task_deleted,
     emit_task_restored,
     emit_task_updated,
+    task_payload,
 )
 from src.utils.cache_keys import user_scoped_key_builder
 from src.utils.cache_manager import cache_manager
@@ -80,6 +84,7 @@ async def add_task(
     task = await get_task_service(session).add_task(data, current_user)
     await cache_manager.invalidate_tasks()
     await emit_task_created(task)
+    dispatch_webhook_event(WebhookEvent.task_created, affected_users(task), task_payload(task))
     return task
 
 
@@ -373,6 +378,13 @@ async def update_task(
     task = await get_task_service(session).update_task(task_id, data, current_user)
     await cache_manager.invalidate_tasks()
     await emit_task_updated(task)
+    users = affected_users(task)
+    payload = task_payload(task)
+    dispatch_webhook_event(WebhookEvent.task_updated, users, payload)
+    if data.status is not None:
+        dispatch_webhook_event(WebhookEvent.task_status_changed, users, payload)
+        if task.status == TaskStatus.done:
+            dispatch_webhook_event(WebhookEvent.task_done, users, payload)
     return task
 
 
@@ -388,6 +400,7 @@ async def delete_task(
     result = await get_task_service(session).delete_task(task_id, current_user)
     await cache_manager.invalidate_tasks()
     await emit_task_deleted(task)
+    dispatch_webhook_event(WebhookEvent.task_deleted, affected_users(task), {"id": task.id})
     return result
 
 
@@ -448,4 +461,9 @@ async def update_task_status(
     task = await get_task_service(session).update_task_status(task_id, data.status, current_user)
     await cache_manager.invalidate_tasks()
     await emit_kanban_moved(task)
+    users = affected_users(task)
+    payload = task_payload(task)
+    dispatch_webhook_event(WebhookEvent.task_status_changed, users, payload)
+    if task.status == TaskStatus.done:
+        dispatch_webhook_event(WebhookEvent.task_done, users, payload)
     return task

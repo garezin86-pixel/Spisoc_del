@@ -1,5 +1,5 @@
 import jwt
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.config import ALGORITHM, SECRET_KEY
@@ -9,15 +9,34 @@ from src.core.constants import (
     INVALID_EXPIRED_TOKEN,
     USER_NOT_FOUND,
 )
-from src.core.exceptions import current_admin, unauthorized, user_not_found
+from src.core.exceptions import current_admin, no_access, unauthorized, user_not_found
 from src.db import SessionDep
+from src.models.enums import PatScope
 from src.models.user import UserModel, UserRole
 from src.services.pat_service import TOKEN_PREFIX, authenticate_by_pat
 
 security = HTTPBearer()
 
+# Методы, которые что-то меняют. GET/HEAD/OPTIONS сюда не входят — их
+# read_only-токен может делать всегда.
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _enforce_pat_scope(request: Request, user: UserModel) -> None:
+    """
+    Если пользователь аутентифицирован read_only PAT-токеном (см.
+    authenticate_by_pat, который выставляет user.pat_scope), запрещает
+    любой мутирующий запрос. Проверка на уровне HTTP-метода, а не
+    отдельного эндпоинта — так одно место защищает сразу все роутеры,
+    включая новые, которые появятся в будущем.
+    """
+    scope = getattr(user, "pat_scope", None)
+    if scope == PatScope.read_only and request.method in _MUTATING_METHODS:
+        no_access("Этот токен read-only и не может выполнять изменяющие запросы")
+
 
 async def get_current_user(
+    request: Request,
     session: SessionDep,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> UserModel:
@@ -31,6 +50,7 @@ async def get_current_user(
         if user is None:
             unauthorized("Токен недействителен, отозван или истёк")
             raise AssertionError("unreachable")  # unauthorized() всегда бросает исключение
+        _enforce_pat_scope(request, user)
         return user
 
     if not SECRET_KEY or not ALGORITHM:

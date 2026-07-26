@@ -64,6 +64,12 @@ def get_notification_keyboard(settings: dict) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text=f"{'✅' if settings['notify_mentioned'] else '❌'} Упоминания (@username)",
+                callback_data="toggle_mentioned",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=f"{'✅' if settings['notify_group_assigned'] else '❌'} Назначение в группу",
                 callback_data="toggle_group_assigned",
             )
@@ -101,6 +107,7 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
             "notify_task_assigned": settings_obj.notify_task_assigned,
             "notify_task_updated": settings_obj.notify_task_updated,
             "notify_comment": settings_obj.notify_comment,
+            "notify_mentioned": settings_obj.notify_mentioned,
             "notify_group_assigned": settings_obj.notify_group_assigned,
             "voice_notifications_enabled": settings_obj.voice_notifications_enabled,
         }
@@ -112,6 +119,7 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
         "notify_task_assigned": True,
         "notify_task_updated": True,
         "notify_comment": True,
+        "notify_mentioned": True,
         "notify_group_assigned": True,
         # ВАЖНО: голосовые — opt-in, дефолт False (в отличие от остальных
         # текстовых уведомлений выше, которые по умолчанию включены).
@@ -212,6 +220,7 @@ async def notification_toggle_callback(callback: CallbackQuery):
             "уведомление об обновлении задачи",
         ),
         "toggle_comment": ("notify_comment", "уведомление о комментариях"),
+        "toggle_mentioned": ("notify_mentioned", "уведомление об упоминаниях (@username)"),
         "toggle_group_assigned": (
             "notify_group_assigned",
             "уведомление о назначении в группу",

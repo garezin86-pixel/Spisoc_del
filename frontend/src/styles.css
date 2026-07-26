@@ -1228,6 +1228,14 @@ textarea {
   line-height: 1.5;
 }
 
+.comment-mention {
+  color: var(--accent, #7c6ff0);
+  background: color-mix(in srgb, var(--accent, #7c6ff0) 15%, transparent);
+  border-radius: 4px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+
 .comment-form {
   display: grid;
   gap: 8px;

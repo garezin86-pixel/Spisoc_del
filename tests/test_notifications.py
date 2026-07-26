@@ -82,6 +82,7 @@ async def create_notification_settings(session, user_id: int, **kwargs):
         notify_task_assigned=kwargs.get("notify_task_assigned", True),
         notify_task_updated=kwargs.get("notify_task_updated", True),
         notify_comment=kwargs.get("notify_comment", True),
+        notify_mentioned=kwargs.get("notify_mentioned", True),
     )
     session.add(settings)
     await session.commit()

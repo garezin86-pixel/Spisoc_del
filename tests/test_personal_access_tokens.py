@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
+from src.models.enums import PatScope
 from src.models.personal_access_token import PersonalAccessTokenModel
 from src.repositories.pat_repository import PatRepository
 from src.schemas.personal_access_token import PersonalAccessTokenCreate
@@ -79,6 +80,25 @@ class TestCreateToken:
         t2 = await service.create_token(user, PersonalAccessTokenCreate(name="B"))
 
         assert t1.token != t2.token
+
+    @pytest.mark.asyncio
+    async def test_defaults_to_read_write_scope(self, session):
+        """Обратная совместимость: старые клиенты не знают о scope вообще."""
+        user = await make_user(session)
+        service = build_service(session)
+
+        result = await service.create_token(user, PersonalAccessTokenCreate(name="X"))
+
+        assert result.scope == PatScope.read_write
+
+    @pytest.mark.asyncio
+    async def test_can_create_read_only_token(self, session):
+        user = await make_user(session)
+        service = build_service(session)
+
+        result = await service.create_token(user, PersonalAccessTokenCreate(name="Дашборд", scope=PatScope.read_only))
+
+        assert result.scope == PatScope.read_only
 
 
 class TestListTokens:
@@ -222,6 +242,21 @@ class TestAuthenticateByPat:
         assert after.last_used_at is not None
 
     @pytest.mark.asyncio
+    async def test_exposes_scope_on_authenticated_user(self, session):
+        """
+        get_current_user (см. dependencies.py) читает user.pat_scope, чтобы
+        решить, разрешать ли мутирующий запрос — здесь проверяем, что
+        authenticate_by_pat действительно выставляет этот атрибут.
+        """
+        user = await make_user(session)
+        service = build_service(session)
+        created = await service.create_token(user, PersonalAccessTokenCreate(name="X", scope=PatScope.read_only))
+
+        authenticated = await authenticate_by_pat(session, created.token)
+
+        assert authenticated.pat_scope == PatScope.read_only
+
+    @pytest.mark.asyncio
     async def test_deleting_user_cascades_to_tokens(self, session):
         """ondelete=CASCADE / cascade delete-orphan — токены не должны сиротеть при удалении пользователя."""
         user = await make_user(session)
@@ -302,3 +337,95 @@ class TestPatEndToEndViaRealApp:
 
         after_revoke = await client.get("/api/tokens", headers={"Authorization": f"Bearer {pat_token}"})
         assert after_revoke.status_code == 401
+
+
+class TestScopeEnforcementViaRealApp:
+    """
+    Проверяем ограничение read_only-токена через реальный HTTP-стек:
+    GET должен проходить, любой мутирующий метод — получать 403.
+    """
+
+    async def _login_and_create_pat(self, client, engine, username: str, scope: str) -> str:
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with async_session() as sess:
+            await make_user(sess, username=username, password="pass123")
+
+        login_resp = await client.post("/auth/login", json={"username": username, "password": "pass123"})
+        jwt_token = login_resp.json()["access_token"]
+
+        create_resp = await client.post(
+            "/api/tokens",
+            json={"name": "X", "scope": scope},
+            headers={"Authorization": f"Bearer {jwt_token}"},
+        )
+        assert create_resp.status_code == 201
+        assert create_resp.json()["scope"] == scope
+        return create_resp.json()["token"]
+
+    @pytest.mark.asyncio
+    async def test_read_only_token_can_read(self, client, engine):
+        pat_token = await self._login_and_create_pat(client, engine, f"ro_read_{uuid.uuid4().hex[:6]}", "read_only")
+
+        resp = await client.get("/api/tokens", headers={"Authorization": f"Bearer {pat_token}"})
+
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_read_only_token_cannot_create_task(self, client, engine):
+        pat_token = await self._login_and_create_pat(client, engine, f"ro_task_{uuid.uuid4().hex[:6]}", "read_only")
+
+        resp = await client.post(
+            "/api/tasks",
+            json={"title": "Should be blocked"},
+            headers={"Authorization": f"Bearer {pat_token}"},
+        )
+
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_read_only_token_cannot_create_another_pat(self, client, engine):
+        """read_only не должен уметь выписать себе полноправный токен."""
+        pat_token = await self._login_and_create_pat(client, engine, f"ro_pat_{uuid.uuid4().hex[:6]}", "read_only")
+
+        resp = await client.post(
+            "/api/tokens",
+            json={"name": "Escalation attempt", "scope": "read_write"},
+            headers={"Authorization": f"Bearer {pat_token}"},
+        )
+
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_read_write_token_can_create_task(self, client, engine):
+        pat_token = await self._login_and_create_pat(client, engine, f"rw_task_{uuid.uuid4().hex[:6]}", "read_write")
+
+        resp = await client.post(
+            "/api/tasks",
+            json={"title": "Allowed"},
+            headers={"Authorization": f"Bearer {pat_token}"},
+        )
+
+        assert resp.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_jwt_session_unaffected_by_scope_check(self, client, engine):
+        """Обычная веб-сессия (JWT) никогда не ограничена read_only — scope есть только у PAT."""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        username = f"jwt_user_{uuid.uuid4().hex[:6]}"
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with async_session() as sess:
+            await make_user(sess, username=username, password="pass123")
+
+        login_resp = await client.post("/auth/login", json={"username": username, "password": "pass123"})
+        jwt_token = login_resp.json()["access_token"]
+
+        resp = await client.post(
+            "/api/tasks",
+            json={"title": "Via JWT"},
+            headers={"Authorization": f"Bearer {jwt_token}"},
+        )
+
+        assert resp.status_code == 201

@@ -298,6 +298,7 @@ class NotificationSettingsRepository:
                     | (NotificationSettingsModel.notify_task_assigned.is_(True))
                     | (NotificationSettingsModel.notify_task_updated.is_(True))
                     | (NotificationSettingsModel.notify_comment.is_(True))
+                    | (NotificationSettingsModel.notify_mentioned.is_(True))
                 ),
                 UserModel.telegram_id.is_not(None),
                 UserModel.is_active.is_(
@@ -381,6 +382,7 @@ class NotificationSettingsRepository:
             notify_task_assigned=True,
             notify_task_updated=True,
             notify_comment=True,
+            notify_mentioned=True,
         )
 
     async def disable_all_notifications(self, user_id: int) -> NotificationSettingsModel:
@@ -395,6 +397,7 @@ class NotificationSettingsRepository:
             notify_task_assigned=False,
             notify_task_updated=False,
             notify_comment=False,
+            notify_mentioned=False,
             # ВАЖНО: voice_notifications_enabled явно НЕ включается в
             # enable_all_notifications() выше (это opt-in, платный TTS-вызов
             # на каждое уведомление — не должен включаться неявно кнопкой
@@ -424,6 +427,7 @@ class NotificationSettingsRepository:
             "task_assigned": NotificationSettingsModel.notify_task_assigned,
             "task_updated": NotificationSettingsModel.notify_task_updated,
             "comment": NotificationSettingsModel.notify_comment,
+            "mentioned": NotificationSettingsModel.notify_mentioned,
         }
 
         field = field_mapping.get(notification_type)
