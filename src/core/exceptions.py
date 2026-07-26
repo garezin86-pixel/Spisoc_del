@@ -62,3 +62,8 @@ def user_not_found(detail: str = "User not found"):
 
 def unauthorized_user(detail: str = "This is not your task"):
     raise HTTPException(status_code=403, detail=detail)
+
+
+def task_blocked(detail: str = "Task is blocked by unfinished dependencies") -> NoReturn:
+    """409 — задачу нельзя закрыть/удалить, пока не закрыты блокирующие её задачи."""
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)

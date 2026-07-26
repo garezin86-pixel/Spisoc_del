@@ -698,6 +698,138 @@ function StatusMenu({ status, onChange, disabled }) {
     );
 }
 
+// ─── DependenciesPanel ─────────────────────────────────────
+function DependenciesPanel({ taskId, token }) {
+    const [deps, setDeps] = useState({ blockers: [], blocked: [] });
+    const [loading, setLoading] = useState(false);
+    const [blockerId, setBlockerId] = useState("");
+    const [adding, setAdding] = useState(false);
+    const [error, setError] = useState(null);
+
+    const loadingRef = React.useRef(false);
+    const load = useCallback(async () => {
+        if (loadingRef.current) return;
+        loadingRef.current = true;
+        setLoading(true);
+        try {
+            const data = await apiRequest({ path: `/tasks/${taskId}/dependencies`, token });
+            setDeps({ blockers: data?.blockers ?? [], blocked: data?.blocked ?? [] });
+        } catch { /* ignore */ }
+        finally { setLoading(false); loadingRef.current = false; }
+    }, [taskId, token]);
+
+    useEffect(() => { load(); }, [load]);
+
+    async function handleAdd() {
+        const id = Number(blockerId);
+        if (!id || id === taskId) return;
+        setAdding(true);
+        setError(null);
+        try {
+            await apiRequest({
+                path: `/tasks/${taskId}/dependencies`, method: "POST", token,
+                body: { blocker_task_id: id },
+            });
+            setBlockerId("");
+            await load();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setAdding(false);
+        }
+    }
+
+    async function handleRemove(blocker) {
+        setDeps(prev => ({ ...prev, blockers: prev.blockers.filter(b => b.id !== blocker.id) }));
+        try {
+            await apiRequest({ path: `/tasks/${taskId}/dependencies/${blocker.id}`, method: "DELETE", token });
+        } catch {
+            await load(); // откат при ошибке
+        }
+    }
+
+    const statusLabels = {
+        backlog: "В очереди", todo: "Новая", in_progress: "В работе", review: "На проверке", done: "Готово",
+    };
+    const openBlockersCount = deps.blockers.filter(b => b.status !== "done").length;
+
+    return (
+        <div className="comments-panel">
+            <div className="comments-title">
+                🔗 Зависимости
+                {openBlockersCount > 0 && (
+                    <span className="count-badge" style={{ background: "#ef444422", color: "#ef4444" }}>
+                        {openBlockersCount} не закрыт{openBlockersCount === 1 ? "" : "о"}
+                    </span>
+                )}
+            </div>
+
+            {error && <div className="alert" style={{ marginBottom: 8, fontSize: 13 }}>{error}</div>}
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                <input
+                    type="number"
+                    value={blockerId}
+                    onChange={e => setBlockerId(e.target.value)}
+                    placeholder="ID задачи-блокера"
+                    style={{ flex: 1 }}
+                />
+                <button className="btn btn-sm btn-primary" onClick={handleAdd} disabled={adding || !blockerId}>
+                    {adding ? "…" : "Добавить"}
+                </button>
+            </div>
+
+            {loading ? (
+                <div className="comments-empty">Загрузка…</div>
+            ) : (
+                <>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
+                        Блокируют эту задачу (должны закрыться раньше):
+                    </div>
+                    {deps.blockers.length === 0 ? (
+                        <div className="comments-empty" style={{ padding: "6px 0" }}>Нет блокеров</div>
+                    ) : (
+                        <div className="comment-list" style={{ marginBottom: 12 }}>
+                            {deps.blockers.map(b => (
+                                <div key={b.id} className="comment-item" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span className="meta-chip" style={
+                                        b.status === "done"
+                                            ? { background: "#22c55e22", color: "#22c55e" }
+                                            : { background: "#ef444422", color: "#ef4444" }
+                                    }>
+                                        {statusLabels[b.status] || b.status}
+                                    </span>
+                                    <span style={{ flex: 1 }}>#{b.id} {b.title}</span>
+                                    <button className="btn btn-ghost btn-sm" style={{ padding: "2px 6px" }}
+                                        onClick={() => handleRemove(b)} title="Убрать зависимость">
+                                        <Icon d={ICONS.trash} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {deps.blocked.length > 0 && (
+                        <>
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
+                                Ждут закрытия этой задачи:
+                            </div>
+                            <div className="comment-list">
+                                {deps.blocked.map(b => (
+                                    <div key={b.id} className="comment-item" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <span className="meta-chip">{statusLabels[b.status] || b.status}</span>
+                                        <span style={{ flex: 1 }}>#{b.id} {b.title}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
 // ─── TaskCard ─────────────────────────────────────────────
 function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole, selected, onToggleSelect }) {
     const [expanded, setExpanded] = useState(!collapsible);
@@ -707,6 +839,7 @@ function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUp
     const [showAttachments, setShowAttachments] = useState(false);
     const [showReassign, setShowReassign] = useState(false);
     const [showChecklist, setShowChecklist] = useState(false);
+    const [showDependencies, setShowDependencies] = useState(false);
     const [showTags, setShowTags] = useState(false);
     const [saving, setSaving] = useState(false);
     const formatForInput = (value) => {
@@ -998,6 +1131,9 @@ function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUp
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowChecklist(v => !v)}>
                     ☑️ {showChecklist ? "Скрыть" : "Чек-лист"}
                 </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowDependencies(v => !v)}>
+                    <Icon d={ICONS.link} /> {showDependencies ? "Скрыть" : "Зависимости"}
+                </button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowTags(v => !v)}>
                     🏷️ {showTags ? "Скрыть" : "Теги"}
                 </button>
@@ -1019,6 +1155,7 @@ function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUp
                 />
             )}
             {showChecklist && <ChecklistPanel taskId={task.id} token={token} />}
+            {showDependencies && <DependenciesPanel taskId={task.id} token={token} />}
             {showTags && (
                 <TagsPanel
                     task={task}
@@ -1256,6 +1393,7 @@ function KanbanTab({ token }) {
     const [dragging, setDragging] = useState(null); // { taskId, fromCol }
     const [dragOver, setDragOver] = useState(null);
     const [movingId, setMovingId] = useState(null);
+    const [moveError, setMoveError] = useState(null);
 
     // const API = (path) => `/api${path}`;
     // const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
@@ -1289,6 +1427,12 @@ function KanbanTab({ token }) {
         loadBoard(projectId, onlyMine, onlyAuthor);
     }, [projectId, onlyMine, onlyAuthor, loadBoard]);
 
+    useEffect(() => {
+        if (!moveError) return;
+        const timer = setTimeout(() => setMoveError(null), 6000);
+        return () => clearTimeout(timer);
+    }, [moveError]);
+
     // ── Drag & Drop ──────────────────────────────────────────
     const onDragStart = (e, taskId, fromCol) => {
         setDragging({ taskId, fromCol });
@@ -1318,6 +1462,7 @@ function KanbanTab({ token }) {
         });
 
         setMovingId(taskId);
+        setMoveError(null);
         try {
             await apiRequest({
                 path: `/tasks/${taskId}/status`,
@@ -1325,8 +1470,12 @@ function KanbanTab({ token }) {
                 token,
                 body: { status: toCol },
             });
-        } catch {
-            // Откат при ошибке
+        } catch (err) {
+            // Откат при ошибке — и обязательно показываем причину: без этого
+            // карточка молча дёргается назад, и непонятно, почему (например,
+            // задачу нельзя закрыть, пока не закрыты её блокеры — см. фичу
+            // зависимостей между задачами).
+            setMoveError(err.message);
             loadBoard(projectId, onlyMine, onlyAuthor);
         } finally {
             setMovingId(null);
@@ -1360,6 +1509,12 @@ function KanbanTab({ token }) {
 
     return (
         <div style={{ padding: "16px 16px 32px" }}>
+            {moveError && (
+                <div className="alert" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <span>{moveError}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setMoveError(null)}>✕</button>
+                </div>
+            )}
             {/* Фильтры */}
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
                 <select

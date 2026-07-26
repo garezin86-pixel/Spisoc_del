@@ -13,6 +13,15 @@ def to_local(dt: datetime | None) -> str:
     return dt.astimezone(LOCAL_TZ).strftime("%d.%m.%Y %H:%M")
 
 
+def to_local_datetime(dt: datetime | None) -> str:
+    if not dt:
+        return "-"
+    # если datetime без tzinfo — считаем что это UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    return dt.astimezone(LOCAL_TZ).strftime("%d.%m.%Y %H:%M")
+
+
 # import pytz
 # LOCAL_TZ = pytz.timezone("Europe/Kiev")
 

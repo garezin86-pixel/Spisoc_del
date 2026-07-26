@@ -12,6 +12,7 @@ from src.models.project import ProjectModel
 from src.models.push_subscription import PushSubscriptionModel
 from src.models.tag import TagModel, task_tags
 from src.models.task import SpisokModel
+from src.models.task_dependency import TaskDependencyModel
 from src.models.template import TaskTemplateItemModel, TaskTemplateModel
 from src.models.user import UserModel
 from src.models.webhook import WebhookModel
@@ -27,6 +28,7 @@ __all__ = [
     "GroupModel",
     "user_group",
     "SpisokModel",
+    "TaskDependencyModel",
     "CommentModel",
     "NotificationSettingsModel",
     "NotificationLogModel",

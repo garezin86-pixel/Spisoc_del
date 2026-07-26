@@ -45,6 +45,7 @@ from src.schemas.task import (
     TaskPriorityFilter,
     TaskStatusUpdate,
 )
+from src.schemas.task_dependency import TaskDependenciesSchema, TaskDependencyCreate
 from src.services.notifications import notify_task_assigned
 from src.services.task_export_service import TaskExportService
 from src.services.task_service import TaskService
@@ -444,6 +445,52 @@ async def get_task_audit(
 ):
     entries = await AuditRepository(session).get_task_audit_entries(task_id)
     return [AuditLogSchema.from_model(e) for e in entries]
+
+
+@router.get(
+    "/{task_id}/dependencies",
+    response_model=TaskDependenciesSchema,
+    summary="Зависимости задачи (блокеры и заблокированные)",
+)
+async def get_task_dependencies(
+    task_id: int,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    return await get_task_service(session).get_dependencies(task_id, current_user)
+
+
+@router.post(
+    "/{task_id}/dependencies",
+    status_code=201,
+    summary="Добавить блокирующую задачу",
+    description=(
+        "Задача task_id не сможет перейти в статус done, пока указанная в теле "
+        "blocker_task_id задача не будет закрыта. Отклоняется, если получился бы цикл."
+    ),
+)
+async def add_task_dependency(
+    task_id: int,
+    data: TaskDependencyCreate,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    await get_task_service(session).add_dependency(task_id, data.blocker_task_id, current_user)
+    return {"message": "Зависимость добавлена"}
+
+
+@router.delete(
+    "/{task_id}/dependencies/{blocker_task_id}",
+    summary="Убрать блокирующую задачу",
+)
+async def remove_task_dependency(
+    task_id: int,
+    blocker_task_id: int,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    await get_task_service(session).remove_dependency(task_id, blocker_task_id, current_user)
+    return {"message": "Зависимость удалена"}
 
 
 @router.patch(
