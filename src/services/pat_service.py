@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import not_found
+from src.models.enums import PatScope
 from src.models.personal_access_token import PersonalAccessTokenModel
 from src.models.user import UserModel
 from src.repositories.pat_repository import PatRepository
@@ -45,12 +46,14 @@ class PatService:
             token_hash=token_hash,
             token_prefix=token_prefix,
             expires_at=expires_at,
+            scope=data.scope,
         )
 
         return PersonalAccessTokenCreatedResponse(
             id=pat.id,
             name=pat.name,
             token_prefix=pat.token_prefix,
+            scope=PatScope(pat.scope),
             created_at=pat.created_at,
             expires_at=pat.expires_at,
             last_used_at=pat.last_used_at,
@@ -98,4 +101,9 @@ async def authenticate_by_pat(session: AsyncSession, raw_token: str) -> UserMode
         return None
 
     await pat_repo.touch_last_used(pat)
+    # Не колонка модели — просто атрибут инстанса на время запроса, чтобы
+    # get_current_user() мог понять, что аутентификация прошла по PAT
+    # с ограниченным scope, и при необходимости отклонить мутирующий запрос.
+    # См. dependencies.py:_enforce_pat_scope.
+    user.pat_scope = pat.scope
     return user

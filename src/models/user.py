@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from src.models.personal_access_token import PersonalAccessTokenModel
     from src.models.project import ProjectModel
     from src.models.push_subscription import PushSubscriptionModel
+    from src.models.webhook import WebhookModel
 
 
 class UserRole(str, Enum):
@@ -27,6 +28,10 @@ class UserRole(str, Enum):
 
 class UserModel(Base):
     __tablename__ = "users"
+    # Разрешает обычные (без Mapped[]) аннотации на этом классе — нужно для
+    # pat_scope ниже, который специально НЕ должен быть колонкой БД.
+    # См. https://sqlalche.me/e/20/zlpr
+    __allow_unmapped__ = True
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(unique=True)
@@ -34,6 +39,22 @@ class UserModel(Base):
     role: Mapped[str] = mapped_column(String, default=UserRole.user)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
+    # Токен для подписки на iCal-фид дедлайнов (см. src/routers/calendar_router.py).
+    # Отдельный от PAT и JWT намеренно: календарные приложения (Google
+    # Calendar, Outlook) периодически САМИ дёргают URL по расписанию и не
+    # умеют слать заголовок Authorization — единственный практичный вариант
+    # аутентификации для них — токен прямо в URL как query-параметр.
+    # Поэтому у него узкое назначение (только чтение .ics, ничего больше) и
+    # свой независимый жизненный цикл — скомпрометированный/утёкший токен
+    # достаточно перевыпустить, не трогая PAT/пароль.
+    calendar_feed_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+
+    # НЕ колонка БД — обычный Python-атрибут инстанса, выставляется в
+    # authenticate_by_pat()/get_current_user() на время одного запроса, когда
+    # аутентификация прошла по PAT-токену (см. src/services/pat_service.py и
+    # src/core/dependencies.py:_enforce_pat_scope). None — либо JWT-сессия
+    # (полный доступ), либо PAT ещё не проверялся.
+    pat_scope: str | None = None
 
     assigned_tasks = relationship("SpisokModel", foreign_keys="[SpisokModel.user_id]", back_populates="user")
     authored_tasks = relationship(
@@ -56,6 +77,11 @@ class UserModel(Base):
     )
     push_subscriptions: Mapped[list["PushSubscriptionModel"]] = relationship(
         "PushSubscriptionModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    webhooks: Mapped[list["WebhookModel"]] = relationship(
+        "WebhookModel",
         back_populates="user",
         cascade="all, delete-orphan",
     )

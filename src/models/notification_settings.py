@@ -19,6 +19,10 @@ class NotificationSettingsModel(Base):
     notify_task_assigned: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_task_updated: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_comment: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Отдельно от notify_comment: @упоминание — более адресное и заметное
+    # событие, чем просто новый комментарий в задаче, поэтому у него свой
+    # переключатель (по умолчанию включён, как и остальные).
+    notify_mentioned: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     notify_group_assigned: Mapped[bool] = mapped_column(Boolean, default=True)  # Добавить
     # Голосовые уведомления (TTS через Groq) — по умолчанию выключены (opt-in):
     # синтез речи стоит денег за каждый вызов API, не всем нужен голосовой

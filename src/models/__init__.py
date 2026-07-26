@@ -14,6 +14,7 @@ from src.models.tag import TagModel, task_tags
 from src.models.task import SpisokModel
 from src.models.template import TaskTemplateItemModel, TaskTemplateModel
 from src.models.user import UserModel
+from src.models.webhook import WebhookModel
 
 __all__ = [
     "ProjectModel",
@@ -35,4 +36,5 @@ __all__ = [
     "AuditAction",
     "AttachmentModel",
     "FilterPresetModel",
+    "WebhookModel",
 ]

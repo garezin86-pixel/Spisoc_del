@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.enums import PatScope
 
 if TYPE_CHECKING:
     from src.models.user import UserModel
@@ -36,6 +37,10 @@ class PersonalAccessTokenModel(Base):
     # Первые символы токена — для отображения в списке ("pat_a1b2c3d4..."),
     # чтобы пользователь мог опознать токен, не имея возможности его скачать заново.
     token_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    # read_only | read_write. String, а не нативный Postgres ENUM — так же,
+    # как UserModel.role, ради простоты миграций (добавить значение в Python
+    # enum не требует ALTER TYPE).
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default=PatScope.read_write)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

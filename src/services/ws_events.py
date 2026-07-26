@@ -34,6 +34,16 @@ def _affected_users(task: SpisokModel) -> list[int]:
     return list(users)
 
 
+def task_payload(task: SpisokModel) -> dict:
+    """Публичная обёртка _task_payload — переиспользуется webhook_dispatcher'ом."""
+    return _task_payload(task)
+
+
+def affected_users(task: SpisokModel) -> list[int]:
+    """Публичная обёртка _affected_users — переиспользуется webhook_dispatcher'ом."""
+    return _affected_users(task)
+
+
 async def emit_task_created(task: SpisokModel) -> None:
     await ws_manager.broadcast_to_users(
         _affected_users(task),

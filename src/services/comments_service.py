@@ -3,11 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import no_access, task_not_found
 from src.models.comment import CommentModel
+from src.models.enums import WebhookEvent
 from src.models.user import UserModel
 from src.repositories.abstract import AbstractCommentRepository, AbstractTaskRepository
 from src.schemas.comment import CommentCreate
 from src.services.notifications import notify_comment_added
 from src.services.permissions import can_edit_task
+from src.services.webhook_dispatcher import dispatch_webhook_event
+from src.services.ws_events import affected_users
 
 logger = structlog.get_logger()
 
@@ -74,6 +77,17 @@ class CommentService:
 
         if self.session is not None:
             await notify_comment_added(comment.id)
+
+        dispatch_webhook_event(
+            WebhookEvent.comment_added,
+            affected_users(task),
+            {
+                "task_id": task_id,
+                "comment_id": result.id,
+                "content": result.content,
+                "user_id": current_user.id,
+            },
+        )
 
         return result
 

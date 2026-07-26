@@ -8,12 +8,24 @@ from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.notification_log import NotificationLogModel
 from src.utils.datetime_utils import to_local
+from src.utils.mentions import find_mentioned_usernames
 
 logger = structlog.get_logger()
 
 
 async def notify_comment_added(comment_id: int):
-    """Фоновая отправка уведомления о новом комментарии."""
+    """
+    Фоновая отправка уведомления о новом комментарии — двум категориям
+    получателей одновременно:
+      1. автор задачи и исполнитель (как и раньше) — обычное "Новый комментарий";
+      2. любой пользователь, упомянутый в тексте через @username — отдельное,
+         более заметное "Вас упомянули", даже если он не автор/исполнитель.
+    Если получатель попадает в обе категории (например, исполнителя же и
+    упомянули), шлём одно уведомление с текстом упоминания — не дублируем.
+
+    Как и notify_task_assigned: Telegram + веб-push (независимо друг от
+    друга) + запись в NotificationLogModel для истории/диагностики.
+    """
     session_maker = get_session_maker()
     async with UnitOfWork(session_maker) as uow:
         bot = get_bot()
@@ -23,36 +35,100 @@ async def notify_comment_added(comment_id: int):
 
         task = comment.task
         commenter = comment.user
-        notify_recipients = {}
 
-        if task.author and task.author.telegram_id:
-            notify_recipients[task.author.telegram_id] = task.author.id
-        if task.user and task.user.telegram_id:
-            notify_recipients[task.user.telegram_id] = task.user.id
-        if commenter and commenter.telegram_id:
-            notify_recipients.pop(commenter.telegram_id, None)
+        # user_id -> {"user": UserModel, "mentioned": bool}
+        recipients: dict[int, dict] = {}
 
-        if not notify_recipients:
+        def _add_recipient(user, mentioned: bool = False) -> None:
+            if not user or (commenter and user.id == commenter.id):
+                return
+            existing = recipients.get(user.id)
+            if existing:
+                existing["mentioned"] = existing["mentioned"] or mentioned
+            else:
+                recipients[user.id] = {"user": user, "mentioned": mentioned}
+
+        _add_recipient(task.author)
+        _add_recipient(task.user)
+
+        # Парсим @упоминания. known_usernames — все пользователи системы:
+        # при типичном размере команды (см. память проекта — "малая
+        # команда") это дешевле и надёжнее, чем пытаться сузить круг
+        # кандидатов заранее (участник может быть упомянут, даже не будучи
+        # автором/исполнителем/участником группы задачи).
+        all_users = await uow.users.get_all()
+        username_to_user = {u.username: u for u in all_users}
+        mentioned_usernames = find_mentioned_usernames(comment.content, list(username_to_user.keys()))
+        for uname in mentioned_usernames:
+            _add_recipient(username_to_user.get(uname), mentioned=True)
+
+        if not recipients:
             return
 
-        text = f"💬 Новый комментарий!\n\n📋 Задача№ {task.id}\n📋 {task.title}\n💭 Комментарий: \n {comment.content}"
+        settings_map = await uow.notification_settings.get_by_user_ids(list(recipients.keys()))
 
-        for tg_id, user_id in notify_recipients.items():
-            try:
-                await bot.send_message(chat_id=tg_id, text=text)
-                await logger.ainfo(
-                    "notification_sent",
+        from src.repositories.push_repository import PushRepository
+        from src.services.push_service import send_push_to_user
+
+        sent_count = 0
+        for user_id, info in recipients.items():
+            user = info["user"]
+            mentioned = info["mentioned"]
+
+            settings = settings_map.get(user_id)
+            pref_enabled = (
+                getattr(settings, "notify_mentioned", True) if mentioned else getattr(settings, "notify_comment", True)
+            )
+            if settings and not pref_enabled:
+                continue
+
+            notif_type = "comment_mentioned" if mentioned else "comment_added"
+            if mentioned:
+                text = (
+                    f"💬 Вас упомянули в комментарии!\n\n"
+                    f"📋 Задача№ {task.id}\n📋 {task.title}\n"
+                    f"👤 {commenter.username if commenter else 'Кто-то'}: {comment.content}"
+                )
+            else:
+                text = (
+                    f"💬 Новый комментарий!\n\n📋 Задача№ {task.id}\n📋 {task.title}\n"
+                    f"💭 Комментарий: \n {comment.content}"
+                )
+
+            success = True
+            error = None
+            if user.telegram_id:
+                try:
+                    await bot.send_message(chat_id=user.telegram_id, text=text)
+                    sent_count += 1
+                    await logger.ainfo("notification_sent", user_id=user_id, type=notif_type, task_id=task.id)
+                except Exception as e:
+                    success = False
+                    error = str(e)[:500]
+                    await logger.aerror("notification_failed", user_id=user_id, error=error)
+                    logger.error(f"Ошибка отправки уведомления комментария {comment.id}: {e}")
+
+                log = NotificationLogModel(
                     user_id=user_id,
-                    type="comment_added",
+                    notification_type=notif_type,
                     task_id=task.id,
+                    content=text[:2000],
+                    success=success,
+                    error=error,
                 )
-            except Exception as e:
-                await logger.aerror(
-                    "notification_failed",
-                    user_id=user_id,
-                    error=str(e),
-                )
-                logger.error(f"Ошибка отправки уведомления комментария {comment.id}: {e}")
+                uow.session.add(log)
+
+            # Push — независимый канал поверх Telegram (см. notify_task_assigned).
+            await send_push_to_user(
+                PushRepository(uow.session),
+                user_id,
+                title="Вас упомянули" if mentioned else "Новый комментарий",
+                body=comment.content[:150],
+                url=f"/tasks/{task.id}",
+            )
+
+        await uow.commit()
+        logger.info(f"Comment {comment_id} notification completed. Sent: {sent_count}")
 
 
 async def notify_task_assigned(task_id: int):
