@@ -8,6 +8,7 @@ from src.admin.views.comment_admin import CommentAdmin
 from src.admin.views.group_admin import GroupAdmin
 from src.admin.views.notification_stats_view import NotificationStatsView
 from src.admin.views.notification_view import NotificationLogAdmin
+from src.admin.views.personal_access_token_admin import PersonalAccessTokenAdmin
 from src.admin.views.project_admin import ProjectAdmin
 from src.admin.views.stats_view import StatsView
 from src.admin.views.status_view import StatusView
@@ -50,6 +51,7 @@ def setup_admin(app, engine):
     admin.add_view(AttachmentAdmin)
     admin.add_view(TrashTaskAdmin)
     admin.add_view(NotificationLogAdmin)
+    admin.add_view(PersonalAccessTokenAdmin)
 
     StatsView._session_maker = session_maker
     StatusView._session_maker = session_maker

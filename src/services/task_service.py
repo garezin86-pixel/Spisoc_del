@@ -19,6 +19,7 @@ from src.core.exceptions import (
     incorrect_request,
     no_access,
     not_found,
+    task_blocked,
     task_not_found,
     unauthorized_user,
     user_not_found,
@@ -39,6 +40,7 @@ from src.repositories.abstract import (
     AbstractTaskRepository,
     AbstractUserRepository,
 )
+from src.repositories.task_dependency_repository import TaskDependencyRepository
 from src.schemas.task import (
     BulkTaskUpdate,
     BulkTaskUpdateResult,
@@ -47,6 +49,7 @@ from src.schemas.task import (
     TaskImportIssueSchema,
     TaskImportSummary,
 )
+from src.schemas.task_dependency import TaskDependenciesSchema, TaskRefSchema
 
 # (добавить в существующий импорт)
 from src.services.notifications import notify_task_assigned
@@ -347,6 +350,9 @@ class TaskService:
         update_data = data.model_dump(exclude_unset=True)
         was_status = task.status
 
+        if update_data.get("status") == TaskStatus.done and was_status != TaskStatus.done:
+            await self._ensure_no_open_blockers(task_id)
+
         # Простые поля — обновляем через setattr (легко расширять)
         simple_fields = {
             "title",
@@ -633,6 +639,10 @@ class TaskService:
             no_access(NO_ACCESS)
 
         old_status = task.status
+
+        if new_status == TaskStatus.done and old_status != TaskStatus.done:
+            await self._ensure_no_open_blockers(task_id)
+
         task.status = new_status
 
         # Та же логика completed_at, что и в update_task — см. комментарий там
@@ -658,6 +668,82 @@ class TaskService:
             await self._notify_task_done(updated_task, current_user)
             await self._spawn_next_recurrence(updated_task)
         return updated_task
+
+    async def _get_open_blockers(self, task_id: int) -> list[SpisokModel]:
+        return await TaskDependencyRepository(self.session).get_open_blockers(task_id)
+
+    async def _ensure_no_open_blockers(self, task_id: int) -> None:
+        """Бросает 409, если у задачи есть незакрытые блокеры — вызывается перед любым переходом в done."""
+        open_blockers = await self._get_open_blockers(task_id)
+        if open_blockers:
+            names = ", ".join(f"#{b.id} «{b.title}»" for b in open_blockers)
+            task_blocked(f"Сначала закройте задачи, которые блокируют эту: {names}")
+
+    async def add_dependency(self, task_id: int, blocker_task_id: int, current_user: UserModel) -> None:
+        """
+        Отмечает, что задача blocker_task_id должна закрыться раньше task_id
+        ("task_id заблокирована blocker_task_id"). Проверяет права на обе
+        задачи (нельзя без доступа к чужой задаче объявить её блокером своей —
+        это создавало бы шум в чужом списке "заблокированных") и отсутствие
+        цикла в графе зависимостей.
+        """
+        if task_id == blocker_task_id:
+            incorrect_request("Задача не может блокировать сама себя")
+
+        task = await self.task_repo.get_by_id(task_id)
+        if not task:
+            task_not_found(TASK_NOT_FOUND)
+        blocker = await self.task_repo.get_by_id(blocker_task_id)
+        if not blocker:
+            task_not_found(TASK_NOT_FOUND)
+
+        if not await can_edit_task(task, current_user, self.group_repo) or not await can_edit_task(
+            blocker, current_user, self.group_repo
+        ):
+            await logger.awarning("no_access", user_id=current_user.id, task_id=task_id)
+            no_access(NO_ACCESS)
+
+        dep_repo = TaskDependencyRepository(self.session)
+        if await dep_repo.get_dependency(blocker_task_id, task_id):
+            incorrect_request("Такая зависимость уже добавлена")
+        if await dep_repo.would_create_cycle(blocker_task_id, task_id):
+            incorrect_request(
+                f"Нельзя добавить: задача #{blocker_task_id} уже прямо или "
+                f"косвенно зависит от #{task_id} — получился бы цикл, который "
+                "никогда не удастся закрыть"
+            )
+
+        await dep_repo.add(blocker_task_id, task_id)
+        await logger.ainfo("task_dependency_added", blocker_task_id=blocker_task_id, blocked_task_id=task_id)
+
+    async def remove_dependency(self, task_id: int, blocker_task_id: int, current_user: UserModel) -> None:
+        task = await self.task_repo.get_by_id(task_id)
+        if not task:
+            task_not_found(TASK_NOT_FOUND)
+        if not await can_edit_task(task, current_user, self.group_repo):
+            no_access(NO_ACCESS)
+
+        dep_repo = TaskDependencyRepository(self.session)
+        dep = await dep_repo.get_dependency(blocker_task_id, task_id)
+        if not dep:
+            not_found("Такая зависимость не найдена")
+        await dep_repo.remove(dep)
+        await logger.ainfo("task_dependency_removed", blocker_task_id=blocker_task_id, blocked_task_id=task_id)
+
+    async def get_dependencies(self, task_id: int, current_user: UserModel) -> TaskDependenciesSchema:
+        task = await self.task_repo.get_by_id(task_id)
+        if not task:
+            task_not_found(TASK_NOT_FOUND)
+        if not await can_edit_task(task, current_user, self.group_repo):
+            no_access(NO_ACCESS)
+
+        dep_repo = TaskDependencyRepository(self.session)
+        blockers = await dep_repo.get_blockers(task_id)
+        blocked = await dep_repo.get_blocked(task_id)
+        return TaskDependenciesSchema(
+            blockers=[TaskRefSchema.model_validate(b) for b in blockers],
+            blocked=[TaskRefSchema.model_validate(b) for b in blocked],
+        )
 
     async def import_tasks(
         self,
@@ -770,6 +856,17 @@ class TaskService:
                 continue
 
             was_status = task.status
+
+            if (
+                data.status == TaskStatus.done
+                and was_status != TaskStatus.done
+                and await self._get_open_blockers(task.id)
+            ):
+                # В массовой операции не роняем весь запрос из-за одной
+                # заблокированной задачи — как и с правами доступа выше,
+                # такую задачу просто пропускаем (попадёт в skipped).
+                skipped.append(task.id)
+                continue
 
             if data.status is not None:
                 task.status = data.status
