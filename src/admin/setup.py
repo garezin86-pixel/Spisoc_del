@@ -12,10 +12,12 @@ from src.admin.views.personal_access_token_admin import PersonalAccessTokenAdmin
 from src.admin.views.project_admin import ProjectAdmin
 from src.admin.views.stats_view import StatsView
 from src.admin.views.status_view import StatusView
+from src.admin.views.tag_admin import TagAdmin
 from src.admin.views.task_admin import TaskAdmin
 from src.admin.views.template_admin import TaskTemplateAdmin, TaskTemplateItemAdmin
 from src.admin.views.trash_admin import TrashTaskAdmin
 from src.admin.views.user_admin import UserAdmin
+from src.admin.views.webhook_admin import WebhookAdmin
 from src.core.config import ADMIN_SECRET_KEY
 from src.db import get_session_maker
 
@@ -48,10 +50,12 @@ def setup_admin(app, engine):
     admin.add_view(ProjectAdmin)
     admin.add_view(TaskTemplateAdmin)
     admin.add_view(TaskTemplateItemAdmin)
-    admin.add_view(AttachmentAdmin)
     admin.add_view(TrashTaskAdmin)
+    admin.add_view(AttachmentAdmin)
     admin.add_view(NotificationLogAdmin)
     admin.add_view(PersonalAccessTokenAdmin)
+    admin.add_view(WebhookAdmin)
+    admin.add_view(TagAdmin)
 
     StatsView._session_maker = session_maker
     StatusView._session_maker = session_maker

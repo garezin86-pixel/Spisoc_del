@@ -14,6 +14,7 @@ from src.models.tag import TagModel, task_tags
 from src.models.task import SpisokModel
 from src.models.task_dependency import TaskDependencyModel
 from src.models.template import TaskTemplateItemModel, TaskTemplateModel
+from src.models.two_factor_recovery_code import TwoFactorRecoveryCodeModel
 from src.models.user import UserModel
 from src.models.webhook import WebhookModel
 
@@ -34,6 +35,7 @@ __all__ = [
     "NotificationLogModel",
     "PersonalAccessTokenModel",
     "PushSubscriptionModel",
+    "TwoFactorRecoveryCodeModel",
     "AuditLog",
     "AuditAction",
     "AttachmentModel",

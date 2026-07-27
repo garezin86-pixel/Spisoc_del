@@ -62,3 +62,35 @@ def create_refresh_token(user_id: int) -> tuple[str, str]:
 def decode_refresh_token(token: str) -> dict:
     """Декодирует refresh token. Бросает jwt.PyJWTError при невалидном токене."""
     return jwt.decode(token, REFRESH_SECRET_KEY, algorithms=[ALGORITHM])
+
+
+# Окно, в течение которого нужно ввести код 2FA после успешной проверки
+# пароля. Короткое намеренно — это не сессионный токен, а промежуточное
+# состояние "пароль верный, ждём второй фактор".
+MFA_TOKEN_EXPIRE_MINUTES = 5
+
+
+def create_mfa_token(user_id: int) -> str:
+    """
+    Промежуточный токен между вводом пароля и вводом TOTP-кода. Подписан
+    тем же SECRET_KEY, что и access token, но с "type": "mfa" — так что
+    даже если он утечёт, им нельзя авторизоваться как обычным access-токеном
+    (get_current_user проверяет type; см. decode_mfa_token — обратное тоже
+    верно, access token не пройдёт как mfa_token).
+    """
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "type": "mfa",
+        "iat": now,
+        "exp": now + timedelta(minutes=MFA_TOKEN_EXPIRE_MINUTES),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_mfa_token(token: str) -> dict:
+    """Декодирует mfa_token. Бросает jwt.PyJWTError при невалидном/истёкшем токене."""
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    if payload.get("type") != "mfa":
+        raise jwt.InvalidTokenError("Not an MFA token")
+    return payload

@@ -7,10 +7,12 @@ from src.core.limiter import limiter
 from src.core.redis import get_redis
 from src.db import SessionDep
 from src.models.user import UserModel
+from src.repositories.two_factor_repository import TwoFactorRepository
 from src.repositories.users_repository import UserRepository
-from src.schemas.token import RefreshRequest, TokenSchema
+from src.schemas.token import RefreshRequest, TokenSchema, TwoFactorLoginRequest
 from src.schemas.user import UserLogin
 from src.services.auth_service import AuthService
+from src.services.two_factor_service import TwoFactorService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -40,6 +42,29 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 async def login(request: Request, user: UserLogin, session: SessionDep):
     redis = get_redis()
     return await AuthService(UserRepository(session), redis).login(user)
+
+
+@router.post(
+    "/login/2fa",
+    response_model=TokenSchema,
+    summary="Второй шаг входа (TOTP-код)",
+    description=(
+        "Вызывается после /auth/login, если тот вернул mfa_required=true. "
+        "Принимает mfa_token из предыдущего ответа и 6-значный код из приложения-аутентификатора "
+        "(или один из recovery-кодов). mfa_token живёт 5 минут."
+    ),
+    responses={
+        401: {"description": "Неверный код, либо mfa_token истёк/невалиден"},
+        429: {"description": "Слишком много попыток"},
+    },
+)
+@limiter.limit("5/minute")
+async def login_2fa(request: Request, data: TwoFactorLoginRequest, session: SessionDep):
+    redis = get_redis()
+    two_factor_service = TwoFactorService(TwoFactorRepository(session))
+    return await AuthService(UserRepository(session), redis).login_with_2fa(
+        data.mfa_token, data.code, two_factor_service
+    )
 
 
 @router.post(
