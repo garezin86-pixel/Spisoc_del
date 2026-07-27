@@ -13,6 +13,7 @@ from .push_router import router as push_router
 from .tags_router import router as tags_router
 from .tasks_router import router as tasks_router
 from .templates_router import router as templates_router
+from .two_factor_router import router as two_factor_router
 from .users_router import router as users_router
 from .webhook_router import router as webhook_router
 from .ws_router import router as ws_router
@@ -27,6 +28,7 @@ api_router.include_router(comments_router)
 api_router.include_router(project_router)
 api_router.include_router(push_router)
 api_router.include_router(templates_router)
+api_router.include_router(two_factor_router)
 api_router.include_router(attachments_router)
 api_router.include_router(checklist_router)
 api_router.include_router(tags_router)

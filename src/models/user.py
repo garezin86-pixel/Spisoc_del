@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from src.models.personal_access_token import PersonalAccessTokenModel
     from src.models.project import ProjectModel
     from src.models.push_subscription import PushSubscriptionModel
+    from src.models.two_factor_recovery_code import TwoFactorRecoveryCodeModel
     from src.models.webhook import WebhookModel
 
 
@@ -48,6 +49,17 @@ class UserModel(Base):
     # свой независимый жизненный цикл — скомпрометированный/утёкший токен
     # достаточно перевыпустить, не трогая PAT/пароль.
     calendar_feed_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    # TOTP для двухфакторной аутентификации при веб-входе (см.
+    # src/services/two_factor_service.py). totp_secret хранится в открытом
+    # виде (не хэш!) — сервер должен уметь СЧИТАТЬ текущий код сам, чтобы
+    # сверить его с тем, что ввёл пользователь, а из хэша код не
+    # восстановить. Это тот же принцип, что и у webhook.secret — секрет,
+    # который нужен нам для вычислений, а не для проверки хэша.
+    # totp_enabled=False, пока secret не подтверждён первым верным кодом
+    # (см. TwoFactorService.confirm_setup) — так что наличие totp_secret
+    # само по себе ещё не значит, что 2FA реально требуется при входе.
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
 
     # НЕ колонка БД — обычный Python-атрибут инстанса, выставляется в
     # authenticate_by_pat()/get_current_user() на время одного запроса, когда
@@ -88,6 +100,11 @@ class UserModel(Base):
     attachments: Mapped[list["AttachmentModel"]] = relationship(
         "AttachmentModel",
         back_populates="uploader",
+    )
+    two_factor_recovery_codes: Mapped[list["TwoFactorRecoveryCodeModel"]] = relationship(
+        "TwoFactorRecoveryCodeModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (Index("ix_users_telegram_active", "telegram_id", "is_active"),)

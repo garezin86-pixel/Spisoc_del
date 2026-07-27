@@ -8,14 +8,18 @@ from src.core.exceptions import invalid_credentials, unauthorized, user_already_
 from src.core.metrics import users_registered
 from src.core.security import (
     create_access_token,
+    create_mfa_token,
     create_refresh_token,
+    decode_mfa_token,
     decode_refresh_token,
     hash_password,
     verify_password,
 )
+from src.models.user import UserRole
 from src.repositories.abstract import AbstractUserRepository
 from src.schemas.token import TokenSchema
 from src.schemas.user import UserLogin, UserRegister
+from src.services.two_factor_service import TwoFactorService
 
 logger = structlog.get_logger()
 
@@ -66,8 +70,34 @@ class AuthService:
         users_registered.inc()
         return created_user
 
+    async def _issue_tokens(self, db_user) -> TokenSchema:
+        """Общий хвост выдачи пары access+refresh — переиспользуется обычным логином и login_with_2fa."""
+        access_token = create_access_token({"sub": str(db_user.id), "role": db_user.role, "username": db_user.username})
+        refresh_token, jti = create_refresh_token(db_user.id)
+
+        await self.redis.set(
+            _redis_key(jti),
+            str(db_user.id),
+            ex=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        )
+
+        # Мягкое напоминание, а не блокировка: у admin/manager расширенные
+        # права (аналитика, экспорт чужих задач, управление тегами), поэтому
+        # 2FA для них особенно желательна — но жёстко требовать её при входе
+        # рискованно (первый деплой без единой настроенной 2FA-учётки запер
+        # бы единственного админа). Фронтенд показывает баннер, не мешает работать.
+        requires_2fa_setup = db_user.role in (UserRole.admin, UserRole.manager) and not getattr(
+            db_user, "totp_enabled", False
+        )
+
+        return TokenSchema(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            requires_2fa_setup=requires_2fa_setup,
+        )
+
     async def login(self, user: UserLogin) -> TokenSchema:
-        """Выдаёт пару access + refresh токенов.
+        """Проверяет пароль и либо выдаёт токены сразу, либо (если включена 2FA) — промежуточный mfa_token.
 
         Refresh token сохраняется в Redis с TTL = REFRESH_TOKEN_EXPIRE_DAYS.
         Ключ: refresh:{jti} → user_id (строка).
@@ -78,18 +108,36 @@ class AuthService:
             invalid_credentials(INVALID_CREDENTIALS)
             raise
 
-        access_token = create_access_token({"sub": str(db_user.id), "role": db_user.role, "username": db_user.username})
-        refresh_token, jti = create_refresh_token(db_user.id)
-
-        # Сохраняем jti в Redis — именно это позволяет отозвать токен
-        await self.redis.set(
-            _redis_key(jti),
-            str(db_user.id),
-            ex=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
-        )
+        if getattr(db_user, "totp_enabled", False):
+            await logger.ainfo("login_password_ok_awaiting_2fa", user_id=db_user.id)
+            return TokenSchema(mfa_required=True, mfa_token=create_mfa_token(db_user.id))
 
         await logger.ainfo("user_login", user_id=db_user.id)
-        return TokenSchema(access_token=access_token, refresh_token=refresh_token)
+        return await self._issue_tokens(db_user)
+
+    async def login_with_2fa(self, mfa_token: str, code: str, two_factor_service: TwoFactorService) -> TokenSchema:
+        """
+        Второй шаг логина при включённой 2FA. two_factor_service передаётся
+        параметром, а не хранится на self — AuthService не завязан на прямой
+        AsyncSession (конструируется из абстрактного user_repo), а
+        TwoFactorService нужен реальный session для проверки recovery-кодов.
+        """
+        try:
+            payload = decode_mfa_token(mfa_token)
+        except jwt.PyJWTError:
+            unauthorized("Сессия входа истекла, войдите заново")
+            raise
+
+        user_id = int(payload["sub"])
+        db_user = await self.user_repo.get_by_id(user_id)
+        if not db_user or not db_user.is_active:
+            unauthorized("Пользователь не найден или заблокирован")
+            raise RuntimeError
+
+        await two_factor_service.verify_login_code(db_user, code)
+
+        await logger.ainfo("user_login_2fa", user_id=db_user.id)
+        return await self._issue_tokens(db_user)
 
     async def refresh(self, refresh_token: str) -> TokenSchema:
         """Выдаёт новую пару токенов по валидному refresh token.
@@ -136,18 +184,8 @@ class AuthService:
             unauthorized("Пользователь не найден или заблокирован")
             raise RuntimeError
 
-        # Выдаём новую пару
-        new_access = create_access_token({"sub": str(db_user.id), "role": db_user.role, "username": db_user.username})
-        new_refresh, new_jti = create_refresh_token(db_user.id)
-
-        await self.redis.set(
-            _redis_key(new_jti),
-            str(db_user.id),
-            ex=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
-        )
-
         await logger.ainfo("token_refreshed", user_id=db_user.id)
-        return TokenSchema(access_token=new_access, refresh_token=new_refresh)
+        return await self._issue_tokens(db_user)
 
     async def logout(self, refresh_token: str) -> None:
         """Отзывает refresh token — удаляет jti из Redis.
