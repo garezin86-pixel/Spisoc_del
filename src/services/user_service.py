@@ -1,11 +1,12 @@
 from src.core.constants import NO_ACCESS, USER_ALREADY_EXISTS, USER_NOT_FOUND
 from src.core.exceptions import (
     current_admin,
+    invalid_credentials,
     no_access,
     user_already_exists,
     user_not_found,
 )
-from src.core.security import hash_password
+from src.core.security import hash_password, verify_password
 from src.models.user import UserModel
 from src.repositories.abstract import AbstractUserRepository
 from src.schemas.user import UserRegister, UserUpdate
@@ -133,3 +134,16 @@ class UserService:
         total = await self.user_repo.get_total_count(UserModel)
         users = await self.user_repo.execute_scalars(query)
         return users, total
+
+    async def change_password(self, user: UserModel, current_password: str, new_password: str) -> None:
+        """
+        Пользователь меняет свой пароль сам (в т.ч. обязательная смена
+        сгенерированного пароля после регистрации через Telegram-бота —
+        см. UserModel.must_change_password).
+        """
+        if not verify_password(current_password, user.password_hash):
+            invalid_credentials("Текущий пароль указан неверно")
+
+        user.password_hash = hash_password(new_password)
+        user.must_change_password = False
+        await self.user_repo.update(user)

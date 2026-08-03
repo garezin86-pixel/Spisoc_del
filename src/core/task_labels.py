@@ -34,3 +34,11 @@ RECURRENCE_LABELS = {
     "weekly": "Еженедельно",
     "monthly": "Ежемесячно",
 }
+
+
+RECURRENCE_RULE_LABELS = {
+    "none": "Без повторения",
+    "daily": "Ежедневно",
+    "weekly": "Еженедельно",
+    "monthly": "Ежемесячно",
+}

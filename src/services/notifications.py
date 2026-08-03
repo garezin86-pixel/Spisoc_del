@@ -57,10 +57,20 @@ async def notify_comment_added(comment_id: int):
         # кандидатов заранее (участник может быть упомянут, даже не будучи
         # автором/исполнителем/участником группы задачи).
         all_users = await uow.users.get_all()
-        username_to_user = {u.username: u for u in all_users}
-        mentioned_usernames = find_mentioned_usernames(comment.content, list(username_to_user.keys()))
+        # Ищем упоминания и по username (ФИО), и по login (короткий
+        # логин — см. src/utils/login_generator.py), чтобы можно было
+        # написать и "@Иванов Иван Иванович", и "@ivanov.i".
+        value_to_user = {}
+        candidates = []
+        for u in all_users:
+            value_to_user[u.username] = u
+            candidates.append(u.username)
+            if u.login:
+                value_to_user[u.login] = u
+                candidates.append(u.login)
+        mentioned_usernames = find_mentioned_usernames(comment.content, candidates)
         for uname in mentioned_usernames:
-            _add_recipient(username_to_user.get(uname), mentioned=True)
+            _add_recipient(value_to_user.get(uname), mentioned=True)
 
         if not recipients:
             return

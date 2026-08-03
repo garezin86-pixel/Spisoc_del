@@ -291,6 +291,11 @@ class TaskRepository(AbstractTaskRepository):
 
         if project_id is not None:
             query = query.where(SpisokModel.project_id == project_id)
+        else:
+            # Общий список задач ("Задачи") не должен показывать задачи,
+            # привязанные к проекту — для них есть отдельная вкладка "Проекты".
+            # Чтобы увидеть задачи конкретного проекта, нужно явно передать project_id.
+            query = query.where(SpisokModel.project_id.is_(None))
 
         if deadline_from is not None:
             query = query.where(SpisokModel.deadline.is_not(None), SpisokModel.deadline >= deadline_from)

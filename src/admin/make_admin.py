@@ -11,12 +11,14 @@
 import asyncio
 import sys
 
-from src.db import SessionDep, get_session_maker
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.repositories.users_repository import UserRepository
 
 
-async def make_admin(username: str, session: SessionDep):
+async def make_admin(username: str, session: AsyncSession):
     repo = UserRepository(session)
 
     user = await repo.get_by_username(username)
@@ -39,8 +41,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     username = sys.argv[1]
-    # For a standalone script, we need to create a session manually
-    from src.db import get_session_maker
 
     async def run_make_admin():
         async with UnitOfWork(get_session_maker()) as uow:

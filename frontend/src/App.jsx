@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
 import AttachmentsPanel from "./AttachmentsPanel";
 
@@ -3068,6 +3068,127 @@ function CalendarTab({ token }) {
 }
 
 
+// ─── Принудительная смена пароля (после автосоздания через бота) ──
+function ForceChangePasswordScreen({ token, onDone, onLogout }) {
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [newPassword2, setNewPassword2] = useState("");
+    const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        if (newPassword !== newPassword2) {
+            setError("Новые пароли не совпадают");
+            return;
+        }
+        if (newPassword.length < 6) {
+            setError("Пароль должен быть не короче 6 символов");
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            await apiRequest({
+                path: "/users/me/password", method: "POST", token,
+                body: { current_password: currentPassword, new_password: newPassword },
+            });
+            onDone();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="login-page">
+            <div className="auth-card">
+                <div className="auth-title">Смените пароль</div>
+                <div className="auth-sub">
+                    Ваш текущий пароль был автоматически сгенерирован и прислан в Telegram —
+                    задайте свой перед тем, как продолжить.
+                </div>
+                <form className="form" onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label className="form-label">Текущий (временный) пароль</label>
+                        <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Новый пароль</label>
+                        <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={6} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Повторите новый пароль</label>
+                        <input type="password" value={newPassword2} onChange={e => setNewPassword2(e.target.value)} required minLength={6} />
+                    </div>
+                    <button type="submit" className="btn btn-primary" disabled={saving}>
+                        {saving ? "…" : "Сменить пароль"}
+                    </button>
+                    {error && <div className="alert">{error}</div>}
+                </form>
+                <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={onLogout}>
+                    Выйти
+                </button>
+            </div>
+        </div>
+    );
+}
+
+
+// ─── Смена пароля (по желанию, не только принудительно) ────
+function ChangePasswordCard({ token }) {
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(false);
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        setSaving(true);
+        setError(null);
+        setSuccess(false);
+        try {
+            await apiRequest({
+                path: "/users/me/password", method: "POST", token,
+                body: { current_password: currentPassword, new_password: newPassword },
+            });
+            setSuccess(true);
+            setCurrentPassword("");
+            setNewPassword("");
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="card" style={{ maxWidth: 520 }}>
+            <div className="section-header">
+                <div className="section-title">🔑 Сменить пароль</div>
+            </div>
+            {success && <div className="alert" style={{ borderColor: "#22c55e", background: "#22c55e11", marginBottom: 12 }}>Пароль изменён</div>}
+            {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
+            <form className="form" onSubmit={handleSubmit}>
+                <div className="form-group">
+                    <label className="form-label">Текущий пароль</label>
+                    <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required />
+                </div>
+                <div className="form-group">
+                    <label className="form-label">Новый пароль</label>
+                    <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={6} />
+                </div>
+                <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>
+                    {saving ? "…" : "Сменить"}
+                </button>
+            </form>
+        </div>
+    );
+}
+
+
 // ─── Two-Factor Auth Tab ──────────────────────────────────
 function TwoFactorTab({ token }) {
     const [status, setStatus] = useState(null);
@@ -3105,7 +3226,7 @@ function TwoFactorTab({ token }) {
 
     useEffect(() => {
         if (setupData?.otpauth_url && canvasRef.current) {
-            QRCode.toCanvas(canvasRef.current, setupData.otpauth_url, { width: 220 }, () => {});
+            QRCode.toCanvas(canvasRef.current, setupData.otpauth_url, { width: 220 }, () => { });
         }
     }, [setupData]);
 
@@ -3195,7 +3316,7 @@ function TwoFactorTab({ token }) {
                     </div>
                     <button
                         className="btn btn-sm btn-primary" style={{ alignSelf: "flex-start" }}
-                        onClick={() => navigator.clipboard.writeText(recoveryCodes.join("\n")).catch(() => {})}
+                        onClick={() => navigator.clipboard.writeText(recoveryCodes.join("\n")).catch(() => { })}
                     >
                         Скопировать все
                     </button>
@@ -4102,6 +4223,7 @@ function App() {
     const [tab, setTab] = useState("tasks"); // "tasks" | "projects" | "groups" | "trash" | "dashboard" | "templates"
     const [mfaPending, setMfaPending] = useState(null); // { mfaToken } — ждём код 2FA перед выдачей токенов
     const [show2faNudge, setShow2faNudge] = useState(false);
+    const [mustChangePassword, setMustChangePassword] = useState(false);
 
     // ── WebSocket realtime ────────────────────────────────────────────────────
     const handleWsEvent = useCallback((event, data) => {
@@ -4517,6 +4639,7 @@ function App() {
             saveTokens(resp.access_token, resp.refresh_token);
             setToken(resp.access_token);
             setShow2faNudge(!!resp.requires_2fa_setup);
+            setMustChangePassword(!!resp.must_change_password);
         } catch (err) { setError(err.message); }
     }
 
@@ -4532,6 +4655,7 @@ function App() {
             saveTokens(resp.access_token, resp.refresh_token);
             setToken(resp.access_token);
             setMfaPending(null);
+            setMustChangePassword(!!resp.must_change_password);
         } catch (err) { setError(err.message); }
     }
 
@@ -4795,6 +4919,10 @@ function App() {
                 </div>
             </div>
         );
+    }
+
+    if (mustChangePassword) {
+        return <ForceChangePasswordScreen token={token} onDone={() => setMustChangePassword(false)} onLogout={() => { clearTokens(); setToken(null); }} />;
     }
 
     // ── Main screen ──────────────────────────────────────
@@ -5228,10 +5356,10 @@ function App() {
 
                                                 <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ maxWidth: 140 }}>
                                                     <option value="">Статус…</option>
-                                                    <option value="backlog">Бэклог</option>
-                                                    <option value="todo">Todo</option>
+                                                    <option value="backlog">Очередь</option>
+                                                    <option value="todo">Новые</option>
                                                     <option value="in_progress">В работе</option>
-                                                    <option value="review">Ревью</option>
+                                                    <option value="review">На проверке</option>
                                                     <option value="done">Готово</option>
                                                 </select>
 
@@ -5386,8 +5514,9 @@ function App() {
                 </div>
             )}
             {tab === "2fa" && (
-                <div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <TwoFactorTab token={token} />
+                    <ChangePasswordCard token={token} />
                 </div>
             )}
             {/* ── TRASH TAB ── */}

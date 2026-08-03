@@ -97,7 +97,7 @@ async def filter_tasks(
     current_user: UserModel = Depends(get_current_user),
     filter_user_group: FilterUserGroup | None = Query(None),
     group_id: int | None = Query(None),
-    project_id: int | None = Query(None),  # ← добавить
+    project_id: int | None = Query(None),
     filter_type: TaskFilter | None = Query(None),
     priority: TaskPriorityFilter | None = Query(None),
     status: TaskStatus | None = Query(None, description="Фильтр по статусу канбана"),

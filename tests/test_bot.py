@@ -123,6 +123,7 @@ def make_uow(user=None, tasks=None, group=None):
     uow.users = AsyncMock()
     uow.users.get_by_telegram_id = AsyncMock(return_value=user)
     uow.users.get_by_username = AsyncMock(return_value=None)
+    uow.users.get_by_login = AsyncMock(return_value=None)
 
     # tasks repo
     uow.tasks = AsyncMock()

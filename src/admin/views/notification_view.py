@@ -71,7 +71,13 @@ class NotificationLogAdmin(ModelView, model=NotificationLogModel):
             "weekly_report": "📊 Еженедельная сводка",
             "task_assigned": "📋 Назначение задачи",
             "task_updated": "✏️ Обновление задачи",
+            # "comment" — старое значение (записи в БД до введения @упоминаний),
+            # "comment_added"/"comment_mentioned" — текущие (см.
+            # src/services/notifications.py::notify_comment_added). Держим
+            # оба, чтобы старые логи не остались без человекочитаемой метки.
             "comment": "💬 Новый комментарий",
+            "comment_added": "💬 Новый комментарий",
+            "comment_mentioned": "💬 Упоминание в комментарии",
             "group_assigned": "👥 Назначение в группу",
             "group_task_assigned": "👥 Групповая задача",
         }.get(m.notification_type, m.notification_type),

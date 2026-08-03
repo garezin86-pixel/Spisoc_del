@@ -60,6 +60,19 @@ class UserModel(Base):
     # само по себе ещё не значит, что 2FA реально требуется при входе.
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    # Отдельный от username логин для входа (см. src/utils/login_generator.py).
+    # username остаётся как есть — используется везде в интерфейсе как
+    # отображаемое имя (карточки задач, комментарии, уведомления), его не
+    # трогаем. login — чистый, короткий, транслитерированный идентификатор
+    # специально для входа и @упоминаний в комментариях. Nullable — у
+    # пользователей, созданных до этой фичи, login не проставлен, и вход у
+    # них по-прежнему идёт по username (см. AuthService.login).
+    login: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    # Пароль сгенерирован автоматически и прислан текстом в Telegram —
+    # просим сменить при первом же веб-входе, чтобы не полагаться на то,
+    # что чат с ботом защищён так же, как обычный пароль, придуманный самим
+    # пользователем.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
 
     # НЕ колонка БД — обычный Python-атрибут инстанса, выставляется в
     # authenticate_by_pat()/get_current_user() на время одного запроса, когда

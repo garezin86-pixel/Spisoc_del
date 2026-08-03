@@ -19,15 +19,10 @@ class StatusView(BaseView):
     async def status_page(self, request: Request):
         try:
             import psutil
-
-            psutil_available = True
         except ImportError:
-            psutil = None  # 👈 явно None, линтер доволен
-            psutil_available = False
+            psutil = None
 
-        if psutil_available:
-            import psutil
-
+        if psutil is not None:
             system_info = {
                 "os": platform.system(),
                 "os_version": platform.release(),

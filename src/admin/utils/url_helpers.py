@@ -1,8 +1,6 @@
-# src/admin/utils.py
+# src/admin/utils/url_helpers.py
 
 from starlette.requests import Request
-
-# src/admin/utils.py
 
 ADMIN_PREFIX = "/admin"
 
@@ -55,43 +53,23 @@ def task_urls(request: Request) -> dict:
     }
 
 
-# def task_urls(request: Request, task_id: int) -> dict:
-#     """Все URL для задачи"""
-#     return {
-#         "list":    admin_url(request, "spisok-model/list"),
-#         "details": admin_url(request, f"spisok-model/details/{task_id}"),
-#         "edit":    admin_url(request, f"spisok-model/edit/{task_id}"),
-#     }
-
-
-"""
-  statics  →  /statics
-index  →  /
-list  →  /{identity}/list
-details  →  /{identity}/details/{pk:path}
-delete  →  /{identity}/delete
-create  →  /{identity}/create
-edit  →  /{identity}/edit/{pk:path}
-export  →  /{identity}/export/{export_type}
-ajax_lookup  →  /{identity}/ajax/lookup
-login  →  /login
-logout  →  /logout
-view-user-model-user_stats  →  /user-model/stats/{pk}
-view-user-model-toggle_active  →  /user-model/toggle-active/{pk}
-view-user-model-show_routes  →  /user-model/routes
-view-spisok-model-create_comment  →  /spisok-model/comment/create
-"""
-
-"""<!-- статичные ссылки через urls -->
-<a href="{{ urls.list }}">← Назад</a>
-<a href="{{ urls.toggle }}">Вкл/Выкл</a>
-<a href="{{ urls.edit }}">Редактировать</a>
-
-<!-- динамические в цикле через base -->
-{% for t in tasks %}
-    <a href="{{ base }}/admin/spisok-model/details/{{ t.id }}">
-        {{ t.title }}
-    </a>
-{% endfor %}
-```
-"""
+# Справочник маршрутов sqladmin (для навигации по коду, не используется рантаймом):
+#   statics                              → /statics
+#   index                                → /
+#   list                                 → /{identity}/list
+#   details                              → /{identity}/details/{pk:path}
+#   delete                                → /{identity}/delete
+#   create                                → /{identity}/create
+#   edit                                  → /{identity}/edit/{pk:path}
+#   export                                → /{identity}/export/{export_type}
+#   ajax_lookup                           → /{identity}/ajax/lookup
+#   login                                 → /login
+#   logout                                → /logout
+#   view-user-model-user_stats           → /user-model/stats/{pk}
+#   view-user-model-toggle_active        → /user-model/toggle-active/{pk}
+#   view-spisok-model-create_comment     → /spisok-model/comment/create
+#
+# В шаблонах Jinja2 статичные ссылки строятся через словарь urls (см. функции
+# выше), динамические — через base + admin_url() в цикле:
+#   <a href="{{ urls.list }}">← Назад</a>
+#   {% for t in tasks %}<a href="{{ base }}/admin/spisok-model/details/{{ t.id }}">{{ t.title }}</a>{% endfor %}

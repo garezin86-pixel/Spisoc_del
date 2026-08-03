@@ -3,16 +3,13 @@ from __future__ import annotations
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from sqladmin import ModelView, action
-from sqladmin.helpers import get_object_identifier
 from sqlalchemy import select
 from sqlalchemy.orm import registry as _sa_registry
 from sqlalchemy.orm import selectinload
-from starlette.datastructures import URL
 
 from src.admin.views.task_admin import _fetch_audit_entries, _render_audit_history
 from src.core.task_labels import PRIORITY_LABELS, STATUS_LABELS
 from src.models import SpisokModel
-from src.models import SpisokModel as _RealModel
 from src.services.task_admin_service import task_admin_service
 from src.utils.datetime_utils import to_local
 
@@ -23,7 +20,7 @@ class _TrashModelProxy:
     pass
 
 
-_proxy_registry.map_imperatively(_TrashModelProxy, _RealModel.__table__)
+_proxy_registry.map_imperatively(_TrashModelProxy, SpisokModel.__table__)
 _TrashModelProxy.__name__ = "Trash"
 
 
@@ -39,13 +36,6 @@ class TrashTaskAdmin(ModelView, model=_TrashModelProxy):
     can_delete = False
 
     details_template = "sqladmin/trash_details.html"
-
-    def _build_url_for(self, name: str, request, obj) -> URL:
-        return request.url_for(
-            name,
-            identity=self.identity,
-            pk=get_object_identifier(obj),
-        )
 
     column_formatters = {
         "deleted_at": lambda m, a: to_local(m.deleted_at) if getattr(m, "deleted_at", None) else "—",

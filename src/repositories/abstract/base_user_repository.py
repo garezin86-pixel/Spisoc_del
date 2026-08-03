@@ -31,6 +31,10 @@ class AbstractUserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_by_login(self, login: str) -> UserModel | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def update(self, user: UserModel) -> UserModel:
         raise NotImplementedError
 

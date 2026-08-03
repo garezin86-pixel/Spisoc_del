@@ -94,6 +94,7 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token,
             requires_2fa_setup=requires_2fa_setup,
+            must_change_password=bool(getattr(db_user, "must_change_password", False)),
         )
 
     async def login(self, user: UserLogin) -> TokenSchema:
@@ -102,7 +103,12 @@ class AuthService:
         Refresh token сохраняется в Redis с TTL = REFRESH_TOKEN_EXPIRE_DAYS.
         Ключ: refresh:{jti} → user_id (строка).
         """
-        db_user = await self.user_repo.get_by_username(user.username)
+        db_user = await self.user_repo.get_by_login(user.username)
+        if not db_user:
+            # Обратная совместимость: у пользователей, созданных до этой
+            # фичи (или вручную через админку), login не проставлен —
+            # они по-прежнему входят по username, как и раньше.
+            db_user = await self.user_repo.get_by_username(user.username)
         if not db_user or not verify_password(user.password, db_user.password_hash):
             await logger.awarning("login_failed", username=user.username)
             invalid_credentials(INVALID_CREDENTIALS)
