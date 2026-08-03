@@ -13,7 +13,7 @@ from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.pagination import PaginatedResponse, PaginationParams
-from src.schemas.user import UserRegister, UserSchema, UserUpdate
+from src.schemas.user import ChangePasswordRequest, UserRegister, UserSchema, UserUpdate
 from src.services.task_service import TaskService
 from src.services.user_service import UserService
 from src.utils.cache_keys import user_scoped_key_builder
@@ -33,6 +33,23 @@ async def get_me(
     current_user: UserModel = Depends(get_current_user),
 ):
     return current_user
+
+
+@router.post(
+    "/me/password",
+    status_code=204,
+    summary="Сменить свой пароль",
+    description=(
+        "Требует текущий пароль. Сбрасывает флаг must_change_password, если он был "
+        "установлен (например, после автосоздания учётки через Telegram-бота)."
+    ),
+)
+async def change_my_password(
+    data: ChangePasswordRequest,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    await get_user_service(session).change_password(current_user, data.current_password, data.new_password)
 
 
 def get_user_service(session: SessionDep):

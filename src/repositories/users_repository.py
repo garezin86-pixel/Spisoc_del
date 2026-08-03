@@ -48,6 +48,10 @@ class UserRepository(AbstractUserRepository):
         """Ищет пользователя по уникальному username. Используется при логине и регистрации."""
         return await self.session.scalar(select(UserModel).where(UserModel.username == username))
 
+    async def get_by_login(self, login: str) -> UserModel | None:
+        """Ищет по отдельному полю login (см. src/utils/login_generator.py) — используется при входе и @упоминаниях."""
+        return await self.session.scalar(select(UserModel).where(UserModel.login == login))
+
     async def update(self, user: UserModel) -> UserModel:
         """Фиксирует изменения пользователя (commit + refresh).
 

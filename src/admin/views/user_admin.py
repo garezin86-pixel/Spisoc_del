@@ -57,9 +57,12 @@ class UserAdmin(ModelView, model=UserModel):
         UserModel.username,
         UserModel.role,
         UserModel.is_active,
+        UserModel.login,
+        UserModel.must_change_password,
+        UserModel.totp_enabled,
         UserModel.groups,
-        UserModel.assigned_tasks,
-        UserModel.authored_tasks,
+        "assigned_tasks",
+        "authored_tasks",
     ]
 
     # ← добавили comments и groups — убирает лишние поля из формы
@@ -69,10 +72,17 @@ class UserAdmin(ModelView, model=UserModel):
         UserModel.authored_tasks,
         UserModel.comments,
         UserModel.groups,
-        UserModel.notification_settings,  # ← добавить
+        UserModel.notification_settings,
         UserModel.notification_logs,
         UserModel.projects,
         UserModel.owned_projects,
+        UserModel.personal_access_tokens,
+        UserModel.push_subscriptions,
+        UserModel.webhooks,
+        UserModel.attachments,
+        UserModel.two_factor_recovery_codes,
+        UserModel.calendar_feed_token,
+        UserModel.totp_secret,
     ]
 
     form_widget_args = {"telegram_id": {"readonly": True}}
@@ -94,9 +104,13 @@ class UserAdmin(ModelView, model=UserModel):
         "username": "Имя пользователя",
         "role": "Роль",
         "is_active": "Активен",
+        "login": "Логин",
+        "telegram_id": "Telegram ID",
+        "must_change_password": "Сменить пароль",
+        "totp_enabled": "Двухфакторная аутентификация включена",
         "groups": "Группы",
-        "assigned_tasks": "Назначенные задачи",
-        "authored_tasks": "Созданные задачи",
+        "assigned_tasks": "Назначеные задачи",
+        "authored_tasks": "Созданые задачи",
         "toggle_btn": "Статус",
         "stats_btn": "Статистика",
     }

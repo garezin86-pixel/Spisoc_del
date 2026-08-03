@@ -1,3 +1,5 @@
+import secrets
+
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -6,9 +8,11 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.core.config import SUPER_ADMIN_TG_ID
+from src.core.security import hash_password
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.user import UserModel
+from src.utils.login_generator import build_login_base, generate_temp_password
 
 router = Router()
 logger = structlog.get_logger()
@@ -109,15 +113,39 @@ async def registration_accept(callback: CallbackQuery):
             await callback.message.edit_text(text + "\n\n⚠️ Уже зарегистрирован.")
             return
 
+        # Генерируем короткий уникальный login отдельно от username (в
+        # username остаётся полное ФИО — используется везде в интерфейсе
+        # как отображаемое имя, см. src/utils/login_generator.py).
+        # При коллизии добавляем цифру в конце: ivanov.i, ivanov.i2, ...
+        base_login = build_login_base(fio)
+        login = base_login
+        suffix = 2
+        # Ограничение на число попыток — защита от бесконечного цикла, если
+        # get_by_login вдруг всегда возвращает что-то "истинное" (баг в моке
+        # теста уже один раз приводил ровно к этому — см. test_bot.py).
+        MAX_ATTEMPTS = 1000
+        for _ in range(MAX_ATTEMPTS):
+            if not await uow.users.get_by_login(login):
+                break
+            login = f"{base_login}{suffix}"
+            suffix += 1
+        else:
+            await logger.aerror("login_generation_exhausted", base_login=base_login)
+            login = f"{base_login}{secrets.token_hex(3)}"
+
+        temp_password = generate_temp_password()
+
         new_user = UserModel(
             username=fio,
-            password_hash="bot_registration",
+            login=login,
+            password_hash=hash_password(temp_password),
             role="user",
             is_active=True,
             telegram_id=tg_id,
+            must_change_password=True,
         )
         await uow.users.create(new_user)  # ← через репозиторий
-        await logger.ainfo("user_registered", telegram_id=tg_id)
+        await logger.ainfo("user_registered", telegram_id=tg_id, login=login)
 
     # Уведомляем юзера
     from src.bot.setup import get_bot
@@ -125,12 +153,21 @@ async def registration_accept(callback: CallbackQuery):
     bot = get_bot()
     await bot.send_message(
         chat_id=tg_id,
-        text="✅ Ваша заявка одобрена!\nНапишите /start чтобы начать работу.",
+        text=(
+            "✅ Ваша заявка одобрена!\n\n"
+            "Ваши данные для входа в веб-версию:\n"
+            f"👤 Логин: <code>{login}</code>\n"
+            f"🔑 Пароль: <code>{temp_password}</code>\n\n"
+            "⚠️ Это одноразовый пароль — при первом входе в веб-версию "
+            "система попросит сразу задать свой. Никому не пересылайте это сообщение.\n\n"
+            "Напишите /start чтобы начать работу с ботом."
+        ),
+        parse_mode="HTML",
     )
 
     await callback.answer("✅ Пользователь принят.")
     text = callback.message.text or ""
-    await callback.message.edit_text(text + "\n\n✅ Принят. Пользователь создан.")
+    await callback.message.edit_text(text + f"\n\n✅ Принят. Логин: {login}")
 
 
 @router.callback_query(F.data.startswith("reg_decline:"))

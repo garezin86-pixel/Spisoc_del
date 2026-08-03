@@ -64,15 +64,4 @@ class ProjectAdmin(ModelView, model=ProjectModel):
     column_formatters_detail = {
         ProjectModel.created_at: lambda m, a: to_local(m.created_at),
         ProjectModel.updated_at: lambda m, a: to_local(m.updated_at),
-        # "comment": lambda m, a: Markup(
-        #     f'<a href="{URLS["task"]["create"]}{m.id}" '
-        #     f'style="display:inline-block; margin-top:8px; padding:4px 12px; '
-        #     f"background:#0d6efd; color:#fff; border-radius:4px; "
-        #     f'text-decoration:none; font-size:13px;">'
-        #     f"+ Добавить комментарий</a>"
-        # ),
-        # ── История аудита ────────────────────────────────────────────────────
-        # Форматтер получает объект задачи (m) и синхронно возвращает Markup.
-        # Записи audit_log подгружаются отдельным синхронным запросом через
-        # run_sync, чтобы не ломать синхронный интерфейс sqladmin formatters.
     }

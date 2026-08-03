@@ -52,6 +52,9 @@ class MockUserRepository(AbstractUserRepository):
     async def get_by_username(self, username: str) -> UserModel | None:
         return next((u for u in self._users if u.username == username), None)
 
+    async def get_by_login(self, login: str) -> UserModel | None:
+        return next((u for u in self._users if getattr(u, "login", None) == login), None)
+
     async def update(self, user: UserModel) -> UserModel:
         return user
 

@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -15,10 +14,11 @@ from wtforms import SelectField
 from src.admin.utils.url_helpers import URLS
 from src.core.exceptions import incorrect_valueerror
 from src.core.metrics import tasks_created
-from src.core.task_labels import PRIORITY_LABELS, STATUS_LABELS
+from src.core.task_labels import PRIORITY_LABELS, RECURRENCE_RULE_LABELS, STATUS_LABELS
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models import GroupModel, SpisokModel, UserModel
+from src.models.enums import RecurrenceRule
 from src.models.project import ProjectModel
 from src.models.task import TaskPriority, TaskStatus
 from src.services.notifications import (
@@ -27,7 +27,7 @@ from src.services.notifications import (
     notify_task_updated,
 )
 from src.services.task_admin_service import task_admin_service
-from src.utils.datetime_utils import to_local
+from src.utils.datetime_utils import to_local, to_local_datetime
 
 LOCAL_TZ = ZoneInfo("Europe/Kiev")
 logger = structlog.get_logger()
@@ -51,6 +51,8 @@ _FIELD_LABELS = {
     "deadline": "Дедлайн",
     "deleted_at": "Удалено",
     "priority": "Приоритет",
+    "project_id": "Проект",
+    "recurrence_rule": "Повторение",
 }
 
 
@@ -130,17 +132,6 @@ def _render_audit_history(audit_entries: list) -> Markup:
 
 async def _fetch_audit_entries(task_id: int) -> list:
     return await task_admin_service.fetch_audit_entries(task_id)
-
-
-def _format_audit_history(model: SpisokModel, attr: str) -> Markup:
-    """Синхронная обёртка для получения audit_log записей."""
-    try:
-        loop = asyncio.get_event_loop()
-        future = asyncio.run_coroutine_threadsafe(_fetch_audit_entries(model.id), loop)
-        entries = future.result(timeout=5)
-    except Exception as e:
-        return Markup(f'<span style="color:#dc3545">Ошибка загрузки истории: {e}</span>')
-    return _render_audit_history(entries)
 
 
 class AssignmentFilter:
@@ -248,15 +239,15 @@ class TaskAdmin(ModelView, model=SpisokModel):
     column_list = [
         SpisokModel.id,
         SpisokModel.title,
-        SpisokModel.author_id,
         SpisokModel.status,
-        SpisokModel.project_id,
-        SpisokModel.user_id,
-        SpisokModel.group_id,
         SpisokModel.priority,
+        SpisokModel.user,
+        SpisokModel.group,
+        SpisokModel.project,
+        SpisokModel.author,
         SpisokModel.deadline,
     ]
-    column_searchable_list = [SpisokModel.title, SpisokModel.status]
+    column_searchable_list = [SpisokModel.title, SpisokModel.description]
 
     column_filters = [
         StatusFilter(),
@@ -269,12 +260,12 @@ class TaskAdmin(ModelView, model=SpisokModel):
     column_sortable_list = [
         SpisokModel.title,
         SpisokModel.status,
-        SpisokModel.author_id,
-        SpisokModel.user_id,
-        SpisokModel.group_id,
         SpisokModel.priority,
         SpisokModel.deadline,
+        SpisokModel.created_at,
+        SpisokModel.completed_at,
     ]
+
     column_default_sort = [(SpisokModel.created_at, True)]
 
     form_excluded_columns = [
@@ -286,6 +277,10 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.notification_logs,
         SpisokModel.reminder_sent,
         SpisokModel.deleted_at,
+        SpisokModel.attachments,
+        SpisokModel.checklist_items,
+        SpisokModel.completed_at,
+        SpisokModel.tags,
     ]
 
     column_details_list = [
@@ -298,12 +293,17 @@ class TaskAdmin(ModelView, model=SpisokModel):
         SpisokModel.project,
         SpisokModel.author,
         SpisokModel.priority,
+        SpisokModel.checklist_items,
+        SpisokModel.tags,
         SpisokModel.deadline,
         SpisokModel.created_at,
         SpisokModel.updated_at,
+        SpisokModel.completed_at,
         SpisokModel.comments,
+        SpisokModel.attachments,
+        SpisokModel.recurrence_rule,
         "comment",
-        "audit_history",  # ← история изменений
+        "audit_history",
     ]
 
     column_labels = {
@@ -325,20 +325,28 @@ class TaskAdmin(ModelView, model=SpisokModel):
         "tasks": "Задачи",
         "comment": " ",
         "audit_history": "История изменений",
+        "attachments": "Вложения",
+        "checklist_items": "Чеклист",
+        "tags": "Теги",
+        "completed_at": "Завершено",
+        "recurrence_rule": "Правило повторения",
     }
 
     column_formatters = {
         SpisokModel.deadline: lambda m, a: to_local(m.deadline),
-        SpisokModel.created_at: lambda m, a: to_local(m.created_at),
-        SpisokModel.updated_at: lambda m, a: to_local(m.updated_at),
+        SpisokModel.created_at: lambda m, a: to_local_datetime(m.created_at),
+        SpisokModel.updated_at: lambda m, a: to_local_datetime(m.updated_at),
+        SpisokModel.completed_at: lambda m, a: to_local_datetime(m.completed_at),
         "priority": lambda m, a: PRIORITY_LABELS.get(m.priority, m.priority),
         "status": lambda m, a: STATUS_LABELS.get(m.status, m.status),
+        "recurrence_rule": lambda m, a: RECURRENCE_RULE_LABELS.get(m.recurrence_rule, m.recurrence_rule),
     }
 
     column_formatters_detail = {
         SpisokModel.deadline: lambda m, a: to_local(m.deadline),
-        SpisokModel.created_at: lambda m, a: to_local(m.created_at),
-        SpisokModel.updated_at: lambda m, a: to_local(m.updated_at),
+        SpisokModel.created_at: lambda m, a: to_local_datetime(m.created_at),
+        SpisokModel.updated_at: lambda m, a: to_local_datetime(m.updated_at),
+        SpisokModel.completed_at: lambda m, a: to_local_datetime(m.completed_at),
         "comment": lambda m, a: Markup(
             f'<a href="{URLS["task"]["create"]}{m.id}" '
             f'style="display:inline-block; margin-top:8px; padding:4px 12px; '
@@ -346,17 +354,18 @@ class TaskAdmin(ModelView, model=SpisokModel):
             f'text-decoration:none; font-size:13px;">'
             f"+ Добавить комментарий</a>"
         ),
-        # ── История аудита ────────────────────────────────────────────────────
-        # Форматтер получает объект задачи (m) и синхронно возвращает Markup.
-        # Записи audit_log подгружаются отдельным синхронным запросом через
-        # run_sync, чтобы не ломать синхронный интерфейс sqladmin formatters.
+        # "audit_history" в column_details_list не форматируется здесь —
+        # см. переопределённый get_detail_value ниже: история аудита требует
+        # асинхронного запроса к БД, а sqladmin formatters синхронны.
         "priority": column_formatters["priority"],
         "status": column_formatters["status"],
+        "recurrence_rule": column_formatters["recurrence_rule"],
     }
 
     form_overrides = {
         "priority": SelectField,
         "status": SelectField,
+        "recurrence_rule": SelectField,
     }
 
     form_args = {
@@ -372,6 +381,11 @@ class TaskAdmin(ModelView, model=SpisokModel):
             "choices": list(STATUS_LABELS.items()),
             "coerce": lambda x: TaskStatus(x),
         },
+        "recurrence_rule": {
+            "description": "Выберите правило повторения",
+            "choices": list(RECURRENCE_RULE_LABELS.items()),
+            "coerce": lambda x: RecurrenceRule(x),
+        },
     }
 
     form_widget_args = {
@@ -382,7 +396,11 @@ class TaskAdmin(ModelView, model=SpisokModel):
     async def create_comment(self, request):
         if request.method == "GET":
             task_id = request.query_params.get("task_id")
-            return await self.templates.TemplateResponse(request, "admin/comment_create.html", {"task_id": task_id})
+            return self.templates.TemplateResponse(
+                request,
+                "admin/comment_create.html",
+                {"task_id": task_id},
+            )
 
         form = await request.form()
         task_id = form.get("task_id")
@@ -439,6 +457,9 @@ class TaskAdmin(ModelView, model=SpisokModel):
                 "description",
                 "deadline",
                 "status",
+                "priority",
+                "recurrence_rule",
+                "project_id",
                 "user_id",
                 "group_id",
             ]
