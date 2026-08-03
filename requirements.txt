@@ -62,6 +62,10 @@ APScheduler==3.11.2
 
 # File handling
 aiofiles==25.1.0
+# openpyxl — парсинг .xlsx при импорте задач (src/services/task_import_service.py).
+# Без него падает импорт src.services.task_service -> src.routers.tasks_router
+# (и всё, что их импортирует, включая тесты) с ModuleNotFoundError.
+openpyxl==3.1.5
 
 # Admin panel
 sqladmin==0.23.0
