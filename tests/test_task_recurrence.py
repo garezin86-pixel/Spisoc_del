@@ -174,7 +174,9 @@ class TestSpawnOnStatusUpdate:
         await service.update_task_status(task.id, TaskStatus.done, author)
 
         repo = TaskRepository(session)
-        tasks, _ = await repo.get_filtered_tasks_with_total(user_id=author.id, offset=0, limit=50)
+        tasks, _ = await repo.get_filtered_tasks_with_total(
+            user_id=author.id, project_id=project.id, offset=0, limit=50
+        )
         new_task = next(t for t in tasks if t.status == TaskStatus.todo)
         assert new_task.user_id == executor.id
         assert new_task.project_id == project.id
