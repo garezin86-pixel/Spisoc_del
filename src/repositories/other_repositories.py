@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 import sqlalchemy as sa
-from sqlalchemy import case, func, select
+from sqlalchemy import CursorResult, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -107,6 +107,59 @@ class NotificationRepository(AbstractNotificationRepository):
         self.session.add(log)
         await self.session.flush()
         return log
+
+    # ── Колокольчик (in-app уведомления) ────────────────────────────────────
+    # Переиспользуем ту же таблицу: она и так пишется на каждую отправку
+    # уведомления (см. src/services/notifications.py) — отдельная таблица
+    # под "прочитано/не прочитано" не нужна, хватило одной колонки is_read.
+
+    async def get_for_user(
+        self, user_id: int, offset: int = 0, limit: int = 20
+    ) -> tuple[list[NotificationLogModel], int]:
+        base = select(NotificationLogModel).where(NotificationLogModel.user_id == user_id)
+
+        total = await self.session.scalar(select(func.count()).select_from(base.subquery()))
+
+        result = await self.session.execute(
+            base.options(selectinload(NotificationLogModel.task))
+            .order_by(NotificationLogModel.sent_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all()), total or 0
+
+    async def count_unread(self, user_id: int) -> int:
+        total = await self.session.scalar(
+            select(func.count()).where(
+                NotificationLogModel.user_id == user_id,
+                NotificationLogModel.is_read.is_(False),
+            )
+        )
+        return total or 0
+
+    async def mark_read(self, notification_id: int, user_id: int) -> bool:
+        result = cast(
+            CursorResult,
+            await self.session.execute(
+                update(NotificationLogModel)
+                .where(NotificationLogModel.id == notification_id, NotificationLogModel.user_id == user_id)
+                .values(is_read=True)
+            ),
+        )
+        await self.session.commit()
+        return result.rowcount > 0
+
+    async def mark_all_read(self, user_id: int) -> int:
+        result = cast(
+            CursorResult,
+            await self.session.execute(
+                update(NotificationLogModel)
+                .where(NotificationLogModel.user_id == user_id, NotificationLogModel.is_read.is_(False))
+                .values(is_read=True)
+            ),
+        )
+        await self.session.commit()
+        return result.rowcount
 
     async def check_already_sent(
         self,

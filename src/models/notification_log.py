@@ -22,6 +22,7 @@ class NotificationLogModel(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[str] = mapped_column(String(500), nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     # ✅ Добавляем relationship для доступа к пользователю
     user: Mapped["UserModel"] = relationship(back_populates="notification_logs")

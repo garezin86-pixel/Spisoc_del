@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bar, BarChart, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
 import AttachmentsPanel from "./AttachmentsPanel";
 
@@ -200,6 +201,379 @@ const AUDIT_FIELD_LABELS = {
     deadline: "Дедлайн", user_id: "Исполнитель", group_id: "Группа",
     priority: "Приоритет", project_id: "Проект", deleted_at: "Удалена",
 };
+
+// ─── TimelineTab — глобальная лента активности ────────────────────────────
+// Переиспользует бэкенд /analytics/activity (см. ActivityService) — тот же
+// audit_log, что и AuditPanel по одной задаче, но по всем задачам/комментариям
+// сразу, уже с готовыми человекочитаемыми лейблами полей с бэкенда.
+function describeTimelineEvent(e) {
+    const who = e.username || "Кто-то";
+    if (e.entity_type === "comments") {
+        if (e.action === "create") return `${who} прокомментировал(а) «${e.task_title}»`;
+        if (e.action === "update") return `${who} отредактировал(а) комментарий к «${e.task_title}»`;
+        if (e.action === "delete") return `${who} удалил(а) комментарий к «${e.task_title}»`;
+        return `${who} · комментарий к «${e.task_title}»`;
+    }
+    if (e.action === "create") return `${who} создал(а) задачу «${e.task_title}»`;
+    if (e.action === "delete") return `${who} удалил(а) задачу «${e.task_title}»`;
+    if (e.action === "restore") return `${who} восстановил(а) задачу «${e.task_title}»`;
+    if (e.action === "update") return `${who} изменил(а) задачу «${e.task_title}»`;
+    return `${who} · «${e.task_title}»`;
+}
+
+function TimelineTab({ token }) {
+    const [entries, setEntries] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const PAGE_SIZE = 30;
+
+    const load = useCallback(async (p = 1) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await apiRequest({ path: `/analytics/activity?page=${p}&size=${PAGE_SIZE}`, token });
+            setEntries(Array.isArray(data?.items) ? data.items : []);
+            setTotal(data?.total || 0);
+            setPage(p);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [token]);
+
+    useEffect(() => { load(1); }, [load]);
+
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    return (
+        <div className="card" style={{ marginTop: 0 }}>
+            <div className="section-header">
+                <div>
+                    <div className="section-title">🕒 Лента активности</div>
+                    <div className="section-sub">Последние изменения задач и комментариев — все пользователи</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => load(page)} disabled={loading}>
+                    <Icon d={ICONS.refresh} /> Обновить
+                </button>
+            </div>
+            {error && <div className="alert">{error}</div>}
+            {loading ? (
+                <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+            ) : entries.length === 0 ? (
+                <div className="empty-state"><div className="empty-icon">🕒</div>Пока ничего не происходило</div>
+            ) : (
+                <>
+                    <div className="comment-list">
+                        {entries.map(e => (
+                            <div key={`${e.entity_type}-${e.id}`} className="comment-item">
+                                <div className="comment-meta">
+                                    <span className="comment-author">
+                                        {AUDIT_ACTION_ICONS[e.action] || "📝"} {describeTimelineEvent(e)}
+                                    </span>
+                                    <span className="comment-date">
+                                        {new Date(e.changed_at).toLocaleString("ru-RU")}
+                                    </span>
+                                </div>
+                                {e.entity_type === "comments" && e.action === "create" && e.comment_preview && (
+                                    <div style={{ marginTop: 4, fontSize: 13, color: "var(--text-muted)" }}>
+                                        «{e.comment_preview}»
+                                    </div>
+                                )}
+                                {e.changes && e.changes.length > 0 && (
+                                    <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+                                        {e.changes.map(c => (
+                                            <div key={c.field} style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                                <span style={{ color: "var(--text-dim)" }}>{c.label}:</span>{" "}
+                                                <span style={{ textDecoration: "line-through", marginRight: 4 }}>
+                                                    {c.old}
+                                                </span>
+                                                <span style={{ color: "var(--accent-light)" }}>{c.new}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    <Pagination page={page} totalPages={totalPages} onPage={p => load(p)} />
+                </>
+            )}
+        </div>
+    );
+}
+
+// ─── NotificationBell — колокольчик уведомлений в шапке ───────────────────
+function NotificationBell({ token, onOpenTask }) {
+    const [open, setOpen] = useState(false);
+    const [items, setItems] = useState([]);
+    const [unread, setUnread] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const wrapRef = useRef(null);
+
+    const loadUnread = useCallback(async () => {
+        try {
+            const data = await apiRequest({ path: "/notifications/unread-count", token });
+            setUnread(data?.count || 0);
+        } catch {
+            // тихо игнорируем — бейдж не критичен для остального приложения
+        }
+    }, [token]);
+
+    useEffect(() => {
+        loadUnread();
+        const id = setInterval(loadUnread, 30000);
+        return () => clearInterval(id);
+    }, [loadUnread]);
+
+    useEffect(() => {
+        function onClickOutside(e) {
+            if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener("mousedown", onClickOutside);
+        return () => document.removeEventListener("mousedown", onClickOutside);
+    }, []);
+
+    async function loadList() {
+        setLoading(true);
+        try {
+            const data = await apiRequest({ path: "/notifications?page=1&size=10", token });
+            setItems(Array.isArray(data?.items) ? data.items : []);
+        } catch {
+            setItems([]);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function toggle() {
+        const next = !open;
+        setOpen(next);
+        if (next) await loadList();
+    }
+
+    async function handleItemClick(item) {
+        if (!item.is_read) {
+            try {
+                await apiRequest({ path: `/notifications/${item.id}/read`, token, method: "POST" });
+                setItems(prev => prev.map(i => (i.id === item.id ? { ...i, is_read: true } : i)));
+                setUnread(u => Math.max(0, u - 1));
+            } catch {
+                // не критично — просто оставим как есть
+            }
+        }
+        setOpen(false);
+        if (item.task_title && onOpenTask) onOpenTask(item.task_title);
+    }
+
+    async function markAllRead() {
+        try {
+            await apiRequest({ path: "/notifications/read-all", token, method: "POST" });
+            setItems(prev => prev.map(i => ({ ...i, is_read: true })));
+            setUnread(0);
+        } catch {
+            // не критично
+        }
+    }
+
+    return (
+        <div className="notif-bell-wrap" ref={wrapRef}>
+            <button className="btn btn-ghost btn-sm" onClick={toggle} title="Уведомления">
+                🔔
+                {unread > 0 && <span className="notif-badge">{unread > 99 ? "99+" : unread}</span>}
+            </button>
+            {open && (
+                <div className="notif-dropdown">
+                    <div className="notif-dropdown-header">
+                        <span>Уведомления</span>
+                        {unread > 0 && <button onClick={markAllRead}>Отметить всё прочитанным</button>}
+                    </div>
+                    {loading ? (
+                        <div className="empty-state" style={{ padding: 16 }}>Загрузка…</div>
+                    ) : items.length === 0 ? (
+                        <div className="empty-state" style={{ padding: 16 }}>Пока пусто</div>
+                    ) : (
+                        <div className="notif-list">
+                            {items.map(item => (
+                                <div
+                                    key={item.id}
+                                    className={`notif-item${item.is_read ? "" : " unread"}`}
+                                    onClick={() => handleItemClick(item)}
+                                >
+                                    <div className="notif-content">{item.content}</div>
+                                    {item.task_title && <div className="notif-task">📋 {item.task_title}</div>}
+                                    <div className="notif-date">{new Date(item.sent_at).toLocaleString("ru-RU")}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── CommandPalette — Ctrl/Cmd+K: команды навигации + поиск по задачам ────
+const COMMAND_LIST = [
+    { id: "nav-dashboard", label: "Перейти: Дашборд", icon: "📊", tab: "dashboard" },
+    { id: "nav-timeline", label: "Перейти: Лента активности", icon: "🕒", tab: "timeline" },
+    { id: "nav-tasks", label: "Перейти: Задачи", icon: "📋", tab: "tasks" },
+    { id: "nav-projects", label: "Перейти: Проекты", icon: "📁", tab: "projects" },
+    { id: "nav-kanban", label: "Перейти: Канбан", icon: "🗂️", tab: "kanban" },
+    { id: "nav-templates", label: "Перейти: Шаблоны", icon: "📄", tab: "templates" },
+    { id: "nav-groups", label: "Перейти: Группы", icon: "👥", tab: "groups" },
+    { id: "nav-trash", label: "Перейти: Корзина", icon: "🗑️", tab: "trash" },
+    { id: "nav-settings-profile", label: "Настройки: Профиль и 2FA", icon: "🔒", tab: "2fa" },
+    { id: "nav-settings-tokens", label: "Настройки: Токены", icon: "🔑", tab: "tokens" },
+    { id: "nav-settings-webhooks", label: "Настройки: Вебхуки", icon: "🔗", tab: "webhooks" },
+    { id: "nav-settings-calendar", label: "Настройки: Календарь", icon: "📅", tab: "calendar" },
+    { id: "new-task", label: "Создать задачу", icon: "➕", tab: "tasks" },
+    { id: "toggle-theme", label: "Переключить тему", icon: "🌓" },
+    { id: "logout", label: "Выйти из аккаунта", icon: "🚪" },
+];
+
+const CMDK_TASK_STATUS_LABELS = { backlog: "Очередь", todo: "Новые", in_progress: "В работе", review: "На проверке", done: "Готово" };
+
+function CommandPalette({ open, onClose, token, setTab, setSearchQuery, setTheme, onLogout }) {
+    const [query, setQuery] = useState("");
+    const [taskResults, setTaskResults] = useState([]);
+    const [taskLoading, setTaskLoading] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+        if (open) {
+            setQuery("");
+            setTaskResults([]);
+            setActiveIndex(0);
+            setTimeout(() => inputRef.current?.focus(), 0);
+        }
+    }, [open]);
+
+    const filteredCommands = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return COMMAND_LIST;
+        return COMMAND_LIST.filter(c => c.label.toLowerCase().includes(q));
+    }, [query]);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const q = query.trim();
+        if (q.length < 2) {
+            setTaskResults([]);
+            return undefined;
+        }
+        let cancelled = false;
+        setTaskLoading(true);
+        const timer = setTimeout(async () => {
+            try {
+                const params = new URLSearchParams({ search: q, page: "1", size: "5" });
+                const data = await apiRequest({ path: `/tasks/filter?${params.toString()}`, token });
+                if (!cancelled) setTaskResults(Array.isArray(data?.items) ? data.items : []);
+            } catch {
+                if (!cancelled) setTaskResults([]);
+            } finally {
+                if (!cancelled) setTaskLoading(false);
+            }
+        }, 300);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [query, open, token]);
+
+    const combined = useMemo(
+        () => [
+            ...filteredCommands.map(c => ({ type: "command", ...c })),
+            ...taskResults.map(t => ({ type: "task", ...t })),
+        ],
+        [filteredCommands, taskResults],
+    );
+
+    useEffect(() => { setActiveIndex(0); }, [combined.length]);
+
+    function runCommand(cmd) {
+        if (cmd.id === "toggle-theme") setTheme(t => (t === "dark" ? "light" : "dark"));
+        else if (cmd.id === "logout") onLogout();
+        else setTab(cmd.tab);
+        onClose();
+    }
+
+    function runTask(t) {
+        setTab("tasks");
+        setSearchQuery(t.title);
+        onClose();
+    }
+
+    function runItem(item) {
+        if (item.type === "command") runCommand(item);
+        else runTask(item);
+    }
+
+    function onKeyDown(e) {
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveIndex(i => Math.min(i + 1, combined.length - 1));
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex(i => Math.max(i - 1, 0));
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (combined[activeIndex]) runItem(combined[activeIndex]);
+        } else if (e.key === "Escape") {
+            onClose();
+        }
+    }
+
+    if (!open) return null;
+
+    return (
+        <div className="cmdk-overlay" onMouseDown={onClose}>
+            <div className="cmdk-panel" onMouseDown={e => e.stopPropagation()}>
+                <input
+                    ref={inputRef}
+                    className="cmdk-input"
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    placeholder="Команда или название задачи…"
+                />
+                <div className="cmdk-list">
+                    {combined.length === 0 && <div className="cmdk-empty">Ничего не найдено</div>}
+                    {filteredCommands.length > 0 && <div className="cmdk-group-label">Команды</div>}
+                    {filteredCommands.map((c, i) => (
+                        <div
+                            key={c.id}
+                            className={`cmdk-item${activeIndex === i ? " active" : ""}`}
+                            onMouseEnter={() => setActiveIndex(i)}
+                            onClick={() => runItem({ type: "command", ...c })}
+                        >
+                            <span className="cmdk-icon">{c.icon}</span> {c.label}
+                        </div>
+                    ))}
+                    {taskLoading && <div className="cmdk-group-label">Задачи · загрузка…</div>}
+                    {!taskLoading && taskResults.length > 0 && <div className="cmdk-group-label">Задачи</div>}
+                    {taskResults.map((t, i) => {
+                        const idx = filteredCommands.length + i;
+                        return (
+                            <div
+                                key={`task-${t.id}`}
+                                className={`cmdk-item${activeIndex === idx ? " active" : ""}`}
+                                onMouseEnter={() => setActiveIndex(idx)}
+                                onClick={() => runItem({ type: "task", ...t })}
+                            >
+                                <span className="cmdk-icon">📋</span> {t.title}
+                                {t.status && <span className="cmdk-hint">{CMDK_TASK_STATUS_LABELS[t.status] ?? t.status}</span>}
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="cmdk-footer">
+                    <span>↑↓ навигация</span><span>Enter выбрать</span><span>Esc закрыть</span>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 function AuditPanel({ taskId, token }) {
     const [entries, setEntries] = useState([]);
@@ -3970,6 +4344,36 @@ function PushNotificationsCard({ token }) {
     );
 }
 
+// ─── StatsDonut — маленький пончиковый график для личной статистики ──────
+function StatsDonut({ total, done, pending, doneLabel = "Готово", pendingLabel = "В работе" }) {
+    const rest = Math.max(0, (total ?? 0) - (done ?? 0) - (pending ?? 0));
+    const data = [
+        { name: doneLabel, value: done ?? 0, color: "var(--green)" },
+        { name: pendingLabel, value: pending ?? 0, color: "var(--accent-light)" },
+        { name: "Остальное", value: rest, color: "var(--border-hover)" },
+    ].filter(d => d.value > 0);
+
+    if (!total) {
+        return (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 150, color: "var(--text-muted)", fontSize: 13 }}>
+                Нет задач
+            </div>
+        );
+    }
+
+    return (
+        <ResponsiveContainer width="100%" height={150}>
+            <PieChart>
+                <Pie data={data} dataKey="value" nameKey="name" innerRadius={42} outerRadius={64} paddingAngle={2} stroke="none">
+                    {data.map((d, i) => <Cell key={i} fill={d.color} />)}
+                </Pie>
+                <Tooltip contentStyle={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+            </PieChart>
+        </ResponsiveContainer>
+    );
+}
+
 function DashboardTab({ stats, loading, username, role, token }) {
     const isManagerOrAdmin = role === "admin" || role === "manager";
 
@@ -4038,6 +4442,7 @@ function DashboardTab({ stats, loading, username, role, token }) {
                     </div>
                     <div className="progress-caption">{completionPercent}%</div>
                 </div>
+                <StatsDonut total={stats.total} done={stats.done} pending={stats.pending} />
             </div>
 
             {/* Созданные мной */}
@@ -4066,6 +4471,7 @@ function DashboardTab({ stats, loading, username, role, token }) {
                     </div>
                     <div className="progress-caption">{authorPercent}%</div>
                 </div>
+                <StatsDonut total={stats.a_total} done={stats.a_done} pending={(stats.a_total ?? 0) - (stats.a_done ?? 0)} doneLabel="Закрыто" pendingLabel="Открыто" />
             </div>
 
             {/* Последние задачи */}
@@ -4156,27 +4562,21 @@ function ManagerAnalyticsSection({ token }) {
                 {executors.length === 0 ? (
                     <div className="empty-state"><div className="empty-icon">📊</div>Пока нет завершённых задач с дедлайном</div>
                 ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                        {executors.map(e => (
-                            <div key={e.user_id}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 13 }}>
-                                    <span style={{ fontWeight: 600 }}>{e.username}</span>
-                                    <span style={{ color: "var(--text-muted)" }}>
-                                        {e.on_time}/{e.total_completed} в срок ({e.on_time_rate}%)
-                                    </span>
-                                </div>
-                                <div className="progress-track">
-                                    <div
-                                        className="progress-fill"
-                                        style={{
-                                            width: `${e.on_time_rate}%`,
-                                            background: e.on_time_rate >= 80 ? "var(--green)" : e.on_time_rate >= 50 ? "#f59e0b" : "#ef4444",
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                    <ResponsiveContainer width="100%" height={Math.max(120, executors.length * 42)}>
+                        <BarChart data={executors} layout="vertical" margin={{ left: 8, right: 24 }}>
+                            <XAxis type="number" domain={[0, 100]} tick={{ fill: "var(--text-muted)", fontSize: 12 }} unit="%" />
+                            <YAxis type="category" dataKey="username" width={110} tick={{ fill: "var(--text)", fontSize: 12 }} />
+                            <Tooltip
+                                contentStyle={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
+                                formatter={(value, _name, item) => [`${item.payload.on_time}/${item.payload.total_completed} в срок (${value}%)`, "Вовремя"]}
+                            />
+                            <Bar dataKey="on_time_rate" radius={[0, 6, 6, 0]}>
+                                {executors.map((e, i) => (
+                                    <Cell key={i} fill={e.on_time_rate >= 80 ? "var(--green)" : e.on_time_rate >= 50 ? "var(--amber)" : "var(--red)"} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
                 )}
             </div>
 
@@ -4190,27 +4590,21 @@ function ManagerAnalyticsSection({ token }) {
                 {projects.length === 0 ? (
                     <div className="empty-state"><div className="empty-icon">📊</div>Пока нет данных по проектам</div>
                 ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {projects.map(p => (
-                            <div key={p.project_id} style={{
-                                display: "flex", alignItems: "center", justifyContent: "space-between",
-                                padding: "8px 12px", borderRadius: 8, background: "var(--surface2)",
-                            }}>
-                                <div>
-                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{p.project_name}</div>
-                                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                                        {p.completed_late}/{p.total_completed} закрыто с опозданием
-                                    </div>
-                                </div>
-                                <span style={{
-                                    fontSize: 16, fontWeight: 700,
-                                    color: p.avg_overdue_days === 0 ? "var(--green)" : p.avg_overdue_days > 3 ? "#ef4444" : "#f59e0b",
-                                }}>
-                                    {p.avg_overdue_days === 0 ? "✓ вовремя" : `+${p.avg_overdue_days} дн.`}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
+                    <ResponsiveContainer width="100%" height={Math.max(160, projects.length * 50)}>
+                        <BarChart data={projects} margin={{ left: -10, right: 12, top: 8 }}>
+                            <XAxis dataKey="project_name" tick={{ fill: "var(--text-muted)", fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                            <YAxis tick={{ fill: "var(--text-muted)", fontSize: 12 }} unit=" дн." />
+                            <Tooltip
+                                contentStyle={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
+                                formatter={(value, _name, item) => [`${item.payload.completed_late}/${item.payload.total_completed} с опозданием`, `+${value} дн.`]}
+                            />
+                            <Bar dataKey="avg_overdue_days" radius={[6, 6, 0, 0]}>
+                                {projects.map((p, i) => (
+                                    <Cell key={i} fill={p.avg_overdue_days === 0 ? "var(--green)" : p.avg_overdue_days > 3 ? "var(--red)" : "var(--amber)"} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
                 )}
             </div>
         </>
@@ -4246,6 +4640,18 @@ function App() {
 
     useWebSocket(token, handleWsEvent);
     const [theme, setTheme] = useState(() => localStorage.getItem("spisoc_theme") || "dark");
+
+    const [paletteOpen, setPaletteOpen] = useState(false);
+    useEffect(() => {
+        function onKeyDown(e) {
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+                e.preventDefault();
+                setPaletteOpen(open => !open);
+            }
+        }
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, []);
     const [tasks, setTasks] = useState([]);
     const [trashTasks, setTrash] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -4261,11 +4667,11 @@ function App() {
     const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
     const [tasksPage, setTasksPage] = useState(1);
-    const [tasksTotal, setTasksTotal] = useState(0);
+    const [tasksTotal, setTasksTotal] = useState(null); // null = ещё не загружено (см. count-badge ниже — резервируем место, чтобы бейдж не "впрыгивал" и не сдвигал вкладки)
     const PAGE_SIZE = 50;
 
     const [trashPage, setTrashPage] = useState(1);
-    const [trashTotal, setTrashTotal] = useState(0);
+    const [trashTotal, setTrashTotal] = useState(null); // null = ещё не загружено
 
     const [groups, setGroups] = useState([]);
     const [users, setUsers] = useState([]);
@@ -4571,14 +4977,17 @@ function App() {
         prevTokenRef.current = token;
 
         if (isNewLogin) {
-            // Первый вход или смена токена — грузим всё
+            // Первый вход или смена токена — грузим всё.
+            // loadTrash(1) грузим сразу, а не только при открытии вкладки "Корзина" —
+            // иначе счётчик-бейдж появляется с опозданием и весь ряд вкладок
+            // сдвигается по ширине (см. баг-репорт про "прыгающие" отступы).
             didInitRef.current = true;
             loadGroups();
             loadUsers();
             loadTags();
             loadFilterPresets();
             if (tab === "tasks") loadTasks(1);
-            if (tab === "trash") loadTrash(1);
+            loadTrash(1);
             if (tab === "dashboard") loadDashboard();
         } else {
             // Смена фильтров/вкладки — только задачи
@@ -4717,12 +5126,12 @@ function App() {
 
     async function handleDeleteTask(task) {
         setTasks(prev => prev.filter(t => t.id !== task.id));
-        setTasksTotal(prev => prev - 1);
+        setTasksTotal(prev => (prev ?? 0) - 1);
         try {
             await apiRequest({ path: `/tasks/${task.id}`, method: "DELETE", token });
         } catch (err) {
             setTasks(prev => [...prev, task].sort((a, b) => a.id - b.id));
-            setTasksTotal(prev => prev + 1);
+            setTasksTotal(prev => (prev ?? 0) + 1);
             handleAuthError(err);
         }
     }
@@ -4831,12 +5240,12 @@ function App() {
 
     async function handleRestoreTask(task) {
         setTrash(prev => prev.filter(t => t.id !== task.id));
-        setTrashTotal(prev => prev - 1);
+        setTrashTotal(prev => (prev ?? 0) - 1);
         try {
             await apiRequest({ path: `/tasks/${task.id}/restore`, method: "PATCH", token });
         } catch (err) {
             setTrash(prev => [...prev, task].sort((a, b) => a.id - b.id));
-            setTrashTotal(prev => prev + 1);
+            setTrashTotal(prev => (prev ?? 0) + 1);
             handleAuthError(err);
         }
     }
@@ -4844,12 +5253,12 @@ function App() {
     async function handleHardDelete(task) {
         if (!window.confirm("Удалить задачу навсегда? Это действие нельзя отменить.")) return;
         setTrash(prev => prev.filter(t => t.id !== task.id));
-        setTrashTotal(prev => prev - 1);
+        setTrashTotal(prev => (prev ?? 0) - 1);
         try {
             await apiRequest({ path: `/tasks/${task.id}/hard`, method: "DELETE", token });
         } catch (err) {
             setTrash(prev => [...prev, task].sort((a, b) => a.id - b.id));
-            setTrashTotal(prev => prev + 1);
+            setTrashTotal(prev => (prev ?? 0) + 1);
             handleAuthError(err);
         }
     }
@@ -4860,8 +5269,8 @@ function App() {
         return { total, done, pending: total - done, percent: total > 0 ? Math.round((done / total) * 100) : 0 };
     }, [tasks]);
 
-    const tasksTotalPages = Math.ceil(tasksTotal / PAGE_SIZE);
-    const trashTotalPages = Math.ceil(trashTotal / PAGE_SIZE);
+    const tasksTotalPages = Math.ceil((tasksTotal ?? 0) / PAGE_SIZE);
+    const trashTotalPages = Math.ceil((trashTotal ?? 0) / PAGE_SIZE);
 
     // ── Role badge in header ──────────────────────────────
     const roleColor = ROLE_COLORS[currentRole] ?? ROLE_COLORS.user;
@@ -4939,6 +5348,9 @@ function App() {
                 <div className="header-right">
                     {/* Верхний ряд — пользователь и управление */}
                     <div className="header-row header-row-top">
+                        <button className="cmdk-trigger" onClick={() => setPaletteOpen(true)} title="Command Palette">
+                            🔍 <span>Поиск</span> <kbd>Ctrl K</kbd>
+                        </button>
                         <div className="user-chip"
                             ref={chipRef}
                             onMouseEnter={() => {
@@ -4972,6 +5384,10 @@ function App() {
                                 </span>
                             )}
                         </div>
+                        <NotificationBell
+                            token={token}
+                            onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
+                        />
                         <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
@@ -5000,8 +5416,11 @@ function App() {
                             <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => { setTab("dashboard"); loadDashboard(); }}>
                                 <Icon d={ICONS.chart} /> Дашборд
                             </button>
+                            <button className={`tab-btn${tab === "timeline" ? " active" : ""}`} onClick={() => setTab("timeline")}>
+                                🕒 Лента
+                            </button>
                             <button className={`tab-btn${tab === "tasks" ? " active" : ""}`} onClick={() => setTab("tasks")}>
-                                Задачи {tasksTotal > 0 && <span className="count-badge">{tasksTotal}</span>}
+                                Задачи <span className="count-badge" style={{ visibility: tasksTotal ? "visible" : "hidden" }}>{tasksTotal || 0}</span>
                             </button>
                             <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
                                 📁 Проекты
@@ -5017,24 +5436,25 @@ function App() {
                             </button>
                             <button className={`tab-btn${tab === "trash" ? " active" : ""}`} onClick={() => setTab("trash")}>
                                 <Icon d={ICONS.trash} /> Корзина
-                                {trashTotal > 0 && <span className="count-badge">{trashTotal}</span>}
+                                <span className="count-badge" style={{ visibility: trashTotal ? "visible" : "hidden" }}>{trashTotal || 0}</span>
                             </button>
-                            <button className={`tab-btn${tab === "tokens" ? " active" : ""}`} onClick={() => setTab("tokens")}>
-                                🔑 Токены
-                            </button>
-                            <button className={`tab-btn${tab === "webhooks" ? " active" : ""}`} onClick={() => setTab("webhooks")}>
-                                <Icon d={ICONS.link} /> Вебхуки
-                            </button>
-                            <button className={`tab-btn${tab === "calendar" ? " active" : ""}`} onClick={() => setTab("calendar")}>
-                                <Icon d={ICONS.calendar} /> Календарь
-                            </button>
-                            <button className={`tab-btn${tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
-                                🔒 2FA
+                            <button className={`tab-btn${tab === "tokens" || tab === "webhooks" || tab === "calendar" || tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
+                                <Icon d={ICONS.shield} /> Настройки
                             </button>
                         </div>
                     </div>
                 </div>
             </header>
+
+            <CommandPalette
+                open={paletteOpen}
+                onClose={() => setPaletteOpen(false)}
+                token={token}
+                setTab={setTab}
+                setSearchQuery={setSearchQuery}
+                setTheme={setTheme}
+                onLogout={logout}
+            />
 
             {show2faNudge && (
                 <div className="alert" style={{
@@ -5067,7 +5487,7 @@ function App() {
                                 </div>
                                 <div className="stats-grid">
                                     <div className="stat-box">
-                                        <div className="stat-value">{tasksTotal}</div>
+                                        <div className="stat-value">{tasksTotal ?? "–"}</div>
                                         <div className="stat-label">Всего</div>
                                     </div>
                                     <div className="stat-box">
@@ -5241,9 +5661,11 @@ function App() {
                                     <div>
                                         <div className="section-title">Задачи</div>
                                         <div className="section-sub">
-                                            {tasksTotal > 0
-                                                ? `${tasksTotal} задач${searchQuery.trim() ? " (по запросу)" : ""} · стр. ${tasksPage}/${tasksTotalPages}`
-                                                : "Нет задач"}
+                                            {tasksTotal == null
+                                                ? "Загрузка…"
+                                                : tasksTotal > 0
+                                                    ? `${tasksTotal} задач${searchQuery.trim() ? " (по запросу)" : ""} · стр. ${tasksPage}/${tasksTotalPages}`
+                                                    : "Нет задач"}
                                         </div>
                                     </div>
                                     <div style={{ display: "flex", gap: 8 }}>
@@ -5474,6 +5896,12 @@ function App() {
                     />
                 </div>
             )}
+            {/* ── TIMELINE TAB ── */}
+            {tab === "timeline" && (
+                <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                    <TimelineTab token={token} />
+                </div>
+            )}
             {/* ── PROJECTS TAB ── */}
             {tab === "projects" && (
                 <div>
@@ -5498,25 +5926,32 @@ function App() {
                     <TemplatesTab token={token} />
                 </div>
             )}
-            {tab === "tokens" && (
-                <div>
-                    <TokensTab token={token} />
-                </div>
-            )}
-            {tab === "webhooks" && (
-                <div>
-                    <WebhooksTab token={token} />
-                </div>
-            )}
-            {tab === "calendar" && (
-                <div>
-                    <CalendarTab token={token} />
-                </div>
-            )}
-            {tab === "2fa" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <TwoFactorTab token={token} />
-                    <ChangePasswordCard token={token} />
+            {/* ── SETTINGS (Токены / Вебхуки / Календарь / 2FA) ── */}
+            {(tab === "tokens" || tab === "webhooks" || tab === "calendar" || tab === "2fa") && (
+                <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
+                    <div className="tab-bar" style={{ marginBottom: 16, display: "inline-flex" }}>
+                        <button className={`tab-btn${tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
+                            🔒 Профиль и 2FA
+                        </button>
+                        <button className={`tab-btn${tab === "tokens" ? " active" : ""}`} onClick={() => setTab("tokens")}>
+                            🔑 Токены
+                        </button>
+                        <button className={`tab-btn${tab === "webhooks" ? " active" : ""}`} onClick={() => setTab("webhooks")}>
+                            <Icon d={ICONS.link} /> Вебхуки
+                        </button>
+                        <button className={`tab-btn${tab === "calendar" ? " active" : ""}`} onClick={() => setTab("calendar")}>
+                            <Icon d={ICONS.calendar} /> Календарь
+                        </button>
+                    </div>
+                    {tab === "2fa" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                            <TwoFactorTab token={token} />
+                            <ChangePasswordCard token={token} />
+                        </div>
+                    )}
+                    {tab === "tokens" && <TokensTab token={token} />}
+                    {tab === "webhooks" && <WebhooksTab token={token} />}
+                    {tab === "calendar" && <CalendarTab token={token} />}
                 </div>
             )}
             {/* ── TRASH TAB ── */}
