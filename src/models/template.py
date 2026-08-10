@@ -2,8 +2,9 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
@@ -59,12 +60,21 @@ class TaskTemplateItemModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     template_id: Mapped[int] = mapped_column(ForeignKey("task_templates.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     priority: Mapped[TaskPriority] = mapped_column(
         SAEnum(TaskPriority, name="taskpriority", create_type=False),
         nullable=False,
         default=TaskPriority.medium,
         server_default="medium",
     )
+    # Дедлайн у шаблона не может быть абсолютной датой (шаблон переиспользуемый) —
+    # поэтому храним смещение в днях от момента применения шаблона к проекту.
+    deadline_offset_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Имена тегов (не FK на tags.id) — при применении шаблона теги создаются/находятся
+    # через TagRepository.get_or_create, чтобы шаблон не ломался при удалении тега.
+    tags: Mapped[list[str] | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
+    # Заголовки пунктов чек-листа, создаваемых вместе с задачей.
+    checklist: Mapped[list[str] | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     template = relationship("TaskTemplateModel", back_populates="items")

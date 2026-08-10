@@ -1,5 +1,5 @@
 # src/routers/analytics_router.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from src.core.dependencies import get_current_user
 from src.core.exceptions import no_access
@@ -39,7 +39,11 @@ async def get_activity_feed(
     session: SessionDep,
     pagination: PaginationParams = Depends(),
     current_user: UserModel = Depends(get_current_user),
+    user_id: int | None = Query(
+        None,
+        description="Сузить ленту до событий конкретного пользователя (страница профиля)",
+    ),
 ):
     service = ActivityService(AuditRepository(session), session)
-    items, total = await service.get_feed(offset=pagination.offset, limit=pagination.size)
+    items, total = await service.get_feed(offset=pagination.offset, limit=pagination.size, user_id=user_id)
     return PaginatedResponse.create(items=items, total=total, page=pagination.page, size=pagination.size)

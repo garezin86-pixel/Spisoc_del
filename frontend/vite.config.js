@@ -8,6 +8,7 @@ export default defineConfig({
             "/api": {
                 target: "http://localhost:8000",
                 changeOrigin: true,
+                ws: true, // без этого /api/ws не апгрейдится до WebSocket — handshake виснет по таймауту
             },
             // Локальное хранилище вложений — download-эндпоинт отдаёт
             // 302-редирект на относительный /attachments-storage/..., и без

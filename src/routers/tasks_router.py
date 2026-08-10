@@ -109,6 +109,9 @@ async def filter_tasks(
     ),
     tag_id: int | None = Query(None, description="Фильтр по тегу"),
     limit: int | None = Query(None, ge=1, le=100),
+    target_user_id: int | None = Query(
+        None, description="Показать задачи другого пользователя (например, со страницы его профиля), а не свои"
+    ),
 ):
     final_limit = limit or pagination.size
     tasks, total = await get_task_service(session).filter_tasks_paginated(
@@ -123,6 +126,7 @@ async def filter_tasks(
         status=status,
         search=search,
         tag_id=tag_id,
+        target_user_id=target_user_id,
     )
 
     return PaginatedResponse.create(

@@ -574,13 +574,19 @@ class TaskService:
         Зачем: единый метод пагинации задач для роутера.
         Делегирует валидацию фильтров в _validate_task_filters,
         а сам запрос — в репозиторий.
+
+        target_user_id — если передан (страница профиля другого пользователя),
+        фильтруем по НЕМУ, а не по текущему авторизованному user. Видимость
+        задач в приложении общая для всей команды (см. filter_tasks в
+        tasks_router), так что смотреть чужие задачи может кто угодно.
         """
+        target_user_id = filters.pop("target_user_id", None)
         await self._validate_task_filters(
             filters.get("filter_user_group"),
             filters.get("group_id"),
         )
         return await self.task_repo.get_filtered_tasks_with_total(
-            user_id=user.id,
+            user_id=target_user_id or user.id,
             offset=offset,
             limit=limit,
             **filters,

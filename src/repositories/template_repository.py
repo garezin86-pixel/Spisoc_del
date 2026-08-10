@@ -1,9 +1,13 @@
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.checklist import TaskChecklistItemModel
 from src.models.group import user_group
 from src.models.task import SpisokModel, TaskStatus
 from src.models.template import TaskTemplateItemModel, TaskTemplateModel
+from src.repositories.tag_repository import TagRepository
 from src.schemas.template import TemplateCreate, TemplateUpdate
 
 
@@ -26,8 +30,12 @@ class TemplateRepository:
             item = TaskTemplateItemModel(
                 template_id=template.id,
                 title=item_data.title,
+                description=item_data.description,
                 priority=item_data.priority,
-                order_index=item_data.order_index if item_data.order_index is not None else i,
+                deadline_offset_days=item_data.deadline_offset_days,
+                tags=item_data.tags or None,
+                checklist=item_data.checklist or None,
+                order_index=(item_data.order_index if item_data.order_index is not None else i),
             )
             self.session.add(item)
 
@@ -137,8 +145,12 @@ class TemplateRepository:
                 item = TaskTemplateItemModel(
                     template_id=template.id,
                     title=item_data.title,
+                    description=item_data.description,
                     priority=item_data.priority,
-                    order_index=item_data.order_index if item_data.order_index is not None else i,
+                    deadline_offset_days=item_data.deadline_offset_days,
+                    tags=item_data.tags or None,
+                    checklist=item_data.checklist or None,
+                    order_index=(item_data.order_index if item_data.order_index is not None else i),
                 )
                 self.session.add(item)
 
@@ -151,17 +163,54 @@ class TemplateRepository:
         await self.session.flush()
 
     async def apply(self, template: TaskTemplateModel, project_id: int, user_id: int) -> list[SpisokModel]:
+        """Применяет шаблон к проекту: создаёт задачи и переносит в них весь
+        "рецепт" пункта шаблона — дедлайн (как смещение в днях от текущего
+        момента), теги (создаются/находятся по имени — get_or_create, чтобы
+        шаблон не ломался, если тег кто-то удалил) и чек-лист.
+        """
+        tag_repo = TagRepository(self.session)
+        now = datetime.now(timezone.utc)
+
         created = []
         for item in sorted(template.items, key=lambda x: x.order_index):
+            deadline = (
+                now + timedelta(days=item.deadline_offset_days) if item.deadline_offset_days is not None else None
+            )
             task = SpisokModel(
                 title=item.title,
+                description=item.description,
                 priority=item.priority,
+                deadline=deadline,
                 status=TaskStatus.todo,
                 project_id=project_id,
                 author_id=user_id,
                 user_id=user_id,
+                tags=[],  # инициализируем коллекцию в памяти, иначе append() ниже
+                # попытается лениво подгрузить её из БД синхронно и упадёт с
+                # MissingGreenlet в async-сессии
             )
             self.session.add(task)
-            created.append(task)
+            created.append((task, item))
+
+        # Отдельный flush, чтобы у задач появились id — они нужны для
+        # чек-листа (FK) и для назначения тегов через M2M-связь.
         await self.session.flush()
-        return created
+
+        for task, item in created:
+            for tag_name in item.tags or []:
+                tag_name = tag_name.strip()
+                if not tag_name:
+                    continue
+                tag = await tag_repo.get_or_create(tag_name, "#6b7280")
+                task.tags.append(tag)
+
+            for order_index, checklist_title in enumerate(item.checklist or []):
+                checklist_title = checklist_title.strip()
+                if not checklist_title:
+                    continue
+                self.session.add(
+                    TaskChecklistItemModel(task_id=task.id, title=checklist_title, order_index=order_index)
+                )
+
+        await self.session.flush()
+        return [task for task, _item in created]

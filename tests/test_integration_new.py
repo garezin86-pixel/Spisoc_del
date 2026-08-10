@@ -341,10 +341,11 @@ class TestRBAC:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_user_cannot_list_users(self, auth_client):
+    async def test_user_can_list_users(self, auth_client):
+        """Справочник команды виден всем авторизованным — см. users_router.get_users."""
         client, _ = auth_client
         resp = await client.get("/users/")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
     # tests/test_integration_new.py
     @pytest.mark.asyncio

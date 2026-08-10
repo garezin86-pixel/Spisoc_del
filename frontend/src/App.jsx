@@ -174,6 +174,7 @@ const ICONS = {
     kanban: "M3 3h5v18H3zm6.5 0H15v8H9.5zm0 10H15v8H9.5zM17 3h4v11h-4zm0 13h4v5h-4z",
     link: "M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z",
     calendar: "M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM7 11h5v5H7z",
+    folder: "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
 };
 
 // ─── Pagination ───────────────────────────────────────────
@@ -220,6 +221,662 @@ function describeTimelineEvent(e) {
     if (e.action === "update") return `${who} изменил(а) задачу «${e.task_title}»`;
     return `${who} · «${e.task_title}»`;
 }
+
+// ─── UserProfilePage — карточка профиля: аватар, должность, статистика,
+// задачи (через target_user_id) и активность (через Timeline/user_id) ─────
+// Кэш ID пользователей без аватара — общий на всю сессию вкладки. Без него
+// каждый отдельный <UserProfileAvatar> (например, десяток сообщений одного
+// и того же человека в чате) заново бьёт по сети и получает 404.
+const _knownNoAvatar = new Set();
+
+function UserProfileAvatar({ userId, username, size = 72, version }) {
+    const [broken, setBroken] = useState(() => _knownNoAvatar.has(userId));
+
+    // После успешной загрузки нового аватара (см. handleAvatarPick) родитель
+    // передаёт свежий version — сбрасываем broken и убираем из чёрного списка,
+    // иначе картинка так и останется заглушкой с инициалами до перезагрузки страницы.
+    useEffect(() => {
+        if (version) {
+            _knownNoAvatar.delete(userId);
+            setBroken(false);
+        }
+    }, [version, userId]);
+
+    const initials = (username || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join("") || "?";
+
+    if (broken || !userId) {
+        return (
+            <div style={{
+                width: size, height: size, borderRadius: "50%", flexShrink: 0,
+                background: "var(--accent)", color: "#fff", display: "flex",
+                alignItems: "center", justifyContent: "center",
+                fontSize: size * 0.36, fontWeight: 700,
+            }}>
+                {initials}
+            </div>
+        );
+    }
+    return (
+        <img
+            src={`${API_BASE}/users/${userId}/avatar${version ? `?v=${version}` : ""}`}
+            alt={username}
+            onError={() => { _knownNoAvatar.add(userId); setBroken(true); }}
+            style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0, background: "var(--surface2)" }}
+        />
+    );
+}
+
+function UserProfilePage({ userId, token, currentUserId, onClose, onOpenTask }) {
+    const isOwn = userId === currentUserId;
+    const [user, setUser] = useState(null);
+    const [stats, setStats] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [section, setSection] = useState("tasks"); // "tasks" | "activity"
+    const [editingPosition, setEditingPosition] = useState(false);
+    const [positionDraft, setPositionDraft] = useState("");
+    const [savingPosition, setSavingPosition] = useState(false);
+    const [avatarUploading, setAvatarUploading] = useState(false);
+    const fileInputRef = useRef(null);
+
+    const [tasksState, setTasksState] = useState({ items: [], total: 0, loading: true });
+    const [taskFilterGroup, setTaskFilterGroup] = useState("user"); // "user" | "author"
+
+    const [feedState, setFeedState] = useState({ items: [], total: 0, loading: true, page: 1 });
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const [userResp, statsResp] = await Promise.all([
+                apiRequest({ path: `/users/${userId}`, token }),
+                apiRequest({ path: `/users/${userId}/stats`, token }),
+            ]);
+            setUser(userResp);
+            setStats(statsResp);
+            setPositionDraft(userResp?.position || "");
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [userId, token]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const loadTasks = useCallback(async (group) => {
+        setTasksState(s => ({ ...s, loading: true }));
+        try {
+            const params = new URLSearchParams({
+                filter_user_group: group, target_user_id: String(userId), page: "1", size: "10",
+            });
+            const data = await apiRequest({ path: `/tasks/filter?${params.toString()}`, token });
+            setTasksState({ items: Array.isArray(data?.items) ? data.items : [], total: data?.total || 0, loading: false });
+        } catch {
+            setTasksState({ items: [], total: 0, loading: false });
+        }
+    }, [userId, token]);
+
+    useEffect(() => { if (section === "tasks") loadTasks(taskFilterGroup); }, [section, taskFilterGroup, loadTasks]);
+
+    const loadFeed = useCallback(async (page = 1) => {
+        setFeedState(s => ({ ...s, loading: true }));
+        try {
+            const params = new URLSearchParams({ user_id: String(userId), page: String(page), size: "20" });
+            const data = await apiRequest({ path: `/analytics/activity?${params.toString()}`, token });
+            setFeedState({ items: Array.isArray(data?.items) ? data.items : [], total: data?.total || 0, loading: false, page });
+        } catch {
+            setFeedState({ items: [], total: 0, loading: false, page });
+        }
+    }, [userId, token]);
+
+    useEffect(() => { if (section === "activity") loadFeed(1); }, [section, loadFeed]);
+
+    async function savePosition() {
+        setSavingPosition(true);
+        try {
+            const updated = await apiRequest({
+                path: `/users/${userId}`, token, method: "PATCH",
+                body: { position: positionDraft.trim() || null },
+            });
+            setUser(updated);
+            setEditingPosition(false);
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            setSavingPosition(false);
+        }
+    }
+
+    async function handleAvatarPick(e) {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+        setAvatarUploading(true);
+        try {
+            const form = new FormData();
+            form.append("file", file);
+            await fetch(`${API_BASE}/users/me/avatar`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` },
+                body: form,
+            });
+            // Форсим перезагрузку картинки — меняем query-параметр, чтобы обойти кэш браузера
+            setUser(u => ({ ...u, _avatarBust: Date.now() }));
+        } catch (err) {
+            alert("Не удалось загрузить аватар: " + err.message);
+        } finally {
+            setAvatarUploading(false);
+        }
+    }
+
+    if (loading) return <div className="card"><div className="empty-state"><div className="empty-icon">⏳</div>Загрузка профиля…</div></div>;
+    if (error || !user) return <div className="card"><div className="alert">{error || "Пользователь не найден"}</div></div>;
+
+    const roleColor = ROLE_COLORS[user.role] ?? ROLE_COLORS.user;
+    const completionPercent = stats?.total ? Math.round((stats.done / stats.total) * 100) : 0;
+
+    return (
+        <div style={{ maxWidth: 820, margin: "0 auto", padding: "16px 16px 0", display: "flex", flexDirection: "column", gap: 16 }}>
+            <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ alignSelf: "flex-start" }}>
+                ← Назад
+            </button>
+
+            <div className="card" style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div style={{ position: "relative" }}>
+                    <UserProfileAvatar userId={user.id} username={user.username} size={80} version={user._avatarBust} />
+                    {isOwn && (
+                        <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={avatarUploading}
+                            title="Сменить фото"
+                            style={{
+                                position: "absolute", bottom: -4, right: -4, borderRadius: "50%",
+                                width: 28, height: 28, padding: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                            }}
+                        >
+                            {avatarUploading ? "…" : "✎"}
+                        </button>
+                    )}
+                    {isOwn && <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleAvatarPick} />}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 20, fontWeight: 700 }}>{user.username}</div>
+                        <span className="role-badge" style={{ color: roleColor.color, background: roleColor.bg }}>
+                            {ROLE_LABELS[user.role] ?? user.role}
+                        </span>
+                    </div>
+
+                    {editingPosition ? (
+                        <div style={{ display: "flex", gap: 6, marginTop: 8, maxWidth: 320 }}>
+                            <input className="input" style={{ marginBottom: 0 }} value={positionDraft}
+                                placeholder="Должность"
+                                onChange={e => setPositionDraft(e.target.value)}
+                                onKeyDown={e => e.key === "Enter" && savePosition()} autoFocus />
+                            <button className="btn btn-primary btn-sm" onClick={savePosition} disabled={savingPosition}>✓</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => { setEditingPosition(false); setPositionDraft(user.position || ""); }}>✕</button>
+                        </div>
+                    ) : (
+                        <div style={{ marginTop: 6, color: "var(--text-muted)", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                            {user.position || (isOwn ? "Должность не указана" : "")}
+                            {isOwn && (
+                                <button className="btn btn-ghost btn-sm" onClick={() => setEditingPosition(true)} style={{ fontSize: 12 }}>
+                                    {user.position ? "изменить" : "добавить"}
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {stats && (
+                        <div style={{ display: "flex", gap: 20, marginTop: 14, flexWrap: "wrap" }}>
+                            <div>
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{stats.total}</div>
+                                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>задач назначено</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--green)" }}>{stats.done}</div>
+                                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>готово</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 22, fontWeight: 700 }}>{completionPercent}%</div>
+                                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>выполнено</div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {stats && stats.total > 0 && (
+                    <div style={{ width: 180, flexShrink: 0 }}>
+                        <StatsDonut total={stats.total} done={stats.done} pending={stats.pending} />
+                    </div>
+                )}
+            </div>
+
+            <div className="tab-bar" style={{ display: "inline-flex" }}>
+                <button className={`tab-btn${section === "tasks" ? " active" : ""}`} onClick={() => setSection("tasks")}>
+                    <Icon d={ICONS.chart} /> Задачи
+                </button>
+                <button className={`tab-btn${section === "activity" ? " active" : ""}`} onClick={() => setSection("activity")}>
+                    <Icon d={ICONS.clock} /> Активность
+                </button>
+            </div>
+
+            {section === "tasks" && (
+                <div className="card">
+                    <div className="section-header">
+                        <div className="section-title">Задачи</div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                            <button className={`btn btn-sm ${taskFilterGroup === "user" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTaskFilterGroup("user")}>Назначены</button>
+                            <button className={`btn btn-sm ${taskFilterGroup === "author" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTaskFilterGroup("author")}>Созданы</button>
+                        </div>
+                    </div>
+                    {tasksState.loading ? (
+                        <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                    ) : tasksState.items.length === 0 ? (
+                        <div className="empty-state"><div className="empty-icon">📋</div>Нет задач</div>
+                    ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {tasksState.items.map(t => (
+                                <div key={t.id}
+                                    onClick={() => onOpenTask && onOpenTask(t.title)}
+                                    style={{
+                                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                                        padding: "8px 12px", borderRadius: 8, background: "var(--surface2)", cursor: "pointer",
+                                    }}>
+                                    <span style={{ fontSize: 13 }}>{t.title}</span>
+                                    <span className="meta-chip">{CMDK_TASK_STATUS_LABELS[t.status] ?? t.status}</span>
+                                </div>
+                            ))}
+                            {tasksState.total > tasksState.items.length && (
+                                <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", marginTop: 4 }}>
+                                    ещё {tasksState.total - tasksState.items.length} — полный список во вкладке «Задачи»
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {section === "activity" && (
+                <div className="card" style={{ marginTop: 0 }}>
+                    <div className="section-title" style={{ marginBottom: 10 }}>Лента активности</div>
+                    {feedState.loading ? (
+                        <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                    ) : feedState.items.length === 0 ? (
+                        <div className="empty-state"><div className="empty-icon">🕒</div>Пока пусто</div>
+                    ) : (
+                        <>
+                            <div className="comment-list">
+                                {feedState.items.map(e => (
+                                    <div key={`${e.entity_type}-${e.id}`} className="comment-item">
+                                        <div className="comment-meta">
+                                            <span className="comment-author">
+                                                {AUDIT_ACTION_ICONS[e.action] || "📝"} {describeTimelineEvent(e)}
+                                            </span>
+                                            <span className="comment-date">{new Date(e.changed_at).toLocaleString("ru-RU")}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <Pagination page={feedState.page} totalPages={Math.max(1, Math.ceil(feedState.total / 20))} onPage={p => loadFeed(p)} />
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── ChatPanel — переиспользуемое тело чата (список сообщений + инпут).
+// Используется внутри всплывающего окна ChatBubble. Каналы: "Общий чат"
+// (group_id=null) и по одному на каждую группу, в которой состоит юзер.
+function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveChannel, wsEvent, onClose }) {
+    const [messages, setMessages] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
+    const [draft, setDraft] = useState("");
+    const [sending, setSending] = useState(false);
+    const [error, setError] = useState(null);
+    const listRef = useRef(null);
+    const shouldStickToBottom = useRef(true);
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams({ limit: "50" });
+            if (activeChannel != null) params.set("group_id", activeChannel);
+            const data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+            const items = Array.isArray(data) ? data : [];
+            setMessages(items);
+            setHasMore(items.length === 50);
+            shouldStickToBottom.current = true;
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [token, activeChannel]);
+
+    useEffect(() => { load(); }, [load]);
+
+    useEffect(() => {
+        if (shouldStickToBottom.current && listRef.current) {
+            listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+    }, [messages]);
+
+    function onScroll() {
+        const el = listRef.current;
+        if (!el) return;
+        shouldStickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    }
+
+    async function loadMore() {
+        if (!messages.length || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const el = listRef.current;
+            const prevHeight = el?.scrollHeight || 0;
+            const params = new URLSearchParams({ limit: "50", before_id: String(messages[0].id) });
+            if (activeChannel != null) params.set("group_id", activeChannel);
+            const data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+            const older = Array.isArray(data) ? data : [];
+            setHasMore(older.length === 50);
+            setMessages(prev => [...older, ...prev]);
+            requestAnimationFrame(() => {
+                if (el) el.scrollTop = el.scrollHeight - prevHeight;
+            });
+        } catch {
+            // не критично — просто не подгрузили
+        } finally {
+            setLoadingMore(false);
+        }
+    }
+
+    // Живые обновления: событие приходит для ЛЮБОГО канала — фильтруем по
+    // текущему активному, чтобы сообщения из чужого канала сюда не попадали.
+    useEffect(() => {
+        if (!wsEvent) return;
+        const { event, data } = wsEvent;
+        const eventChannel = data?.group_id ?? null;
+        if (eventChannel !== (activeChannel ?? null)) return;
+        if (event === "chat_message") {
+            setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
+        } else if (event === "chat_message_deleted") {
+            setMessages(prev => prev.filter(m => m.id !== data.id));
+        }
+    }, [wsEvent, activeChannel]);
+
+    // Подстраховка на случай проблем с доставкой WS (например, если сокет
+    // незаметно отвалился): пока попап открыт, раз в 5 сек тихо подтягиваем
+    // самые свежие сообщения канала и домешиваем недостающие (дедуп по id,
+    // как и в WS-обработчике выше) — без сброса скролла и без "моргания".
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            try {
+                const params = new URLSearchParams({ limit: "50" });
+                if (activeChannel != null) params.set("group_id", activeChannel);
+                const data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+                if (!Array.isArray(data) || data.length === 0) return;
+                setMessages(prev => {
+                    const known = new Set(prev.map(m => m.id));
+                    const fresh = data.filter(m => !known.has(m.id));
+                    if (fresh.length === 0) return prev;
+                    return [...prev, ...fresh].sort((a, b) => a.id - b.id);
+                });
+            } catch {
+                // тихо игнорируем — это просто подстраховка, не основной путь
+            }
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [token, activeChannel]);
+
+    async function send() {
+        const content = draft.trim();
+        if (!content || sending) return;
+        setSending(true);
+        setDraft("");
+        try {
+            const saved = await apiRequest({
+                path: "/chat/messages", token, method: "POST",
+                body: { content, group_id: activeChannel },
+            });
+            shouldStickToBottom.current = true;
+            // Добавляем сразу из ответа POST, не дожидаясь WS — надёжнее, чем
+            // полагаться только на broadcast (задержки/потеря сети и т.п.).
+            // Если следом всё же прилетит WS-событие на то же сообщение —
+            // дедуп по id (см. эффект ниже) не даст задвоить.
+            if (saved?.id) {
+                setMessages(prev => (prev.some(m => m.id === saved.id) ? prev : [...prev, saved]));
+            }
+        } catch (err) {
+            setError(err.message);
+            setDraft(content);
+        } finally {
+            setSending(false);
+        }
+    }
+
+    async function handleDelete(id) {
+        try {
+            await apiRequest({ path: `/chat/messages/${id}`, token, method: "DELETE" });
+            setMessages(prev => prev.filter(m => m.id !== id));
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", gap: 4, overflowX: "auto", flex: 1, minWidth: 0 }}>
+                    {channels.map(c => (
+                        <button
+                            key={c.group_id ?? "general"}
+                            className={`tab-btn${(activeChannel ?? null) === (c.group_id ?? null) ? " active" : ""}`}
+                            style={{ fontSize: 12, padding: "4px 10px", flexShrink: 0, whiteSpace: "nowrap" }}
+                            onClick={() => setActiveChannel(c.group_id)}
+                        >
+                            {c.group_id == null ? "💬" : "👥"} {c.name}
+                        </button>
+                    ))}
+                </div>
+                {onClose && (
+                    <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ flexShrink: 0 }}>✕</button>
+                )}
+            </div>
+
+            <div ref={listRef} onScroll={onScroll} style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px" }}>
+                {loading ? (
+                    <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                ) : messages.length === 0 ? (
+                    <div className="empty-state"><div className="empty-icon">💬</div>Пока никто ничего не написал</div>
+                ) : (
+                    <>
+                        {hasMore && (
+                            <button className="btn btn-ghost btn-sm" onClick={loadMore} disabled={loadingMore}
+                                style={{ alignSelf: "center", marginBottom: 6 }}>
+                                {loadingMore ? "Загрузка…" : "Загрузить более раннюю историю"}
+                            </button>
+                        )}
+                        {messages.map(m => {
+                            const isOwn = m.user_id === currentUserId;
+                            return (
+                                <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", flexDirection: isOwn ? "row-reverse" : "row" }}>
+                                    <div style={{ cursor: "pointer" }} onClick={() => window.openUserProfile?.(m.user_id)}>
+                                        <UserProfileAvatar userId={m.user_id} username={m.username} size={28} />
+                                    </div>
+                                    <div style={{ maxWidth: "72%" }}>
+                                        <div style={{ display: "flex", gap: 6, alignItems: "baseline", flexDirection: isOwn ? "row-reverse" : "row" }}>
+                                            <span
+                                                style={{ fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                                                onClick={() => window.openUserProfile?.(m.user_id)}
+                                            >
+                                                {m.username}
+                                            </span>
+                                            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                                                {new Date(m.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                                            </span>
+                                        </div>
+                                        <div style={{
+                                            marginTop: 3, padding: "7px 11px", borderRadius: 12,
+                                            background: isOwn ? "var(--accent)" : "var(--surface2)",
+                                            color: isOwn ? "#fff" : "var(--text)",
+                                            fontSize: 13, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                                        }}>
+                                            {m.content}
+                                        </div>
+                                        {isOwn && (
+                                            <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(m.id)}
+                                                style={{ fontSize: 11, padding: "2px 6px", marginTop: 2, color: "var(--text-muted)" }}>
+                                                удалить
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </>
+                )}
+            </div>
+
+            {error && <div className="alert" style={{ margin: "0 12px 8px" }}>{error}</div>}
+
+            <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
+                <input
+                    className="input"
+                    placeholder="Написать сообщение…"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                    style={{ marginBottom: 0, flex: 1 }}
+                />
+                <button className="btn btn-primary" onClick={send} disabled={sending || !draft.trim()}>
+                    ➤
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ─── ChatBubble — плавающий перетаскиваемый кружок в углу экрана. Клик (не
+// перетаскивание) открывает всплывающее окно с ChatPanel. Позиция и
+// последний открытый канал запоминаются в localStorage. ───────────────────
+function ChatBubble({ token, currentUserId, wsEvent }) {
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem("spisoc_chat_bubble_pos") || "null");
+            if (saved && typeof saved.x === "number" && typeof saved.y === "number") return saved;
+        } catch { /* ignore */ }
+        return { x: window.innerWidth - 76, y: window.innerHeight - 96 };
+    });
+    const [channels, setChannels] = useState([{ group_id: null, name: "Общий чат" }]);
+    const [activeChannel, setActiveChannel] = useState(null);
+    const [unread, setUnread] = useState(0);
+
+    const draggingRef = useRef(false);
+    const movedRef = useRef(false);
+    const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+    const bubbleRef = useRef(null);
+    const openRef = useRef(open);
+    openRef.current = open;
+    const activeChannelRef = useRef(activeChannel);
+    activeChannelRef.current = activeChannel;
+
+    useEffect(() => {
+        apiRequest({ path: "/chat/channels", token }).then(data => {
+            if (Array.isArray(data) && data.length) setChannels(data);
+        }).catch(() => { /* тихо игнорируем — останется хотя бы общий канал */ });
+    }, [token]);
+
+    useEffect(() => {
+        try { localStorage.setItem("spisoc_chat_bubble_pos", JSON.stringify(pos)); } catch { /* ignore */ }
+    }, [pos]);
+
+    // Бейдж непрочитанных — считаем только пока попап закрыт и только чужие сообщения.
+    useEffect(() => {
+        if (!wsEvent || wsEvent.event !== "chat_message") return;
+        if (wsEvent.data?.user_id === currentUserId) return;
+        if (openRef.current && (wsEvent.data?.group_id ?? null) === (activeChannelRef.current ?? null)) return;
+        setUnread(u => u + 1);
+    }, [wsEvent, currentUserId]);
+
+    function clampPos(x, y) {
+        return {
+            x: Math.min(Math.max(8, x), window.innerWidth - 64),
+            y: Math.min(Math.max(8, y), window.innerHeight - 64),
+        };
+    }
+
+    function onPointerDown(e) {
+        draggingRef.current = true;
+        movedRef.current = false;
+        dragStartRef.current = { x: e.clientX, y: e.clientY, posX: pos.x, posY: pos.y };
+        bubbleRef.current?.setPointerCapture?.(e.pointerId);
+    }
+    function onPointerMove(e) {
+        if (!draggingRef.current) return;
+        const dx = e.clientX - dragStartRef.current.x;
+        const dy = e.clientY - dragStartRef.current.y;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) movedRef.current = true;
+        setPos(clampPos(dragStartRef.current.posX + dx, dragStartRef.current.posY + dy));
+    }
+    function onPointerUp() {
+        draggingRef.current = false;
+        if (!movedRef.current) {
+            setOpen(o => {
+                const next = !o;
+                if (next) setUnread(0);
+                return next;
+            });
+        }
+    }
+
+    const openLeft = pos.x > window.innerWidth / 2;
+    const openTop = pos.y > window.innerHeight / 2;
+    const popupStyle = {
+        position: "fixed",
+        ...(openLeft ? { right: window.innerWidth - pos.x + 16 } : { left: pos.x }),
+        ...(openTop ? { bottom: window.innerHeight - pos.y + 16 } : { top: pos.y + 60 }),
+    };
+
+    return (
+        <>
+            <div
+                ref={bubbleRef}
+                className="chat-bubble"
+                style={{ left: pos.x, top: pos.y }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                title="Командный чат"
+            >
+                💬
+                {unread > 0 && <span className="notif-badge">{unread > 99 ? "99+" : unread}</span>}
+            </div>
+            {open && (
+                <div className="chat-popup" style={popupStyle}>
+                    <ChatPanel
+                        token={token}
+                        currentUserId={currentUserId}
+                        channels={channels}
+                        activeChannel={activeChannel}
+                        setActiveChannel={setActiveChannel}
+                        wsEvent={wsEvent}
+                        onClose={() => setOpen(false)}
+                    />
+                </div>
+            )}
+        </>
+    );
+}
+
 
 function TimelineTab({ token }) {
     const [entries, setEntries] = useState([]);
@@ -1292,11 +1949,16 @@ function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUp
                     )}
                 </div>
                 {task.user?.username && (
-                    <span className="meta-chip task-row-user" style={{
-                        fontSize: 11,
+                    <span className="meta-chip task-row-user"
+                        onClick={e => { e.stopPropagation(); window.openUserProfile?.(task.user.id); }}
+                        style={{
+                        fontSize: 11, cursor: "pointer",
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        flexShrink: 0,
-                    }}>{task.user.username}</span>
+                        flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4,
+                    }}>
+                        <UserProfileAvatar userId={task.user.id} username={task.user.username} size={14} />
+                        {task.user.username}
+                    </span>
                 )}
                 {task.priority && (
                     <span style={{
@@ -1348,10 +2010,16 @@ function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUp
                                 </span>
                             )}
                             {task.author?.username && (
-                                <span className="meta-chip"><Icon d={ICONS.user} /> {task.author.username}</span>
+                                <span className="meta-chip" style={{ cursor: "pointer" }}
+                                    onClick={e => { e.stopPropagation(); window.openUserProfile?.(task.author.id); }}>
+                                    <UserProfileAvatar userId={task.author.id} username={task.author.username} size={14} /> {task.author.username}
+                                </span>
                             )}
                             {task.user?.username && task.user.username !== task.author?.username && (
-                                <span className="meta-chip"><Icon d={ICONS.user} /> → {task.user.username}</span>
+                                <span className="meta-chip" style={{ cursor: "pointer" }}
+                                    onClick={e => { e.stopPropagation(); window.openUserProfile?.(task.user.id); }}>
+                                    → <UserProfileAvatar userId={task.user.id} username={task.user.username} size={14} /> {task.user.username}
+                                </span>
                             )}
                             {task.group?.name && (
                                 <span className="meta-chip"><Icon d={ICONS.group} /> {task.group.name}</span>
@@ -1568,8 +2236,9 @@ function TrashCard({ task, onRestore, onHardDelete }) {
                                 </span>
                             )}
                             {task.author?.username && (
-                                <span className="meta-chip">
-                                    <Icon d={ICONS.user} /> {task.author.username}
+                                <span className="meta-chip" style={{ cursor: "pointer" }}
+                                    onClick={e => { e.stopPropagation(); window.openUserProfile?.(task.author.id); }}>
+                                    <UserProfileAvatar userId={task.author.id} username={task.author.username} size={14} /> {task.author.username}
                                 </span>
                             )}
                             {task.group?.name && (
@@ -1686,10 +2355,8 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
                                 const rc = ROLE_COLORS[m.role] ?? ROLE_COLORS.user;
                                 return (
                                     <div key={m.id} className="member-row">
-                                        <div className="member-info">
-                                            <div className="member-avatar">
-                                                {m.username.charAt(0).toUpperCase()}
-                                            </div>
+                                        <div className="member-info" style={{ cursor: "pointer" }} onClick={() => window.openUserProfile?.(m.id)}>
+                                            <UserProfileAvatar userId={m.id} username={m.username} size={40} />
                                             <div>
                                                 <div className="member-name">
                                                     {m.username}
@@ -1702,6 +2369,11 @@ function GroupPanel({ group, allUsers, token, canManage, onRefresh }) {
                                                         style={{ color: rc.color, background: rc.bg }}>
                                                         {ROLE_LABELS[m.role] ?? m.role}
                                                     </span>
+                                                    {m.position && (
+                                                        <span className="meta-chip" style={{ fontSize: "0.72rem" }}>
+                                                            {m.position}
+                                                        </span>
+                                                    )}
                                                     {m.telegram_id && (
                                                         <span className="meta-chip" style={{ fontSize: "0.72rem" }}>
                                                             TG: {m.telegram_id}
@@ -2121,9 +2793,13 @@ function KanbanCard({ task, col, onDragStart, onDragEnd, onChangeStatus, isMovin
                         color: "var(--text-dim)",
                         display: "flex",
                         alignItems: "center",
-                        gap: 3,
-                    }}>
-                        <Icon d={ICONS.user} size={11} />
+                        gap: 4,
+                        cursor: "pointer",
+                    }}
+                        onClick={e => { e.stopPropagation(); window.openUserProfile?.(task.user.id); }}
+                        title={task.user.username}
+                    >
+                        <UserProfileAvatar userId={task.user.id} username={task.user.username} size={16} />
                         {task.user.username}
                     </span>
                 )}
@@ -2174,7 +2850,16 @@ function TemplatesTab({ token }) {
     const [applyProjectId, setApplyProjectId] = useState("");
     const [applying, setApplying] = useState(false);
     const [applySuccess, setApplySuccess] = useState(null);
+    const [expandedItems, setExpandedItems] = useState(new Set());
     const dragIdx = useRef(null);
+
+    function toggleExpanded(idx) {
+        setExpandedItems(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx); else next.add(idx);
+            return next;
+        });
+    }
 
     async function loadTemplates() {
         setLoading(true); setError(null);
@@ -2205,12 +2890,24 @@ function TemplatesTab({ token }) {
         setEditingTemplate(tpl);
         setForm({ title: tpl.title, description: tpl.description || "" });
         setItems([...tpl.items].sort((a, b) => a.order_index - b.order_index)
-            .map(it => ({ title: it.title, priority: it.priority, order_index: it.order_index })));
+            .map(it => ({
+                title: it.title,
+                description: it.description || "",
+                priority: it.priority,
+                deadline_offset_days: it.deadline_offset_days ?? "",
+                tagsText: (it.tags || []).join(", "),
+                checklistText: (it.checklist || []).join("\n"),
+                order_index: it.order_index,
+            })));
         setView("edit");
     }
 
     function addItem() {
-        setItems(prev => [...prev, { title: "", priority: "medium", order_index: prev.length }]);
+        setItems(prev => [...prev, {
+            title: "", description: "", priority: "medium",
+            deadline_offset_days: "", tagsText: "", checklistText: "",
+            order_index: prev.length,
+        }]);
     }
 
     function removeItem(idx) {
@@ -2240,7 +2937,16 @@ function TemplatesTab({ token }) {
             title: form.title.trim(),
             description: form.description.trim() || null,
             items: items.filter(it => it.title.trim())
-                .map((it, i) => ({ title: it.title.trim(), priority: it.priority, order_index: i })),
+                .map((it, i) => ({
+                    title: it.title.trim(),
+                    description: it.description?.trim() || null,
+                    priority: it.priority,
+                    deadline_offset_days: it.deadline_offset_days === "" || it.deadline_offset_days == null
+                        ? null : Number(it.deadline_offset_days),
+                    tags: (it.tagsText || "").split(",").map(t => t.trim()).filter(Boolean),
+                    checklist: (it.checklistText || "").split("\n").map(t => t.trim()).filter(Boolean),
+                    order_index: i,
+                })),
         };
         try {
             if (view === "edit" && editingTemplate) {
@@ -2318,30 +3024,66 @@ function TemplatesTab({ token }) {
                         </div>
                     )}
                     {items.map((item, idx) => (
-                        <div key={idx} draggable
-                            onDragStart={() => onDragStart(idx)}
-                            onDragOver={e => onDragOver(e, idx)}
-                            onDragEnd={onDragEnd}
+                        <div key={idx}
                             style={{
-                                display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
-                                padding: "8px 10px", background: "var(--bg-card2)", borderRadius: 8,
-                                cursor: "grab", border: "1px solid var(--border)",
+                                marginBottom: 8, padding: "8px 10px", background: "var(--bg-card2)",
+                                borderRadius: 8, border: "1px solid var(--border)",
                             }}>
-                            <span style={{ color: "var(--text-muted)", fontSize: 16, cursor: "grab", flexShrink: 0 }}>⠿</span>
-                            <input className="input" placeholder="Название задачи" value={item.title}
-                                onChange={e => updateItem(idx, "title", e.target.value)}
-                                style={{ flex: 1, marginBottom: 0 }} />
-                            <select className="input" value={item.priority}
-                                onChange={e => updateItem(idx, "priority", e.target.value)}
-                                style={{ width: 130, flexShrink: 0, color: PRIORITY_COLORS[item.priority], marginBottom: 0 }}>
-                                {Object.entries(PRIORITY_LABELS).map(([val, label]) => (
-                                    <option key={val} value={val}>{PRIORITY_ICONS[val]} {label}</option>
-                                ))}
-                            </select>
-                            <button className="btn btn-ghost btn-sm" onClick={() => removeItem(idx)}
-                                style={{ flexShrink: 0, color: "var(--red)" }}>
-                                <Icon d={ICONS.x} />
-                            </button>
+                            <div draggable
+                                onDragStart={() => onDragStart(idx)}
+                                onDragOver={e => onDragOver(e, idx)}
+                                onDragEnd={onDragEnd}
+                                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "grab" }}>
+                                <span style={{ color: "var(--text-muted)", fontSize: 16, cursor: "grab", flexShrink: 0 }}>⠿</span>
+                                <input className="input" placeholder="Название задачи" value={item.title}
+                                    onChange={e => updateItem(idx, "title", e.target.value)}
+                                    style={{ flex: 1, marginBottom: 0 }} />
+                                <select className="input" value={item.priority}
+                                    onChange={e => updateItem(idx, "priority", e.target.value)}
+                                    style={{ width: 130, flexShrink: 0, color: PRIORITY_COLORS[item.priority], marginBottom: 0 }}>
+                                    {Object.entries(PRIORITY_LABELS).map(([val, label]) => (
+                                        <option key={val} value={val}>{PRIORITY_ICONS[val]} {label}</option>
+                                    ))}
+                                </select>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => toggleExpanded(idx)}
+                                    title="Описание, дедлайн, теги, чек-лист" style={{ flexShrink: 0 }}>
+                                    {expandedItems.has(idx) ? "▲" : "⚙"}
+                                </button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => removeItem(idx)}
+                                    style={{ flexShrink: 0, color: "var(--red)" }}>
+                                    <Icon d={ICONS.x} />
+                                </button>
+                            </div>
+                            {expandedItems.has(idx) && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, paddingLeft: 24 }}>
+                                    <textarea className="input" rows={2} placeholder="Описание задачи (необязательно)"
+                                        value={item.description || ""} onChange={e => updateItem(idx, "description", e.target.value)}
+                                        style={{ marginBottom: 0, resize: "vertical" }} />
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                        <div style={{ flex: 1 }}>
+                                            <label className="field-label">ДЕДЛАЙН, ДНЕЙ ОТ ПРИМЕНЕНИЯ</label>
+                                            <input className="input" type="number" min={0} max={3650}
+                                                placeholder="Например: 3"
+                                                value={item.deadline_offset_days}
+                                                onChange={e => updateItem(idx, "deadline_offset_days", e.target.value)}
+                                                style={{ marginBottom: 0 }} />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <label className="field-label">ТЕГИ ЧЕРЕЗ ЗАПЯТУЮ</label>
+                                            <input className="input" placeholder="срочно, клиент"
+                                                value={item.tagsText || ""}
+                                                onChange={e => updateItem(idx, "tagsText", e.target.value)}
+                                                style={{ marginBottom: 0 }} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="field-label">ЧЕК-ЛИСТ — ПО ПУНКТУ НА СТРОКУ</label>
+                                        <textarea className="input" rows={3} placeholder={"Подготовить материалы\nСогласовать с руководителем"}
+                                            value={item.checklistText || ""} onChange={e => updateItem(idx, "checklistText", e.target.value)}
+                                            style={{ marginBottom: 0, resize: "vertical" }} />
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ))}
                     <button className="btn btn-ghost btn-sm" onClick={addItem} style={{ marginTop: 4 }}>
@@ -2415,6 +3157,9 @@ function TemplatesTab({ token }) {
                                                         border: `1px solid ${PRIORITY_COLORS[item.priority]}33`,
                                                     }}>
                                                         {PRIORITY_ICONS[item.priority]} {item.title}
+                                                        {item.deadline_offset_days != null && ` · ⏰${item.deadline_offset_days}д`}
+                                                        {item.tags && item.tags.length > 0 && ` · 🏷${item.tags.length}`}
+                                                        {item.checklist && item.checklist.length > 0 && ` · ☑${item.checklist.length}`}
                                                     </span>
                                                 ))}
                                             </div>
@@ -2864,7 +3609,11 @@ function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                             </div>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                                 {selectedProject.members.map(m => (
-                                    <span key={m.id} className="meta-chip">{m.username}</span>
+                                    <span key={m.id} className="meta-chip" style={{ cursor: "pointer" }}
+                                        onClick={() => window.openUserProfile?.(m.id)}>
+                                        <UserProfileAvatar userId={m.id} username={m.username} size={14} />
+                                        {m.username}{m.position ? ` · ${m.position}` : ""}
+                                    </span>
                                 ))}
                             </div>
                         </div>
@@ -3197,7 +3946,11 @@ function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                                                         background: "var(--surface)", border: "1px solid var(--border)",
                                                         fontSize: 12,
                                                     }}>
-                                                        {m.username}
+                                                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}
+                                                            onClick={() => window.openUserProfile?.(m.id)}>
+                                                            <UserProfileAvatar userId={m.id} username={m.username} size={14} />
+                                                            {m.username}{m.position ? ` · ${m.position}` : ""}
+                                                        </span>
                                                         <button
                                                             onClick={() => handleRemoveMember(p.id, m.id)}
                                                             disabled={memberLoading}
@@ -3241,6 +3994,107 @@ function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
 }
 
 // ─── Groups Tab ───────────────────────────────────────────
+// ─── TeamTab — справочник всей команды (плоский список, в отличие от
+// "Группы", где пользователи сгруппированы и есть управление составом) ────
+function TeamTab({ token }) {
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [query, setQuery] = useState("");
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await apiRequest({ path: "/users?page=1&size=100", token });
+            setUsers(Array.isArray(data?.items) ? data.items : []);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [token]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const filtered = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return users;
+        return users.filter(u =>
+            u.username.toLowerCase().includes(q) || (u.position || "").toLowerCase().includes(q)
+        );
+    }, [users, query]);
+
+    return (
+        <div className="card">
+            <div className="section-header">
+                <div>
+                    <div className="section-title">👥 Команда</div>
+                    <div className="section-sub">{users.length} человек</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
+                    <Icon d={ICONS.refresh} /> Обновить
+                </button>
+            </div>
+
+            <input
+                className="input"
+                placeholder="Поиск по имени или должности…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                style={{ marginBottom: 14 }}
+            />
+
+            {error && <div className="alert">{error}</div>}
+            {loading ? (
+                <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+            ) : filtered.length === 0 ? (
+                <div className="empty-state"><div className="empty-icon">🔍</div>Никого не нашли</div>
+            ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 10 }}>
+                    {filtered.map(u => {
+                        const rc = ROLE_COLORS[u.role] ?? ROLE_COLORS.user;
+                        return (
+                            <div key={u.id}
+                                onClick={() => window.openUserProfile?.(u.id)}
+                                style={{
+                                    display: "flex", alignItems: "center", gap: 10,
+                                    padding: "10px 12px", borderRadius: 10,
+                                    background: "var(--surface2)", border: "1px solid var(--border)",
+                                    cursor: "pointer",
+                                }}>
+                                <UserProfileAvatar userId={u.id} username={u.username} size={40} />
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div style={{
+                                        fontWeight: 600, fontSize: 14,
+                                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                    }}>
+                                        {u.username}
+                                        {!u.is_active && <span className="inactive-badge" style={{ marginLeft: 6 }}>неакт.</span>}
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+                                        <span className="role-badge" style={{ color: rc.color, background: rc.bg, fontSize: 11 }}>
+                                            {ROLE_LABELS[u.role] ?? u.role}
+                                        </span>
+                                        {u.position && (
+                                            <span style={{
+                                                fontSize: 12, color: "var(--text-muted)",
+                                                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                            }}>
+                                                {u.position}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function GroupsTab({ token, currentRole }) {
     const canManage = currentRole === "admin" || currentRole === "manager";
     const [groups, setGroups] = useState([]);
@@ -4355,16 +5209,16 @@ function StatsDonut({ total, done, pending, doneLabel = "Готово", pendingL
 
     if (!total) {
         return (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 150, color: "var(--text-muted)", fontSize: 13 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 170, color: "var(--text-muted)", fontSize: 13 }}>
                 Нет задач
             </div>
         );
     }
 
     return (
-        <ResponsiveContainer width="100%" height={150}>
+        <ResponsiveContainer width="100%" height={170}>
             <PieChart>
-                <Pie data={data} dataKey="value" nameKey="name" innerRadius={42} outerRadius={64} paddingAngle={2} stroke="none">
+                <Pie data={data} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2} stroke="none">
                     {data.map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Pie>
                 <Tooltip contentStyle={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
@@ -4620,28 +5474,49 @@ function App() {
     const [mustChangePassword, setMustChangePassword] = useState(false);
 
     // ── WebSocket realtime ────────────────────────────────────────────────────
+    const [chatWsEvent, setChatWsEvent] = useState(null);
+
+    // handleWsEvent должен иметь СТАБИЛЬНУЮ ссылку (useCallback с пустыми deps) —
+    // иначе useWebSocket(token, handleWsEvent) пересоздаёт соединение на каждое
+    // изменение `tab`/`tasksPage`/`viewMode` (они были в deps раньше), а это
+    // рвёт WS ровно в момент переключения вкладок и роняет "живые" события —
+    // отсюда и жалоба "сообщения приходят с опозданием, иногда нужно
+    // перезагружать страницу". Вместо deps читаем актуальные значения из рефов.
+    const tabRef = useRef(tab);
+    tabRef.current = tab;
+    // Синхронизируются чуть ниже, сразу после объявления соответствующих
+    // useState (tasksPage/viewMode объявлены позже в этом компоненте) —
+    // до тех пор просто держат дефолт, handleWsEvent их читает лениво,
+    // только когда реально прилетает WS-событие.
+    const tasksPageRef = useRef(1);
+
     const handleWsEvent = useCallback((event, data) => {
-        if (event === "task_created") {
-            // Перезагружаем список если на вкладке задач
-            if (tab === "tasks") loadTasks(tasksPage, viewMode);
-            if (tab === "kanban") loadKanban();
-        } else if (event === "task_updated" || event === "kanban_moved") {
-            if (tab === "tasks") loadTasks(tasksPage, viewMode);
-            if (tab === "kanban") loadKanban();
-        } else if (event === "task_deleted") {
-            if (tab === "tasks") loadTasks(tasksPage, viewMode);
-            if (tab === "kanban") loadKanban();
+        const currentTab = tabRef.current;
+        if (event === "task_created" || event === "task_updated" || event === "kanban_moved" || event === "task_deleted") {
+            if (currentTab === "tasks") loadTasks(tasksPageRef.current, viewModeRef.current);
+            // Канбан обновляет список сам при монтировании/действиях пользователя —
+            // отдельного live-refresh для него пока нет (не относится к этой правке).
         } else if (event === "task_restored") {
-            if (tab === "trash") loadTrash();
+            if (currentTab === "trash") loadTrash();
         } else if (event === "comment_added") {
             // Комментарии обновятся при следующем открытии задачи
+        } else if (event === "chat_message" || event === "chat_message_deleted") {
+            setChatWsEvent({ event, data, ts: Date.now() });
         }
-    }, [tab]);  // eslint-disable-line
+    }, []);  // eslint-disable-line
 
     useWebSocket(token, handleWsEvent);
     const [theme, setTheme] = useState(() => localStorage.getItem("spisoc_theme") || "dark");
 
     const [paletteOpen, setPaletteOpen] = useState(false);
+    const [profileUserId, setProfileUserId] = useState(null);
+    // window.openUserProfile — чтобы открывать профиль клика по имени из глубоко
+    // вложенных компонентов (TaskCard, комментарии, участники проекта) без
+    // протаскивания callback через десяток слоёв пропсов.
+    useEffect(() => {
+        window.openUserProfile = (id) => setProfileUserId(id);
+        return () => { delete window.openUserProfile; };
+    }, []);
     useEffect(() => {
         function onKeyDown(e) {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -4667,6 +5542,7 @@ function App() {
     const [viewMode, setViewMode] = useState("user"); // "user" | "author"
 
     const [tasksPage, setTasksPage] = useState(1);
+    tasksPageRef.current = tasksPage;
     const [tasksTotal, setTasksTotal] = useState(null); // null = ещё не загружено (см. count-badge ниже — резервируем место, чтобы бейдж не "впрыгивал" и не сдвигал вкладки)
     const PAGE_SIZE = 50;
 
@@ -5353,6 +6229,8 @@ function App() {
                         </button>
                         <div className="user-chip"
                             ref={chipRef}
+                            onClick={() => currentUserId != null && setProfileUserId(currentUserId)}
+                            style={{ cursor: currentUserId != null ? "pointer" : "default" }}
                             onMouseEnter={() => {
                                 const rect = chipRef.current?.getBoundingClientRect();
                                 if (rect) setTooltipPos({
@@ -5362,6 +6240,7 @@ function App() {
                                 setShowTooltip(true);
                             }}
                             onMouseLeave={() => setShowTooltip(false)}>
+                            {currentUserId != null && <UserProfileAvatar userId={currentUserId} username={currentUsername} size={22} />}
                             <span className="user-chip-name">{currentUsername}</span>
                             <span className="role-badge" style={{ color: roleColor.color, background: roleColor.bg, marginLeft: 4 }}>
                                 {ROLE_LABELS[currentRole] ?? currentRole}
@@ -5417,13 +6296,13 @@ function App() {
                                 <Icon d={ICONS.chart} /> Дашборд
                             </button>
                             <button className={`tab-btn${tab === "timeline" ? " active" : ""}`} onClick={() => setTab("timeline")}>
-                                🕒 Лента
+                                <Icon d={ICONS.clock} /> Лента
                             </button>
                             <button className={`tab-btn${tab === "tasks" ? " active" : ""}`} onClick={() => setTab("tasks")}>
                                 Задачи <span className="count-badge" style={{ visibility: tasksTotal ? "visible" : "hidden" }}>{tasksTotal || 0}</span>
                             </button>
                             <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
-                                📁 Проекты
+                                <Icon d={ICONS.folder} /> Проекты
                             </button>
                             <button className={`tab-btn${tab === "kanban" ? " active" : ""}`} onClick={() => setTab("kanban")}>
                                 <Icon d={ICONS.kanban ?? "M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"} /> Канбан
@@ -5433,6 +6312,9 @@ function App() {
                             </button>
                             <button className={`tab-btn${tab === "groups" ? " active" : ""}`} onClick={() => setTab("groups")}>
                                 <Icon d={ICONS.group} /> Группы
+                            </button>
+                            <button className={`tab-btn${tab === "team" ? " active" : ""}`} onClick={() => setTab("team")}>
+                                <Icon d={ICONS.user} /> Команда
                             </button>
                             <button className={`tab-btn${tab === "trash" ? " active" : ""}`} onClick={() => setTab("trash")}>
                                 <Icon d={ICONS.trash} /> Корзина
@@ -5455,6 +6337,8 @@ function App() {
                 setTheme={setTheme}
                 onLogout={logout}
             />
+
+            <ChatBubble token={token} currentUserId={currentUserId} wsEvent={chatWsEvent} />
 
             {show2faNudge && (
                 <div className="alert" style={{
@@ -5884,6 +6768,16 @@ function App() {
                     </div>
                 </div>
             )}
+            {profileUserId != null ? (
+                <UserProfilePage
+                    userId={profileUserId}
+                    token={token}
+                    currentUserId={currentUserId}
+                    onClose={() => setProfileUserId(null)}
+                    onOpenTask={(title) => { setProfileUserId(null); setTab("tasks"); setSearchQuery(title); }}
+                />
+            ) : (
+            <>
             {/* ── DASHBOARD TAB ── */}
             {tab === "dashboard" && (
                 <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
@@ -5919,6 +6813,12 @@ function App() {
             {tab === "groups" && (
                 <div>
                     <GroupsTab token={token} currentRole={currentRole} />
+                </div>
+            )}
+            {/* ── TEAM TAB ── */}
+            {tab === "team" && (
+                <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
+                    <TeamTab token={token} />
                 </div>
             )}
             {tab === "templates" && (
@@ -5984,6 +6884,8 @@ function App() {
                         )}
                     </div>
                 </div>
+            )}
+            </>
             )}
         </div>
     );

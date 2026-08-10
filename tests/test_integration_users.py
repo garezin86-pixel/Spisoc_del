@@ -47,13 +47,16 @@ class TestUsersGet:
         assert resp.json()["id"] == user.id
 
     @pytest.mark.asyncio
-    async def test_user_cannot_get_other_user(self, auth_client, engine):
+    async def test_user_can_get_other_user(self, auth_client, engine):
+        """Видимость профиля — общая для команды (как задачи/лента/статистика),
+        см. UserService.get_user."""
         client, _ = auth_client
         async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
             other = await make_user(sess, username="other_get_user", password="pass123")
         resp = await client.get(f"/users/{other.id}")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert resp.json()["id"] == other.id
 
     @pytest.mark.asyncio
     async def test_admin_can_get_any_user(self, admin_client, engine):
@@ -79,10 +82,13 @@ class TestUsersGet:
         assert isinstance(data["items"], list)
 
     @pytest.mark.asyncio
-    async def test_regular_user_cannot_list_users(self, auth_client):
+    async def test_regular_user_can_list_users(self, auth_client):
+        """Справочник команды — видим всем авторизованным (см. get_users)."""
         client, _ = auth_client
         resp = await client.get("/users/")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data["items"], list)
 
 
 class TestUsersUpdate:

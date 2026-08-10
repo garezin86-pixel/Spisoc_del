@@ -25,12 +25,23 @@ export function clearTokens() {
 }
 
 // ─── Базовый парсер ответа ────────────────────────────────────────────────────
+function extractErrorMessage(data, status) {
+    const detail = data?.detail ?? data?.message;
+    if (!detail) return `Ошибка ${status}`;
+    if (typeof detail === "string") return detail;
+    // FastAPI 422 отдаёт detail как массив {loc, msg, type} — а не строку,
+    // из-за чего new Error(detail) превращался в "[object Object]".
+    if (Array.isArray(detail)) {
+        return detail.map(d => (typeof d === "string" ? d : d?.msg || JSON.stringify(d))).join("; ");
+    }
+    return typeof detail === "object" ? (detail.msg || JSON.stringify(detail)) : String(detail);
+}
+
 async function parseResponse(response) {
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
-        const message = data?.detail || data?.message || `Ошибка ${response.status}`;
-        const error = new Error(message);
+        const error = new Error(extractErrorMessage(data, response.status));
         error.status = response.status;
         throw error;
     }
