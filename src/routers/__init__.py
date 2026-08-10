@@ -4,6 +4,7 @@ from .analytics_router import router as analytics_router
 from .attachments_router import router as attachments_router
 from .auth_router import router as auth_router
 from .calendar_router import router as calendar_router
+from .chat_router import router as chat_router
 from .checklist_router import router as checklist_router
 from .comments_router import router as comments_router
 from .group_router import router as group_router
@@ -35,6 +36,7 @@ api_router.include_router(checklist_router)
 api_router.include_router(tags_router)
 api_router.include_router(analytics_router)
 api_router.include_router(calendar_router)
+api_router.include_router(chat_router)
 api_router.include_router(pat_router)
 api_router.include_router(webhook_router)
 api_router.include_router(ws_router)

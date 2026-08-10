@@ -53,10 +53,13 @@ class LocalStorageService:
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def build_key(task_id: int, filename: str) -> str:
+    def build_key(task_id: int | str, filename: str) -> str:
         """
         Формирует относительный путь файла.
         Пример: 42/a1b2c3d4-photo.jpg
+        task_id может быть строкой (например "avatars/7" для аватаров
+        пользователей, см. users_router.upload_my_avatar) — это просто
+        префикс пути, а не число для арифметики.
         """
         safe_name = filename.replace("/", "_").replace("\\", "_").strip() or "file"
         unique_prefix = uuid.uuid4().hex[:8]

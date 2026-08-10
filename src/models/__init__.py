@@ -1,6 +1,7 @@
 # src/models/__init__.py
 from src.models.attachment_model import AttachmentModel
 from src.models.audit import AuditAction, AuditLog
+from src.models.chat_message import ChatMessageModel
 from src.models.checklist import TaskChecklistItemModel
 from src.models.comment import CommentModel
 from src.models.filter_preset import FilterPresetModel
@@ -41,4 +42,5 @@ __all__ = [
     "AttachmentModel",
     "FilterPresetModel",
     "WebhookModel",
+    "ChatMessageModel",
 ]

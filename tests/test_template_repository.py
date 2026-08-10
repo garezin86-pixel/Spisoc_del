@@ -327,6 +327,163 @@ class TestDelete:
         assert result is None
 
 
+class TestApplyExtendedFields:
+    """Новые поля шаблона: дедлайн-смещение, теги, чек-лист."""
+
+    @pytest.mark.asyncio
+    async def test_deadline_offset_becomes_absolute_deadline(self, session):
+        from datetime import datetime, timedelta, timezone
+
+        from src.models.project import ProjectModel
+
+        owner = await make_user(session)
+        project = ProjectModel(name="Проект", owner_id=owner.id)
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        repo = TemplateRepository(session)
+        template = await repo.create(
+            owner.id,
+            TemplateCreate(
+                title="Онбординг",
+                items=[TemplateItemCreate(title="Подписать документы", deadline_offset_days=3)],
+            ),
+        )
+
+        before = datetime.now(timezone.utc)
+        tasks = await repo.apply(template, project_id=project.id, user_id=owner.id)
+        after = datetime.now(timezone.utc)
+
+        assert tasks[0].deadline is not None
+        assert before + timedelta(days=3) <= tasks[0].deadline <= after + timedelta(days=3)
+
+    @pytest.mark.asyncio
+    async def test_no_deadline_offset_leaves_deadline_none(self, session):
+        from src.models.project import ProjectModel
+
+        owner = await make_user(session)
+        project = ProjectModel(name="Проект", owner_id=owner.id)
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        repo = TemplateRepository(session)
+        template = await repo.create(
+            owner.id, TemplateCreate(title="Онбординг", items=[TemplateItemCreate(title="Без дедлайна")])
+        )
+
+        tasks = await repo.apply(template, project_id=project.id, user_id=owner.id)
+
+        assert tasks[0].deadline is None
+
+    @pytest.mark.asyncio
+    async def test_tags_are_created_and_attached(self, session):
+        from src.models.project import ProjectModel
+
+        owner = await make_user(session)
+        project = ProjectModel(name="Проект", owner_id=owner.id)
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        repo = TemplateRepository(session)
+        template = await repo.create(
+            owner.id,
+            TemplateCreate(
+                title="Онбординг",
+                items=[TemplateItemCreate(title="Задача", tags=["Срочно", "  клиент  ", ""])],
+            ),
+        )
+
+        tasks = await repo.apply(template, project_id=project.id, user_id=owner.id)
+        await session.refresh(tasks[0], attribute_names=["tags"])
+
+        tag_names = sorted(t.name for t in tasks[0].tags)
+        # Пустая строка отфильтрована, пробелы обрезаны
+        assert tag_names == ["Срочно", "клиент"]
+
+    @pytest.mark.asyncio
+    async def test_reusing_existing_tag_does_not_duplicate(self, session):
+        from src.models.project import ProjectModel
+        from src.repositories.tag_repository import TagRepository
+
+        owner = await make_user(session)
+        project = ProjectModel(name="Проект", owner_id=owner.id)
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        existing_tag = await TagRepository(session).get_or_create("Срочно", "#ff0000")
+
+        repo = TemplateRepository(session)
+        template = await repo.create(
+            owner.id,
+            TemplateCreate(title="Онбординг", items=[TemplateItemCreate(title="Задача", tags=["Срочно"])]),
+        )
+        tasks = await repo.apply(template, project_id=project.id, user_id=owner.id)
+        await session.refresh(tasks[0], attribute_names=["tags"])
+
+        assert len(tasks[0].tags) == 1
+        assert tasks[0].tags[0].id == existing_tag.id
+        assert tasks[0].tags[0].color == "#ff0000"  # цвет существующего тега не перезаписан
+
+    @pytest.mark.asyncio
+    async def test_checklist_items_created_in_order(self, session):
+        from sqlalchemy import select
+
+        from src.models.checklist import TaskChecklistItemModel
+        from src.models.project import ProjectModel
+
+        owner = await make_user(session)
+        project = ProjectModel(name="Проект", owner_id=owner.id)
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        repo = TemplateRepository(session)
+        template = await repo.create(
+            owner.id,
+            TemplateCreate(
+                title="Онбординг",
+                items=[TemplateItemCreate(title="Задача", checklist=["Шаг 1", "Шаг 2", ""])],
+            ),
+        )
+        tasks = await repo.apply(template, project_id=project.id, user_id=owner.id)
+
+        result = await session.execute(
+            select(TaskChecklistItemModel)
+            .where(TaskChecklistItemModel.task_id == tasks[0].id)
+            .order_by(TaskChecklistItemModel.order_index)
+        )
+        items = list(result.scalars().all())
+
+        assert [i.title for i in items] == ["Шаг 1", "Шаг 2"]
+        assert all(not i.is_done for i in items)
+
+    @pytest.mark.asyncio
+    async def test_description_is_copied_to_task(self, session):
+        from src.models.project import ProjectModel
+
+        owner = await make_user(session)
+        project = ProjectModel(name="Проект", owner_id=owner.id)
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+
+        repo = TemplateRepository(session)
+        template = await repo.create(
+            owner.id,
+            TemplateCreate(
+                title="Онбординг",
+                items=[TemplateItemCreate(title="Задача", description="Развёрнутое описание шага")],
+            ),
+        )
+        tasks = await repo.apply(template, project_id=project.id, user_id=owner.id)
+
+        assert tasks[0].description == "Развёрнутое описание шага"
+
+
 class TestApply:
     @pytest.mark.asyncio
     async def test_creates_tasks_from_template_items(self, session):

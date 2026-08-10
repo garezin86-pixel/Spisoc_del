@@ -48,8 +48,8 @@ class ActivityService:
         self.audit_repo = audit_repo
         self.session = session
 
-    async def get_feed(self, offset: int = 0, limit: int = 50) -> tuple[list[dict], int]:
-        entries, total = await self.audit_repo.get_global_feed(offset=offset, limit=limit)
+    async def get_feed(self, offset: int = 0, limit: int = 50, user_id: int | None = None) -> tuple[list[dict], int]:
+        entries, total = await self.audit_repo.get_global_feed(offset=offset, limit=limit, user_id=user_id)
         if not entries:
             return [], total
 

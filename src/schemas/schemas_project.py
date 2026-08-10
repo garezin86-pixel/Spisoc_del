@@ -39,6 +39,7 @@ class ProjectGroupSchema(BaseModel):
 class ProjectMemberSchema(BaseModel):
     id: int
     username: str
+    position: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
 

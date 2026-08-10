@@ -134,13 +134,13 @@ class TestUserService:
         assert result.id == 5
 
     @pytest.mark.asyncio
-    async def test_get_user_other_raises_403(self):
+    async def test_get_user_other_is_visible_to_anyone(self):
+        """Видимость профиля общая для команды — см. UserService.get_user."""
         user = make_user_model(id=1)
         other = make_user_model(id=2, username="other")
         service = UserService(MockUserRepository(users=[user, other]))
-        with pytest.raises(HTTPException) as exc:
-            await service.get_user(2, user)
-        assert exc.value.status_code == 403
+        result = await service.get_user(2, user)
+        assert result.id == 2
 
     @pytest.mark.asyncio
     async def test_admin_can_see_anyone(self):

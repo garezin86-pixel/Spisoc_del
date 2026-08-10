@@ -32,6 +32,7 @@ class UserSchema(BaseModel):
     role: str
     is_active: bool
     telegram_id: int | None = None
+    position: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,6 +47,7 @@ class UserSchemaForTask(BaseModel):
 class UserUpdate(BaseModel):
     username: str | None = Field(None, min_length=3, max_length=50)
     password: str | None = Field(None, min_length=6, max_length=100)
+    position: str | None = Field(None, max_length=120)
 
     @field_validator("username")
     @classmethod

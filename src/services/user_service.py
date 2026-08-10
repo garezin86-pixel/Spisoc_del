@@ -58,22 +58,21 @@ class UserService:
         return await self.user_repo.get_all()
 
     async def get_user(self, user_id: int, current_user: UserModel) -> UserModel:
-        """Возвращает пользователя по ID с проверкой прав доступа.
+        """Возвращает пользователя по ID.
 
-        Зачем: обычный пользователь не должен видеть чужие данные
-        (telegram_id, роль и т.д.). Admin может смотреть любого.
+        Видимость — как у задач/ленты активности/статистики в этом
+        приложении: общая для всей команды (см. страницу профиля
+        пользователя и справочник команды). Раньше здесь была проверка
+        "только свой профиль или admin", но она стала противоречить новому
+        функционалу (открыть чужой профиль по клику на имя) — убрана для
+        консистентности с остальным приложением.
 
         Raises:
             HTTPException 404: пользователь не найден.
-            HTTPException 403: попытка просмотреть чужой профиль без прав admin.
         """
         user = await self.user_repo.get_user_id(user_id)
         if not user:
             user_not_found(USER_NOT_FOUND)
-            raise
-
-        if current_user.role != "admin" and current_user.id != user_id:
-            no_access(NO_ACCESS)
             raise
 
         return user
@@ -104,6 +103,8 @@ class UserService:
             user.username = data.username
         if data.password is not None:
             user.password_hash = hash_password(data.password)
+        if data.position is not None:
+            user.position = data.position or None
 
         return await self.user_repo.update(user)
 

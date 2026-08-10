@@ -22,8 +22,14 @@ class AuditRepository:
         )
         return list(result.scalars().all())
 
-    async def get_global_feed(self, offset: int = 0, limit: int = 50) -> tuple[list[AuditLog], int]:
+    async def get_global_feed(
+        self, offset: int = 0, limit: int = 50, user_id: int | None = None
+    ) -> tuple[list[AuditLog], int]:
         """Глобальная лента активности ("Timeline") — по задачам и комментариям.
+
+        user_id — если передан (страница профиля пользователя), лента
+        сужается до событий, совершённых ИМ (AuditLog.user_id), а не всей
+        команды — используется на странице профиля для вкладки "активность".
 
         Видимость задач в приложении не ограничена по владельцу (см.
         tasks_router.filter_tasks — без явного filter_user_group возвращает
@@ -31,6 +37,8 @@ class AuditRepository:
         придерживается той же логики и не требует отдельного скоупинга.
         """
         base = select(AuditLog).where(AuditLog.entity_type.in_(("spisok_del", "comments")))
+        if user_id is not None:
+            base = base.where(AuditLog.user_id == user_id)
 
         total = await self.session.scalar(select(func.count()).select_from(base.subquery()))
 

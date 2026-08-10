@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.models.task import TaskPriority
 
@@ -10,17 +10,30 @@ VisibilityType = Literal["private", "group", "global"]
 
 class TemplateItemCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
     priority: TaskPriority = TaskPriority.medium
+    deadline_offset_days: int | None = Field(None, ge=0, le=3650, description="Дедлайн = дата применения + N дней")
+    tags: list[str] = Field(default_factory=list)
+    checklist: list[str] = Field(default_factory=list)
     order_index: int = 0
 
 
 class TemplateItemResponse(BaseModel):
     id: int
     title: str
+    description: str | None
     priority: TaskPriority
+    deadline_offset_days: int | None
+    tags: list[str]
+    checklist: list[str]
     order_index: int
 
     model_config = {"from_attributes": True}
+
+    @field_validator("tags", "checklist", mode="before")
+    @classmethod
+    def _default_empty_list(cls, v):
+        return v or []
 
 
 class TemplateCreate(BaseModel):

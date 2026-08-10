@@ -74,6 +74,16 @@ class UserModel(Base):
     # пользователем.
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
 
+    # ── Профиль ──────────────────────────────────────────────────────────
+    # Должность — просто текст, без справочника/enum: для команды в
+    # несколько человек отдельная сущность "должности" была бы overkill.
+    position: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Тот же паттерн storage_key/storage_url, что и у AttachmentModel — key
+    # нужен для удаления файла из R2/локального стораджа, url — публичная
+    # ссылка (пусто для local storage, см. LocalStorageService.upload).
+    avatar_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    avatar_storage_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
     # НЕ колонка БД — обычный Python-атрибут инстанса, выставляется в
     # authenticate_by_pat()/get_current_user() на время одного запроса, когда
     # аутентификация прошла по PAT-токену (см. src/services/pat_service.py и
