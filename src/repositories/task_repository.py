@@ -573,3 +573,46 @@ class TaskRepository(AbstractTaskRepository):
         query = query.order_by(SpisokModel.created_at.desc())
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    async def get_calendar_tasks(
+        self,
+        *,
+        user_id: int,
+        date_from: datetime,
+        date_to: datetime,
+        project_id: int | None = None,
+        only_mine: bool = False,
+        only_author: bool = False,
+    ) -> list[SpisokModel]:
+        """
+        Возвращает не-удалённые задачи с дедлайном в диапазоне [date_from, date_to)
+        для календаря дедлайнов. Видимость такая же, как у канбана: по умолчанию —
+        задачи, где пользователь автор ИЛИ исполнитель.
+        """
+        query = (
+            select(SpisokModel)
+            .options(
+                selectinload(SpisokModel.author),
+                selectinload(SpisokModel.user),
+                selectinload(SpisokModel.group),
+            )
+            .where(
+                SpisokModel.not_deleted_filter(),
+                SpisokModel.deadline.isnot(None),
+                SpisokModel.deadline >= date_from,
+                SpisokModel.deadline < date_to,
+            )
+        )
+
+        if project_id is not None:
+            query = query.where(SpisokModel.project_id == project_id)
+        elif only_mine:
+            query = query.where(SpisokModel.user_id == user_id)
+        elif only_author:
+            query = query.where(SpisokModel.author_id == user_id)
+        else:
+            query = query.where((SpisokModel.author_id == user_id) | (SpisokModel.user_id == user_id))
+
+        query = query.order_by(SpisokModel.deadline.asc())
+        result = await self.session.execute(query)
+        return list(result.scalars().all())

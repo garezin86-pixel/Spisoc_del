@@ -18,7 +18,9 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from src.admin.setup import setup_admin
+from src.bot.setup import init_bot_username
 from src.core.config import (
+    BOT_TOKEN,
     FRONTEND_URL,
     REDIS_DB,
     REDIS_HOST,
@@ -69,6 +71,21 @@ async def lifespan(app: FastAPI):
     set_redis(redis)
     cache_manager.testing = False
     await logger.ainfo("redis_initialized")
+
+    # ── Имя бота для deep-link кнопок в уведомлениях ("📋 Открыть задачу") ──
+    # API и бот — отдельные процессы (см. run2.py), поэтому кэш _bot_username
+    # внутри src/bot/setup.py у бота и у API — РАЗНЫЕ объекты в памяти.
+    # Без этого вызова get_bot_username() тут всегда возвращал бы "", и ссылка
+    # в кнопке уведомления превращалась в https://t.me/?start=task_N — то есть
+    # никуда не ведущий битый deep-link.
+    if BOT_TOKEN:
+        try:
+            await init_bot_username()
+            await logger.ainfo("bot_username_initialized")
+        except Exception as e:
+            await logger.aerror("bot_username_init_failed", error=str(e))
+    else:
+        await logger.awarning("bot_username_init_skipped", reason="BOT_TOKEN not set")
 
     # ── AsyncIOScheduler ────────────────
     scheduler = AsyncIOScheduler(timezone="UTC")

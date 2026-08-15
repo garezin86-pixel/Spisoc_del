@@ -625,6 +625,27 @@ class TaskService:
                 grouped[key].append(task)
         return grouped
 
+    # ── Календарь дедлайнов ──────────────────────────────────────────────────
+
+    async def get_calendar_tasks(
+        self,
+        current_user: UserModel,
+        date_from: datetime,
+        date_to: datetime,
+        project_id: int | None = None,
+        only_mine: bool = False,
+        only_author: bool = False,
+    ) -> list[SpisokModel]:
+        """Задачи с дедлайном в диапазоне [date_from, date_to) для месячного вида календаря."""
+        return await self.task_repo.get_calendar_tasks(
+            user_id=current_user.id,
+            date_from=date_from,
+            date_to=date_to,
+            project_id=project_id,
+            only_mine=only_mine,
+            only_author=only_author,
+        )
+
     async def update_task_status(
         self,
         task_id: int,

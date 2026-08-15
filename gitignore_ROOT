@@ -1,0 +1,52 @@
+# Виртуальное окружение
+venv/
+.venv/
+venv_linux/
+
+# Переменные окружения
+.env
+.env.dev
+.env.prod
+
+# Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Тесты / линт
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# База данных
+*.db
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+
+# Логи
+*.log
+
+# Прочий мусор из Windows / IDE
+*.lnk
+Thumbs.db
+.DS_Store
+
+# Alembic (если не нужно коммитить кэш)
+alembic/versions/__pycache__/
+
+команды запуска.txt
+run2.py
+plan.md
+
+# Папка с файлами
+storage/
+
+# Фронтенд (дублируется в frontend/.gitignore, но на всякий случай)
+frontend/node_modules/
+frontend/dist/

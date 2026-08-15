@@ -212,7 +212,7 @@ class UserAdmin(ModelView, model=UserModel):
             user_repo = UserRepository(session)
             user = await user_repo.get_by_id(pk)
             if not user:
-                user_not_found_response()
+                return user_not_found_response()
             task_service = TaskService(
                 task_repo=TaskRepository(session),
                 user_repo=UserRepository(session),

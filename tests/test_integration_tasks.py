@@ -266,3 +266,45 @@ class TestTasksReassign:
         task_id = create_resp.json()["id"]
         resp = await client.patch(f"/tasks/{task_id}/reassign?user_id={target.id}&group_id={group.id}")
         assert resp.status_code == 400
+
+
+class TestTasksCalendar:
+    @pytest.mark.asyncio
+    async def test_calendar_returns_task_in_range(self, auth_client):
+        client, user = auth_client
+        await client.post(
+            "/tasks/",
+            json={"title": "In range", "deadline": "2030-06-15T10:00:00"},
+        )
+        await client.post(
+            "/tasks/",
+            json={"title": "Out of range", "deadline": "2030-07-15T10:00:00"},
+        )
+        await client.post("/tasks/", json={"title": "No deadline"})
+
+        resp = await client.get(
+            "/tasks/calendar",
+            params={"date_from": "2030-06-01T00:00:00", "date_to": "2030-07-01T00:00:00"},
+        )
+        assert resp.status_code == 200
+        titles = [t["title"] for t in resp.json()]
+        assert "In range" in titles
+        assert "Out of range" not in titles
+        assert "No deadline" not in titles
+
+    @pytest.mark.asyncio
+    async def test_calendar_requires_date_to_after_date_from(self, auth_client):
+        client, user = auth_client
+        resp = await client.get(
+            "/tasks/calendar",
+            params={"date_from": "2030-07-01T00:00:00", "date_to": "2030-06-01T00:00:00"},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_calendar_without_auth_returns_401_or_403(self, client):
+        resp = await client.get(
+            "/tasks/calendar",
+            params={"date_from": "2030-06-01T00:00:00", "date_to": "2030-07-01T00:00:00"},
+        )
+        assert resp.status_code in (401, 403)

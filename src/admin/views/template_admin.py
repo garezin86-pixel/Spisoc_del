@@ -294,6 +294,9 @@ class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
         "title": "Название",
         "priority": "Приоритет",
         "order_index": "Порядок",
+        "deadline_offset_days": "Дедлайн (смещение в днях)",
+        "tags": "Теги",
+        "checklist": "Чеклист",
     }
 
     column_formatters = {
@@ -306,6 +309,9 @@ class TaskTemplateItemAdmin(ModelView, model=TaskTemplateItemModel):
         TaskTemplateItemModel.title,
         TaskTemplateItemModel.priority,
         TaskTemplateItemModel.order_index,
+        TaskTemplateItemModel.deadline_offset_days,
+        TaskTemplateItemModel.tags,
+        TaskTemplateItemModel.checklist,
     ]
 
     form_overrides = {"priority": SelectField}

@@ -1,5 +1,5 @@
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import structlog
 from fastapi import Request
@@ -25,7 +25,7 @@ def _check_ip_allowed(ip: str) -> bool:
 
 
 def _admin_login_attempts(ip: str) -> deque[datetime]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     dq = _failed_admin_logins[ip]
     while dq and dq[0] + ADMIN_LOGIN_WINDOW <= now:
         dq.popleft()
@@ -67,7 +67,7 @@ class AdminAuth(AuthenticationBackend):
         password = form.get("password")
 
         if not isinstance(username, str) or not isinstance(password, str):
-            attempts.append(datetime.utcnow())
+            attempts.append(datetime.now(timezone.utc))
             await logger.awarning(
                 "admin_login_failed",
                 username=username if isinstance(username, str) else None,
@@ -81,7 +81,7 @@ class AdminAuth(AuthenticationBackend):
             user = await repo.get_admin_by_username(username)
 
         if not user or not verify_password(password, user.password_hash):
-            attempts.append(datetime.utcnow())
+            attempts.append(datetime.now(timezone.utc))
             await logger.awarning(
                 "admin_login_failed",
                 username=username,

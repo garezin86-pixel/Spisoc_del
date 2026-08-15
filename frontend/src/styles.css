@@ -1997,10 +1997,12 @@ textarea {
 }
 
 .chat-popup {
-  width: 340px;
-  height: 460px;
+  width: clamp(300px, 30vw, 400px);
+  height: clamp(360px, 60vh, 560px);
+  height: clamp(360px, 60dvh, 560px);
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -2011,9 +2013,10 @@ textarea {
   overflow: hidden;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .chat-popup {
     width: calc(100vw - 16px);
-    height: calc(100vh - 120px);
+    height: min(60vh, 420px);
+    height: min(60dvh, 420px);
   }
 }

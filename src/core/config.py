@@ -45,6 +45,9 @@ class Settings(BaseSettings):
 
     # Telegram
     bot_token: str = Field(default="", alias="BOT_TOKEN")
+    # ID Telegram-группы, привязанной к общему каналу командного чата (см.
+    # src/bot/handlers/chat_bridge.py). 0/не задано — мост выключен.
+    chat_bridge_group_id: int = Field(default=0, alias="CHAT_BRIDGE_GROUP_ID")
 
     # AI
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
@@ -93,6 +96,7 @@ REDIS_PASSWORD = settings.redis_password
 ADMIN_SECRET_KEY = settings.admin_secret_key
 ADMIN_ALLOWED_IPS = settings.admin_allowed_ips
 BOT_TOKEN = settings.bot_token
+CHAT_BRIDGE_GROUP_ID = settings.chat_bridge_group_id
 GROQ_API_KEY = settings.groq_api_key
 GEMINI_API_KEY = settings.gemini_api_key
 SUPER_ADMIN_TG_ID = settings.super_admin_tg_id

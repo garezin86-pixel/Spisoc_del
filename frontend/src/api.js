@@ -52,6 +52,17 @@ async function parseResponse(response) {
 let _isRefreshing = false;
 let _refreshPromise = null;
 
+// ─── Подписка на обновление токена ────────────────────────────────────────────
+// api.js рефрешит токен "тихо" (внутри apiRequest), но само по себе React-состояние
+// `token` в App.jsx об этом не узнаёт и продолжает использовать старый токен для
+// всех остальных запросов — это и вызывает повторные 401 и, в худшем случае,
+// refresh_token_reuse на бэкенде (второй рефреш уходит с уже использованным токеном).
+// App.jsx подписывается через setTokenRefreshHandler и синхронизирует свой useState.
+let _onTokenRefresh = null;
+export function setTokenRefreshHandler(fn) {
+    _onTokenRefresh = fn;
+}
+
 async function tryRefreshToken() {
     // Если рефреш уже идёт — ждём его результата вместо второго запроса
     if (_isRefreshing) {
@@ -77,6 +88,7 @@ async function tryRefreshToken() {
 
         const data = await response.json();
         saveTokens(data.access_token, data.refresh_token);
+        _onTokenRefresh?.(data.access_token);
         return data.access_token;
     })()
         .finally(() => {
