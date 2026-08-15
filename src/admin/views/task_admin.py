@@ -396,7 +396,7 @@ class TaskAdmin(ModelView, model=SpisokModel):
     async def create_comment(self, request):
         if request.method == "GET":
             task_id = request.query_params.get("task_id")
-            return self.templates.TemplateResponse(
+            return await self.templates.TemplateResponse(
                 request,
                 "admin/comment_create.html",
                 {"task_id": task_id},

@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens } from "./api";
+import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setTokenRefreshHandler } from "./api";
 import AttachmentsPanel from "./AttachmentsPanel";
 
 // ── WebSocket hook ────────────────────────────────────────────────────────────
@@ -1078,14 +1078,15 @@ const COMMAND_LIST = [
     { id: "nav-timeline", label: "Перейти: Лента активности", icon: "🕒", tab: "timeline" },
     { id: "nav-tasks", label: "Перейти: Задачи", icon: "📋", tab: "tasks" },
     { id: "nav-projects", label: "Перейти: Проекты", icon: "📁", tab: "projects" },
-    { id: "nav-kanban", label: "Перейти: Канбан", icon: "🗂️", tab: "kanban" },
     { id: "nav-templates", label: "Перейти: Шаблоны", icon: "📄", tab: "templates" },
+    { id: "nav-kanban", label: "Перейти: Канбан", icon: "🗂️", tab: "kanban" },
+    { id: "nav-calendar", label: "Перейти: Календарь", icon: "📅", tab: "calendar" },
     { id: "nav-groups", label: "Перейти: Группы", icon: "👥", tab: "groups" },
     { id: "nav-trash", label: "Перейти: Корзина", icon: "🗑️", tab: "trash" },
     { id: "nav-settings-profile", label: "Настройки: Профиль и 2FA", icon: "🔒", tab: "2fa" },
     { id: "nav-settings-tokens", label: "Настройки: Токены", icon: "🔑", tab: "tokens" },
     { id: "nav-settings-webhooks", label: "Настройки: Вебхуки", icon: "🔗", tab: "webhooks" },
-    { id: "nav-settings-calendar", label: "Настройки: Календарь", icon: "📅", tab: "calendar" },
+    { id: "nav-settings-ical", label: "Настройки: Экспорт в iCal", icon: "📤", tab: "ical" },
     { id: "new-task", label: "Создать задачу", icon: "➕", tab: "tasks" },
     { id: "toggle-theme", label: "Переключить тему", icon: "🌓" },
     { id: "logout", label: "Выйти из аккаунта", icon: "🚪" },
@@ -1952,10 +1953,10 @@ function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUp
                     <span className="meta-chip task-row-user"
                         onClick={e => { e.stopPropagation(); window.openUserProfile?.(task.user.id); }}
                         style={{
-                        fontSize: 11, cursor: "pointer",
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4,
-                    }}>
+                            fontSize: 11, cursor: "pointer",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4,
+                        }}>
                         <UserProfileAvatar userId={task.user.id} username={task.user.username} size={14} />
                         {task.user.username}
                     </span>
@@ -2428,6 +2429,425 @@ const KANBAN_COLUMNS = [
     { key: "review", label: "На проверке", color: "#3b82f6" },
     { key: "done", label: "Готово", color: "#22c55e" },
 ];
+
+// ─── Календарь дедлайнов ────────────────────────────────────────────────────
+const CAL_WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+// ─── Компактный виджет для сайдбара: мини-календарь + ближайшие дедлайны ───
+function SidebarDeadlineWidget({ token, onOpenTask, onOpenFullCalendar }) {
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+    const [tasks, setTasks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedDay, setSelectedDay] = useState(null);
+
+    const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const gridStart = new Date(monthStart);
+    const startOffset = (monthStart.getDay() + 6) % 7;
+    gridStart.setDate(gridStart.getDate() - startOffset);
+    const gridEnd = new Date(gridStart);
+    gridEnd.setDate(gridEnd.getDate() + 42);
+
+    // Диапазон запроса берём с запасом: сетка месяца + минимум 30 дней вперёд
+    // от сегодня, чтобы список «Ближайшие дедлайны» не зависел от того, какой
+    // месяц сейчас пролистан в мини-календаре.
+    const upcomingHorizon = new Date(todayStart);
+    upcomingHorizon.setDate(upcomingHorizon.getDate() + 31);
+    const rangeFrom = gridStart < todayStart ? gridStart : todayStart;
+    const rangeTo = gridEnd > upcomingHorizon ? gridEnd : upcomingHorizon;
+
+    useEffect(() => {
+        if (!token) return;
+        let cancelled = false;
+        setLoading(true);
+        apiRequest({ path: `/tasks/calendar?date_from=${rangeFrom.toISOString()}&date_to=${rangeTo.toISOString()}`, token })
+            .then(data => { if (!cancelled) setTasks(Array.isArray(data) ? data : []); })
+            .catch(() => { if (!cancelled) setTasks([]); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        setSelectedDay(null);
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, cursor.getFullYear(), cursor.getMonth()]);
+
+    const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    const tasksByDay = useMemo(() => {
+        const map = {};
+        for (const t of tasks) {
+            const d = parseBackendDate(t.deadline);
+            if (!d) continue;
+            const key = dayKey(d);
+            (map[key] ??= []).push(t);
+        }
+        return map;
+    }, [tasks]);
+
+    const cells = useMemo(() => {
+        const arr = [];
+        const d = new Date(gridStart);
+        for (let i = 0; i < 42; i++) { arr.push(new Date(d)); d.setDate(d.getDate() + 1); }
+        return arr;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cursor.getFullYear(), cursor.getMonth()]);
+
+    const topPriorityColor = (dayTasks) => {
+        const order = ["critical", "high", "medium", "low"];
+        const sorted = [...dayTasks].sort((a, b) => order.indexOf(a.priority) - order.indexOf(b.priority));
+        return PRIORITY_COLORS[sorted[0]?.priority] ?? PRIORITY_COLORS.medium;
+    };
+
+    const todayKey = dayKey(today);
+    const monthLabel = cursor.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+
+    const upcomingList = useMemo(() => {
+        return tasks
+            .filter(t => {
+                const d = parseBackendDate(t.deadline);
+                return d && d >= todayStart;
+            })
+            .sort((a, b) => parseBackendDate(a.deadline) - parseBackendDate(b.deadline))
+            .slice(0, 6);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tasks]);
+
+    const listItems = selectedDay ? (tasksByDay[selectedDay] ?? []) : upcomingList;
+    const listTitle = selectedDay
+        ? new Date(selectedDay).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })
+        : "Ближайшие дедлайны";
+
+    return (
+        <div className="card">
+            <div className="section-header">
+                <div className="section-title"><Icon d={ICONS.calendar} /> Календарь</div>
+                {onOpenFullCalendar && (
+                    <button className="btn btn-ghost btn-sm" onClick={onOpenFullCalendar}>Открыть →</button>
+                )}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <button className="btn btn-ghost btn-sm" style={{ padding: "2px 6px" }} onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))}>
+                    <Icon d={ICONS.chevronL} size={14} />
+                </button>
+                <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", color: "var(--text-muted)" }}>{monthLabel}</span>
+                <button className="btn btn-ghost btn-sm" style={{ padding: "2px 6px" }} onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))}>
+                    <Icon d={ICONS.chevronR} size={14} />
+                </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 2 }}>
+                {["П", "В", "С", "Ч", "П", "С", "В"].map((w, i) => (
+                    <div key={i} style={{ textAlign: "center", fontSize: 10, color: "var(--text-muted)" }}>{w}</div>
+                ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, opacity: loading ? 0.5 : 1 }}>
+                {cells.map(d => {
+                    const key = dayKey(d);
+                    const dayTasks = tasksByDay[key] ?? [];
+                    const inMonth = d.getMonth() === cursor.getMonth();
+                    const isToday = key === todayKey;
+                    const isSelected = key === selectedDay;
+                    return (
+                        <div
+                            key={key}
+                            onClick={() => dayTasks.length > 0 && setSelectedDay(isSelected ? null : key)}
+                            title={dayTasks.map(t => t.title).join(", ")}
+                            style={{
+                                aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                                borderRadius: 5, fontSize: 10.5,
+                                background: isSelected ? "var(--surface2)" : "transparent",
+                                border: isToday ? "1px solid var(--accent)" : "1px solid transparent",
+                                opacity: inMonth ? 1 : 0.35,
+                                cursor: dayTasks.length > 0 ? "pointer" : "default",
+                                color: isToday ? "var(--accent)" : "var(--text)",
+                                fontWeight: isToday ? 700 : 400,
+                            }}
+                        >
+                            <span>{d.getDate()}</span>
+                            {dayTasks.length > 0 && (
+                                <span style={{ width: 4, height: 4, borderRadius: "50%", background: topPriorityColor(dayTasks), marginTop: 1 }} />
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="divider" style={{ margin: "12px 0" }} />
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: selectedDay ? "capitalize" : "none" }}>
+                    {listTitle}
+                </div>
+                {selectedDay && (
+                    <button className="btn btn-ghost btn-sm" style={{ padding: "1px 6px", fontSize: 11 }} onClick={() => setSelectedDay(null)}>✕</button>
+                )}
+            </div>
+
+            {loading ? (
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Загрузка…</div>
+            ) : listItems.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    {selectedDay ? "Нет задач с дедлайном в этот день" : "Нет ближайших дедлайнов"}
+                </div>
+            ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {listItems.map(t => {
+                        const dl = formatDeadline(t.deadline);
+                        return (
+                            <div
+                                key={t.id}
+                                onClick={() => onOpenTask?.(t.title)}
+                                style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                            >
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.medium }} />
+                                <span style={{ fontSize: 12.5, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.title}</span>
+                                {dl && (
+                                    <span style={{ fontSize: 10.5, color: dl.isOverdue ? "var(--red)" : "var(--text-muted)", flexShrink: 0 }}>
+                                        {dl.isToday ? "сегодня" : dl.fmt}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function DeadlineCalendarTab({ token, onOpenTask }) {
+    const today = new Date();
+    const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+    const [tasks, setTasks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [projectId, setProjectId] = useState("");
+    const [onlyMine, setOnlyMine] = useState(false);
+    const [onlyAuthor, setOnlyAuthor] = useState(false);
+    const [projects, setProjects] = useState([]);
+    const [selectedDay, setSelectedDay] = useState(null); // "YYYY-MM-DD" | null
+
+    useEffect(() => {
+        if (!token) return;
+        apiRequest({ path: "/projects?page=1&size=50", token })
+            .then(data => setProjects(Array.isArray(data) ? data : (data.items ?? [])))
+            .catch(() => { });
+    }, [token]);
+
+    // Диапазон запроса — весь видимый месяц (плюс с запасом захватывает соседние
+    // дни, попадающие в сетку календаря, чтобы точки на них тоже показывались).
+    const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const gridStart = new Date(monthStart);
+    // Понедельник как первый день недели
+    const startOffset = (monthStart.getDay() + 6) % 7;
+    gridStart.setDate(gridStart.getDate() - startOffset);
+    const gridEnd = new Date(gridStart);
+    gridEnd.setDate(gridEnd.getDate() + 42); // 6 недель сетки — с запасом
+
+    const loadTasks = useCallback(async (from, to, pid, mine, author) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            params.set("date_from", from.toISOString());
+            params.set("date_to", to.toISOString());
+            if (pid) params.set("project_id", pid);
+            if (mine) params.set("only_mine", "true");
+            if (author) params.set("only_author", "true");
+            const data = await apiRequest({ path: `/tasks/calendar?${params}`, token });
+            setTasks(Array.isArray(data) ? data : []);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [token]);
+
+    useEffect(() => {
+        if (!token) return;
+        loadTasks(gridStart, gridEnd, projectId, onlyMine, onlyAuthor);
+        setSelectedDay(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, cursor, projectId, onlyMine, onlyAuthor, loadTasks]);
+
+    const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    // Группируем задачи по дню дедлайна (в локальном времени пользователя)
+    const tasksByDay = useMemo(() => {
+        const map = {};
+        for (const t of tasks) {
+            const d = parseBackendDate(t.deadline);
+            if (!d) continue;
+            const key = dayKey(d);
+            if (!map[key]) map[key] = [];
+            map[key].push(t);
+        }
+        return map;
+    }, [tasks]);
+
+    const cells = useMemo(() => {
+        const arr = [];
+        const d = new Date(gridStart);
+        for (let i = 0; i < 42; i++) {
+            arr.push(new Date(d));
+            d.setDate(d.getDate() + 1);
+        }
+        return arr;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cursor]);
+
+    const todayKey = dayKey(today);
+    const selectedTasks = selectedDay ? (tasksByDay[selectedDay] ?? []) : [];
+
+    const monthLabel = cursor.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+
+    return (
+        <div style={{ padding: "16px 16px 32px" }}>
+            <div className="card" style={{ marginTop: 0 }}>
+                <div className="section-header" style={{ flexWrap: "wrap", gap: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))}>
+                            <Icon d={ICONS.chevronL} />
+                        </button>
+                        <div className="section-title" style={{ minWidth: 180, textTransform: "capitalize" }}>
+                            <Icon d={ICONS.calendar} /> {monthLabel}
+                        </div>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))}>
+                            <Icon d={ICONS.chevronR} />
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>
+                            Сегодня
+                        </button>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <select className="input input-sm" style={{ width: 160 }} value={projectId} onChange={e => setProjectId(e.target.value)}>
+                            <option value="">Все проекты</option>
+                            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                            <input type="checkbox" checked={onlyMine} onChange={e => { setOnlyMine(e.target.checked); if (e.target.checked) setOnlyAuthor(false); }} />
+                            Я исполнитель
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                            <input type="checkbox" checked={onlyAuthor} onChange={e => { setOnlyAuthor(e.target.checked); if (e.target.checked) setOnlyMine(false); }} />
+                            Я автор
+                        </label>
+                        <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(gridStart, gridEnd, projectId, onlyMine, onlyAuthor)} disabled={loading}>
+                            <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
+                        </button>
+                    </div>
+                </div>
+
+                {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6, marginBottom: 6 }}>
+                    {CAL_WEEKDAYS.map(w => (
+                        <div key={w} style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: "var(--text-muted)", padding: "4px 0" }}>
+                            {w}
+                        </div>
+                    ))}
+                </div>
+
+                {loading ? (
+                    <div className="empty-state" style={{ padding: "40px 0" }}><div className="empty-icon">⏳</div>Загрузка…</div>
+                ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+                        {cells.map(d => {
+                            const key = dayKey(d);
+                            const dayTasks = tasksByDay[key] ?? [];
+                            const inMonth = d.getMonth() === cursor.getMonth();
+                            const isToday = key === todayKey;
+                            const isSelected = key === selectedDay;
+                            // Показываем максимум 3 точки, приоритет — по важности задачи
+                            const dots = [...dayTasks]
+                                .sort((a, b) => ["critical", "high", "medium", "low"].indexOf(a.priority) - ["critical", "high", "medium", "low"].indexOf(b.priority))
+                                .slice(0, 3);
+                            return (
+                                <div
+                                    key={key}
+                                    onClick={() => dayTasks.length > 0 && setSelectedDay(isSelected ? null : key)}
+                                    style={{
+                                        minHeight: 68,
+                                        borderRadius: 8,
+                                        padding: "6px 6px 8px",
+                                        background: isSelected ? "var(--surface2)" : "var(--surface)",
+                                        border: isToday ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                                        opacity: inMonth ? 1 : 0.4,
+                                        cursor: dayTasks.length > 0 ? "pointer" : "default",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 4,
+                                    }}
+                                >
+                                    <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--accent)" : "var(--text)" }}>
+                                        {d.getDate()}
+                                    </div>
+                                    {dayTasks.length > 0 && (
+                                        <>
+                                            <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                                                {dots.map(t => (
+                                                    <span key={t.id} title={t.title} style={{
+                                                        width: 7, height: 7, borderRadius: "50%",
+                                                        background: PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.medium,
+                                                        display: "inline-block",
+                                                    }} />
+                                                ))}
+                                            </div>
+                                            {dayTasks.length > 3 && (
+                                                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>+{dayTasks.length - 3}</div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {selectedDay && (
+                    <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", marginBottom: 10 }}>
+                            📅 {new Date(selectedDay).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}
+                            {" · "}{selectedTasks.length} {selectedTasks.length === 1 ? "задача" : "задач"}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {selectedTasks.map(t => {
+                                const dl = formatDeadline(t.deadline);
+                                return (
+                                    <div
+                                        key={t.id}
+                                        onClick={() => onOpenTask?.(t.title)}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: 10,
+                                            padding: "8px 12px", borderRadius: 8,
+                                            background: "var(--surface2)", cursor: "pointer",
+                                        }}
+                                    >
+                                        <span style={{
+                                            fontSize: 11, padding: "2px 6px", borderRadius: 4, fontWeight: 600,
+                                            background: (PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.medium) + "22",
+                                            color: PRIORITY_COLORS[t.priority] ?? PRIORITY_COLORS.medium,
+                                        }}>
+                                            {PRIORITY_LABELS[t.priority] ?? t.priority}
+                                        </span>
+                                        <span style={{ flex: 1, fontSize: 14 }}>{t.title}</span>
+                                        {dl && (
+                                            <span className="meta-chip" style={{ fontSize: 11, color: dl.isOverdue ? "var(--red)" : undefined }}>
+                                                {dl.fmt}
+                                            </span>
+                                        )}
+                                        <span className="meta-chip" style={{ fontSize: 11 }}>{CMDK_TASK_STATUS_LABELS[t.status] ?? t.status}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
 
 function KanbanTab({ token }) {
     const [board, setBoard] = useState(null);
@@ -5473,6 +5893,16 @@ function App() {
     const [show2faNudge, setShow2faNudge] = useState(false);
     const [mustChangePassword, setMustChangePassword] = useState(false);
 
+    // api.js рефрешит access-токен "тихо" внутри apiRequest при 401 и кладёт
+    // его в localStorage, но состояние React об этом не знает само по себе —
+    // подписываемся, чтобы все компоненты/эффекты сразу получали новый токен
+    // и не продолжали слать запросы со старым (что приводило к повторным 401
+    // и refresh_token_reuse на бэкенде).
+    useEffect(() => {
+        setTokenRefreshHandler((newToken) => setToken(newToken));
+        return () => setTokenRefreshHandler(null);
+    }, []);
+
     // ── WebSocket realtime ────────────────────────────────────────────────────
     const [chatWsEvent, setChatWsEvent] = useState(null);
 
@@ -6304,11 +6734,18 @@ function App() {
                             <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
                                 <Icon d={ICONS.folder} /> Проекты
                             </button>
+                            <button className={`tab-btn${tab === "templates" ? " active" : ""}`} onClick={() => setTab("templates")}>
+                                <Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z" /> Шаблоны
+                            </button>
+                            <button className={`tab-btn${tab === "trash" ? " active" : ""}`} onClick={() => setTab("trash")}>
+                                <Icon d={ICONS.trash} /> Корзина
+                                <span className="count-badge" style={{ visibility: trashTotal ? "visible" : "hidden" }}>{trashTotal || 0}</span>
+                            </button>
                             <button className={`tab-btn${tab === "kanban" ? " active" : ""}`} onClick={() => setTab("kanban")}>
                                 <Icon d={ICONS.kanban ?? "M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"} /> Канбан
                             </button>
-                            <button className={`tab-btn${tab === "templates" ? " active" : ""}`} onClick={() => setTab("templates")}>
-                                <Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z" /> Шаблоны
+                            <button className={`tab-btn${tab === "calendar" ? " active" : ""}`} onClick={() => setTab("calendar")}>
+                                <Icon d={ICONS.calendar} /> Календарь
                             </button>
                             <button className={`tab-btn${tab === "groups" ? " active" : ""}`} onClick={() => setTab("groups")}>
                                 <Icon d={ICONS.group} /> Группы
@@ -6316,11 +6753,7 @@ function App() {
                             <button className={`tab-btn${tab === "team" ? " active" : ""}`} onClick={() => setTab("team")}>
                                 <Icon d={ICONS.user} /> Команда
                             </button>
-                            <button className={`tab-btn${tab === "trash" ? " active" : ""}`} onClick={() => setTab("trash")}>
-                                <Icon d={ICONS.trash} /> Корзина
-                                <span className="count-badge" style={{ visibility: trashTotal ? "visible" : "hidden" }}>{trashTotal || 0}</span>
-                            </button>
-                            <button className={`tab-btn${tab === "tokens" || tab === "webhooks" || tab === "calendar" || tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
+                            <button className={`tab-btn${tab === "tokens" || tab === "webhooks" || tab === "ical" || tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
                                 <Icon d={ICONS.shield} /> Настройки
                             </button>
                         </div>
@@ -6442,6 +6875,12 @@ function App() {
                                     </div>
                                 </div>
                             </div>
+
+                            <SidebarDeadlineWidget
+                                token={token}
+                                onOpenTask={(title) => { setSearchQuery(title); }}
+                                onOpenFullCalendar={() => setTab("calendar")}
+                            />
                         </aside>
 
                         <main className="main-column">
@@ -6777,115 +7216,124 @@ function App() {
                     onOpenTask={(title) => { setProfileUserId(null); setTab("tasks"); setSearchQuery(title); }}
                 />
             ) : (
-            <>
-            {/* ── DASHBOARD TAB ── */}
-            {tab === "dashboard" && (
-                <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
-                    <DashboardTab
-                        stats={dashStats}
-                        loading={dashLoading}
-                        username={currentUsername}
-                        role={currentRole}
-                        token={token}
-                    />
-                </div>
-            )}
-            {/* ── TIMELINE TAB ── */}
-            {tab === "timeline" && (
-                <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
-                    <TimelineTab token={token} />
-                </div>
-            )}
-            {/* ── PROJECTS TAB ── */}
-            {tab === "projects" && (
-                <div>
-                    <ProjectsTab token={token} canManage={canManage}
-                        currentUserId={currentUserId} currentRole={currentRole} />
-                </div>
-            )}
-            {/* ── KANBAN TAB ── */}
-            {tab === "kanban" && (
-                <div>
-                    <KanbanTab token={token} />
-                </div>
-            )}
-            {/* ── GROUPS TAB ── */}
-            {tab === "groups" && (
-                <div>
-                    <GroupsTab token={token} currentRole={currentRole} />
-                </div>
-            )}
-            {/* ── TEAM TAB ── */}
-            {tab === "team" && (
-                <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
-                    <TeamTab token={token} />
-                </div>
-            )}
-            {tab === "templates" && (
-                <div>
-                    <TemplatesTab token={token} />
-                </div>
-            )}
-            {/* ── SETTINGS (Токены / Вебхуки / Календарь / 2FA) ── */}
-            {(tab === "tokens" || tab === "webhooks" || tab === "calendar" || tab === "2fa") && (
-                <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
-                    <div className="tab-bar" style={{ marginBottom: 16, display: "inline-flex" }}>
-                        <button className={`tab-btn${tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
-                            🔒 Профиль и 2FA
-                        </button>
-                        <button className={`tab-btn${tab === "tokens" ? " active" : ""}`} onClick={() => setTab("tokens")}>
-                            🔑 Токены
-                        </button>
-                        <button className={`tab-btn${tab === "webhooks" ? " active" : ""}`} onClick={() => setTab("webhooks")}>
-                            <Icon d={ICONS.link} /> Вебхуки
-                        </button>
-                        <button className={`tab-btn${tab === "calendar" ? " active" : ""}`} onClick={() => setTab("calendar")}>
-                            <Icon d={ICONS.calendar} /> Календарь
-                        </button>
-                    </div>
-                    {tab === "2fa" && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                            <TwoFactorTab token={token} />
-                            <ChangePasswordCard token={token} />
+                <>
+                    {/* ── DASHBOARD TAB ── */}
+                    {tab === "dashboard" && (
+                        <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                            <DashboardTab
+                                stats={dashStats}
+                                loading={dashLoading}
+                                username={currentUsername}
+                                role={currentRole}
+                                token={token}
+                            />
                         </div>
                     )}
-                    {tab === "tokens" && <TokensTab token={token} />}
-                    {tab === "webhooks" && <WebhooksTab token={token} />}
-                    {tab === "calendar" && <CalendarTab token={token} />}
-                </div>
-            )}
-            {/* ── TRASH TAB ── */}
-            {tab === "trash" && (
-                <div>
-                    <div className="card" style={{ marginTop: 0 }}>
-                        <div className="section-header">
-                            <div>
-                                <div className="section-title">Корзина</div>
-                                <div className="section-sub">Мягко удалённые задачи — можно восстановить</div>
-                            </div>
-                            <button className="btn btn-ghost btn-sm" onClick={() => loadTrash(1)} disabled={loading}>
-                                <Icon d={ICONS.refresh} /> Обновить
-                            </button>
+                    {/* ── TIMELINE TAB ── */}
+                    {tab === "timeline" && (
+                        <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                            <TimelineTab token={token} />
                         </div>
-                        {loading ? (
-                            <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
-                        ) : trashTasks.length === 0 ? (
-                            <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
-                        ) : (
-                            <>
-                                <div className="task-list">
-                                    {trashTasks.map(task => (
-                                        <TrashCard key={task.id} task={task}
-                                            onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
-                                    ))}
+                    )}
+                    {/* ── PROJECTS TAB ── */}
+                    {tab === "projects" && (
+                        <div>
+                            <ProjectsTab token={token} canManage={canManage}
+                                currentUserId={currentUserId} currentRole={currentRole} />
+                        </div>
+                    )}
+                    {/* ── KANBAN TAB ── */}
+                    {tab === "kanban" && (
+                        <div>
+                            <KanbanTab token={token} />
+                        </div>
+                    )}
+                    {/* ── CALENDAR TAB (визуальный календарь дедлайнов) ── */}
+                    {tab === "calendar" && (
+                        <div>
+                            <DeadlineCalendarTab
+                                token={token}
+                                onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
+                            />
+                        </div>
+                    )}
+                    {/* ── GROUPS TAB ── */}
+                    {tab === "groups" && (
+                        <div>
+                            <GroupsTab token={token} currentRole={currentRole} />
+                        </div>
+                    )}
+                    {/* ── TEAM TAB ── */}
+                    {tab === "team" && (
+                        <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
+                            <TeamTab token={token} />
+                        </div>
+                    )}
+                    {tab === "templates" && (
+                        <div>
+                            <TemplatesTab token={token} />
+                        </div>
+                    )}
+                    {/* ── SETTINGS (Токены / Вебхуки / Календарь / 2FA) ── */}
+                    {(tab === "tokens" || tab === "webhooks" || tab === "ical" || tab === "2fa") && (
+                        <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
+                            <div className="tab-bar" style={{ marginBottom: 16, display: "inline-flex" }}>
+                                <button className={`tab-btn${tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
+                                    🔒 Профиль и 2FA
+                                </button>
+                                <button className={`tab-btn${tab === "tokens" ? " active" : ""}`} onClick={() => setTab("tokens")}>
+                                    🔑 Токены
+                                </button>
+                                <button className={`tab-btn${tab === "webhooks" ? " active" : ""}`} onClick={() => setTab("webhooks")}>
+                                    <Icon d={ICONS.link} /> Вебхуки
+                                </button>
+                                <button className={`tab-btn${tab === "ical" ? " active" : ""}`} onClick={() => setTab("ical")}>
+                                    <Icon d={ICONS.calendar} /> Экспорт (iCal)
+                                </button>
+                            </div>
+                            {tab === "2fa" && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                                    <TwoFactorTab token={token} />
+                                    <ChangePasswordCard token={token} />
                                 </div>
-                                <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
-                            </>
-                        )}
-                    </div>
-                </div>
-            )}
-            </>
+                            )}
+                            {tab === "tokens" && <TokensTab token={token} />}
+                            {tab === "webhooks" && <WebhooksTab token={token} />}
+                            {tab === "ical" && <CalendarTab token={token} />}
+                        </div>
+                    )}
+                    {/* ── TRASH TAB ── */}
+                    {tab === "trash" && (
+                        <div>
+                            <div className="card" style={{ marginTop: 0 }}>
+                                <div className="section-header">
+                                    <div>
+                                        <div className="section-title">Корзина</div>
+                                        <div className="section-sub">Мягко удалённые задачи — можно восстановить</div>
+                                    </div>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => loadTrash(1)} disabled={loading}>
+                                        <Icon d={ICONS.refresh} /> Обновить
+                                    </button>
+                                </div>
+                                {loading ? (
+                                    <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                                ) : trashTasks.length === 0 ? (
+                                    <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
+                                ) : (
+                                    <>
+                                        <div className="task-list">
+                                            {trashTasks.map(task => (
+                                                <TrashCard key={task.id} task={task}
+                                                    onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
+                                            ))}
+                                        </div>
+                                        <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );

@@ -114,10 +114,13 @@ class TestClient:
         with pytest.raises(R2NotConfiguredError):
             unconfigured_storage._client()
 
+    @pytest.mark.filterwarnings("ignore:coroutine .* was never awaited:RuntimeWarning")
     def test_does_not_raise_when_configured(self, configured_storage):
         # Не должно бросать — просто создаёт клиента (без реального соединения).
         # _client() возвращает async context manager, который мы не открываем —
         # это осознанно: сама конструкция объекта не должна требовать сети/креды сверх проверки is_configured.
+        # aiobotocore при этом создаёт корутину для клиента, которую мы не awaitим —
+        # это ожидаемо и безопасно (сборщик мусора её просто отбросит), поэтому глушим предупреждение точечно.
         configured_storage._client()
 
 

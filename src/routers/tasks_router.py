@@ -255,6 +255,37 @@ async def get_kanban(
     )
 
 
+@router.get(
+    "/calendar",
+    response_model=list[SpisokSchema],
+    summary="Календарь дедлайнов",
+    description=(
+        "Возвращает задачи с дедлайном в диапазоне [date_from, date_to) — для месячного "
+        "вида календаря на фронте. Видимость как у канбана: по умолчанию задачи, где "
+        "текущий пользователь автор или исполнитель."
+    ),
+)
+async def get_calendar_tasks(
+    session: SessionDep,
+    date_from: datetime = Query(..., description="Начало диапазона (включительно)"),
+    date_to: datetime = Query(..., description="Конец диапазона (не включая)"),
+    current_user: UserModel = Depends(get_current_user),
+    project_id: int | None = Query(None, description="Фильтр по проекту"),
+    only_mine: bool = Query(False, description="Только мои задачи (исполнитель)"),
+    only_author: bool = Query(False, description="Только задачи, где текущий пользователь — автор"),
+):
+    if date_to <= date_from:
+        incorrect_request("date_to должен быть позже date_from")
+    return await get_task_service(session).get_calendar_tasks(
+        current_user,
+        date_from=date_from,
+        date_to=date_to,
+        project_id=project_id,
+        only_mine=only_mine,
+        only_author=only_author,
+    )
+
+
 def get_filter_preset_repo(session: SessionDep) -> FilterPresetRepository:
     return FilterPresetRepository(session)
 

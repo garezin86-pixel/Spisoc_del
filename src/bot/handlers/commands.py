@@ -568,3 +568,17 @@ async def cmd_voice_help(message: Message):
         "бот автоматически <b>создаст задачу</b>."
     )
     await message.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("chatid"))
+async def cmd_chatid(message: Message):
+    """Служебная команда: показывает ID текущего чата — нужен для настройки
+    моста группового чата с Telegram-группой (CHAT_BRIDGE_GROUP_ID / привязка
+    группы). Работает где угодно и для кого угодно — не требует регистрации
+    (см. исключение в src/bot/middlewares/auth.py), иначе узнать chat_id ещё
+    не привязанной группы было бы неоткуда."""
+    chat = message.chat
+    await message.answer(
+        f"🆔 Chat ID: <code>{chat.id}</code>\nТип: {chat.type}",
+        parse_mode="HTML",
+    )

@@ -1,6 +1,45 @@
-# Spisok Del
+# 📋 Spisok Del (Список Дел)
 
-Система управления задачами с REST API, Telegram-ботом и веб-интерфейсом.
+Полнофункциональная система управления задачами: REST API, Telegram-бот и веб-интерфейс в одном проекте. Разрабатывается как pet-проект, но с продакшн-подходом к архитектуре, тестам и CI.
+
+![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+> Замени `OWNER/REPO` в бейдже CI на свой `<пользователь>/<репозиторий>` после публикации.
+
+## ✨ Возможности
+
+**Задачи**
+- Полный жизненный цикл задачи: `backlog → todo → in_progress → review → done`
+- Канбан-доска с drag-and-drop
+- Визуальный **календарь дедлайнов** (месячная сетка + компактный виджет в сайдбаре)
+- Дедлайны, приоритеты, повторяющиеся задачи, зависимости между задачами (с обнаружением циклов)
+- Чек-листы, комментарии, вложения (Cloudflare R2 или локальное хранилище)
+- Шаблоны задач, массовые операции, фильтр-пресеты, полнотекстовый поиск
+- Импорт/экспорт CSV, экспорт дедлайнов в iCal (подписка из Google Calendar / Outlook)
+- Корзина с восстановлением, soft delete
+
+**Совместная работа**
+- Проекты и группы, ролевая модель (user / manager / admin)
+- Командный чат: групповые каналы + личные сообщения
+- Двусторонний мост чата с Telegram (сообщения из веба долетают в бота и обратно)
+- Упоминания (@mentions) с уведомлениями
+- Глобальная лента активности, дашборд с графиками (recharts)
+
+**Telegram-бот**
+- Полноценный клиент на aiogram 3: создание/редактирование задач, FSM-сценарии, роли
+- Голосовые команды: распознавание речи (Groq Whisper) + LLM (Groq LLaMA 3.3-70B) с контекстной памятью в Redis
+- Регистрация с автогенерацией логина/пароля и подтверждением у администратора
+
+**Платформа и безопасность**
+- JWT-аутентификация с refresh-токенами (ротация + защита от повторного использования)
+- 2FA (TOTP) с резервными кодами
+- Персональные токены доступа (PAT) с ограниченными правами
+- Исходящие вебхуки с HMAC-подписью
+- Web Push уведомления (VAPID), realtime через WebSocket
+- Rate limiting, аудит-лог, admin-панель (SQLAdmin) с trash-view и soft delete
+- Command Palette (Ctrl+K) для быстрой навигации
 
 ## Стек
 
@@ -8,8 +47,9 @@
 |---|---|
 | Backend | FastAPI, SQLAlchemy (async), Alembic |
 | База данных | PostgreSQL + asyncpg |
-| Кэш | Redis (fastapi-cache2) |
+| Кэш / realtime | Redis (fastapi-cache2, WebSocket-хаб) |
 | Telegram-бот | aiogram 3 |
+| Голос / LLM | Groq (Whisper STT, LLaMA 3.3-70B) |
 | Планировщик | APScheduler |
 | Фронтенд | React + Vite |
 | Admin-панель | SQLAdmin |
@@ -101,6 +141,16 @@ SUPER_ADMIN_TG_ID=your-telegram-id
 
 # CORS (для деплоя)
 FRONTEND_URL=https://your-domain.com
+
+# Web Push (VAPID) — сгенерировать один раз:
+# python scripts/generate_vapid_keys.py
+VAPID_PRIVATE_KEY=
+VAPID_PUBLIC_KEY=
+VAPID_CLAIMS_EMAIL=you@example.com
+
+# Groq — голосовые команды в Telegram-боте (STT + LLM). Необязательно:
+# без ключа бот работает, просто без распознавания голоса.
+GROQ_API_KEY=
 ```
 
 ### 4. База данных
@@ -187,6 +237,20 @@ pytest tests/test_unit_services.py -v
 ```
 
 Тесты используют mock-репозитории — PostgreSQL и Redis для unit-тестов не нужны.
+Интеграционным тестам (`test_integration_*.py`) нужна тестовая база — см. `.env.example` / `ci.yml`.
+
+На момент публикации: **795 тестов, все зелёные**. Линт (`ruff check .`) и форматирование
+(`ruff format --check .`) проходят без замечаний.
+
+## Линт и форматирование
+
+```bash
+ruff check .            # линт
+ruff format .            # автоформатирование
+ruff format --check .   # проверка без изменений (используется в CI)
+```
+
+Pre-commit хуки настроены в `.pre-commit-config.yaml`.
 
 ## Docker
 
@@ -214,3 +278,30 @@ docker compose -f docker-compose.prod.yml up -d
 - Grafana дашборд: `http://localhost:3000` (при запуске через docker-compose)
 
 Настройка в `monitoring/prometheus.yml`.
+
+## Структура проекта
+
+```
+src/
+├── routers/       # HTTP-слой: валидация входа, вызов сервиса
+├── services/       # Бизнес-логика, права доступа, оркестрация
+├── repositories/    # SQL-запросы, маппинг ORM
+├── models/          # SQLAlchemy ORM-модели
+├── schemas/          # Pydantic-схемы запросов/ответов
+├── bot/               # Telegram-бот (aiogram 3)
+├── admin/             # SQLAdmin-панель
+└── core/              # Конфиг, безопасность, метрики, кэш, лимитер
+
+frontend/src/
+├── App.jsx           # Основное SPA (один файл, все вкладки)
+├── api.js            # HTTP-клиент, refresh-токены
+└── AttachmentsPanel.jsx
+```
+
+## Лицензия
+
+Проект распространяется под лицензией [MIT](LICENSE) — используй, форкай, дорабатывай свободно.
+
+## Автор
+
+Пет-проект, разрабатывается и поддерживается одним человеком. Issues и pull request'ы приветствуются.

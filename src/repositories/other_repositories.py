@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, cast
 
 import sqlalchemy as sa
@@ -102,7 +102,7 @@ class NotificationRepository(AbstractNotificationRepository):
             content=content,
             success=success,
             error=error,
-            sent_at=datetime.utcnow(),
+            sent_at=datetime.now(timezone.utc),
         )
         self.session.add(log)
         await self.session.flush()
@@ -179,7 +179,7 @@ class NotificationRepository(AbstractNotificationRepository):
             query = query.where(NotificationLogModel.task_id == task_id)
 
         if hours_back is not None:
-            since = datetime.utcnow() - timedelta(hours=hours_back)
+            since = datetime.now(timezone.utc) - timedelta(hours=hours_back)
             query = query.where(NotificationLogModel.sent_at >= since)
 
         result = await self.session.execute(query.limit(1))
@@ -191,7 +191,7 @@ class NotificationRepository(AbstractNotificationRepository):
         top_users_limit: int = 10,
     ) -> dict:
         """Returns aggregated notification statistics for the admin dashboard."""
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(timezone.utc) - timedelta(days=days)
 
         total = await self.session.scalar(select(func.count()).select_from(NotificationLogModel))
         total_success = await self.session.scalar(

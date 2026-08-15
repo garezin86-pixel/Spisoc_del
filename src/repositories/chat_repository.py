@@ -1,7 +1,7 @@
 # src/repositories/chat_repository.py
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,8 +13,10 @@ class ChatRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, user_id: int, content: str, group_id: int | None = None) -> ChatMessageModel:
-        message = ChatMessageModel(user_id=user_id, content=content, group_id=group_id)
+    async def create(
+        self, user_id: int, content: str, group_id: int | None = None, recipient_id: int | None = None
+    ) -> ChatMessageModel:
+        message = ChatMessageModel(user_id=user_id, content=content, group_id=group_id, recipient_id=recipient_id)
         self.session.add(message)
         await self.session.commit()
         await self.session.refresh(message)
@@ -27,13 +29,17 @@ class ChatRepository:
         """Возвращает до `limit` последних сообщений канала (не удалённых), от старых к новым.
 
         group_id=None — общий канал. group_id=<id> — приватный канал этой группы.
+        Личные сообщения (recipient_id заполнен) сюда никогда не попадают —
+        у них тоже group_id=NULL, поэтому фильтруем ещё и по recipient_id.is_(None).
 
         before_id — курсор для подгрузки более старой истории («загрузить ещё»
         при скролле вверх), а не offset: список живой (новые сообщения
         постоянно добавляются), offset-пагинация в такой ситуации будет
         "плавать" и дублировать/пропускать сообщения.
         """
-        query = select(ChatMessageModel).where(ChatMessageModel.deleted_at.is_(None))
+        query = select(ChatMessageModel).where(
+            ChatMessageModel.deleted_at.is_(None), ChatMessageModel.recipient_id.is_(None)
+        )
         query = (
             query.where(ChatMessageModel.group_id == group_id)
             if group_id is not None
@@ -48,6 +54,45 @@ class ChatRepository:
         messages = list(result.scalars().all())
         messages.reverse()
         return messages
+
+    async def get_dm_history(
+        self, user_a: int, user_b: int, before_id: int | None = None, limit: int = 50
+    ) -> list[ChatMessageModel]:
+        """Переписка между двумя конкретными людьми, в обе стороны, от старых к новым."""
+        query = select(ChatMessageModel).where(
+            ChatMessageModel.deleted_at.is_(None),
+            or_(
+                and_(ChatMessageModel.user_id == user_a, ChatMessageModel.recipient_id == user_b),
+                and_(ChatMessageModel.user_id == user_b, ChatMessageModel.recipient_id == user_a),
+            ),
+        )
+        if before_id is not None:
+            query = query.where(ChatMessageModel.id < before_id)
+
+        result = await self.session.execute(
+            query.options(selectinload(ChatMessageModel.user)).order_by(ChatMessageModel.id.desc()).limit(limit)
+        )
+        messages = list(result.scalars().all())
+        messages.reverse()
+        return messages
+
+    async def get_dm_conversations(self, user_id: int) -> list[ChatMessageModel]:
+        """По одному (последнему) сообщению на каждого собеседника — основа
+        для списка диалогов. Дальнейшая группировка по собеседнику и сортировка
+        по свежести — в ChatService (тут это делать эффективным одним SQL-запросом
+        на всех диалектах сразу — с DISTINCT ON только на Postgres — усложнило бы
+        код ради небольшой БД с редкими личными сообщениями)."""
+        result = await self.session.execute(
+            select(ChatMessageModel)
+            .where(
+                ChatMessageModel.deleted_at.is_(None),
+                or_(ChatMessageModel.user_id == user_id, ChatMessageModel.recipient_id == user_id),
+                ChatMessageModel.recipient_id.is_not(None),
+            )
+            .options(selectinload(ChatMessageModel.user), selectinload(ChatMessageModel.recipient))
+            .order_by(ChatMessageModel.id.desc())
+        )
+        return list(result.scalars().all())
 
     async def get_by_id(self, message_id: int) -> ChatMessageModel | None:
         result = await self.session.execute(

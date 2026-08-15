@@ -3,6 +3,7 @@ from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
+from src.core.config import CHAT_BRIDGE_GROUP_ID
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 
@@ -14,8 +15,20 @@ class AuthMiddleware(BaseMiddleware):
         if not isinstance(event, Message):
             return await handler(event, data)
 
-        # Пропускаем /start и заявку
-        if event.text and (event.text.startswith("/start") or event.text == "📝 Подать заявку"):
+        # Сообщения из привязанной Telegram-группы (мост с общим чатом Spisoc,
+        # см. src/bot/handlers/chat_bridge.py) обрабатываются отдельным
+        # роутером с собственной, более мягкой логикой: незарегистрированных
+        # участников группы молча игнорируем, а не отвечаем "нет доступа"
+        # на каждое сообщение — иначе бот будет спамить всю группу.
+        if CHAT_BRIDGE_GROUP_ID and event.chat.id == CHAT_BRIDGE_GROUP_ID:
+            return await handler(event, data)
+
+        # Пропускаем /start, заявку и /chatid (нужен ДО того, как группа
+        # привязана и её участники зарегистрированы — иначе узнать chat_id
+        # новой группы для настройки моста будет нечем)
+        if event.text and (
+            event.text.startswith("/start") or event.text == "📝 Подать заявку" or event.text.startswith("/chatid")
+        ):
             return await handler(event, data)
 
         # Пропускаем состояния регистрации
