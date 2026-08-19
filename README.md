@@ -259,7 +259,7 @@ Pre-commit хуки настроены в `.pre-commit-config.yaml`.
 docker compose -f docker-compose.dev.yml up
 
 # Production
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ## API

@@ -24,7 +24,23 @@ services:
     restart: always
 
   prometheus:
+    # Не публикуем наружу — доступ только из Docker-сети (например, через
+    # grafana или ssh-туннель/nginx с basic-auth, если нужен внешний доступ).
+    ports: []
     restart: always
 
   grafana:
+    # Аналогично prometheus: наружу не торчит. Если нужен внешний доступ —
+    # заводить через reverse proxy с TLS и отдельной авторизацией, а не
+    # публиковать порт напрямую.
+    ports: []
     restart: always
+    environment:
+      # ВАЖНО: docker-compose.yml имеет фолбэк ${GRAFANA_ADMIN_PASSWORD:-admin}.
+      # Секции env_file внутри сервисов НЕ участвуют в подстановке ${...} самого
+      # compose-файла — её видит только shell-окружение или файл `.env`
+      # (или --env-file). Поэтому переопределяем здесь явно с `:?...`, чтобы
+      # прод не смог молча стартовать с паролем admin/admin: если переменная
+      # не резолвится (не задана в shell/.env/--env-file) — деплой упадёт
+      # с понятной ошибкой вместо тихого дефолта.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD обязателен в проде. Задай его в shell-окружении, файле .env рядом с docker-compose.yml, или передай через --env-file .env.prod}

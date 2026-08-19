@@ -6,7 +6,7 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,7 +21,9 @@ from src.admin.setup import setup_admin
 from src.bot.setup import init_bot_username
 from src.core.config import (
     BOT_TOKEN,
+    ENV,
     FRONTEND_URL,
+    METRICS_ALLOWED_IPS,
     REDIS_DB,
     REDIS_HOST,
     REDIS_PASSWORD,
@@ -199,12 +201,39 @@ Authorization: Bearer <access_token>
 
 
 # После создания app — автоматические метрики HTTP запросов
-Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
+
+def _verify_metrics_access(request: Request) -> None:
+    """Ограничивает доступ к /metrics по IP, если METRICS_ALLOWED_IPS задан.
+
+    Пустой список (дефолт) — ограничений нет, как и раньше, чтобы не сломать
+    dev/CI без явной настройки. В проде задать METRICS_ALLOWED_IPS — обычно
+    достаточно IP контейнера prometheus в docker-сети. Отдаём 404, а не 403,
+    чтобы не подтверждать сканерам сам факт существования эндпоинта.
+    """
+    if not METRICS_ALLOWED_IPS:
+        return
+    client_ip = request.client.host if request.client else None
+    if client_ip not in METRICS_ALLOWED_IPS:
+        raise HTTPException(status_code=404)
+
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", dependencies=[Depends(_verify_metrics_access)])
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# В проде разрешаем только реальный домен фронта — dev-адреса (localhost,
+# локальная сеть) в проде не нужны и не должны быть в allowlist, даже с
+# allow_credentials=True. В деве/тестах оставляем старый широкий список для
+# удобства локальной разработки.
+if ENV.lower() in ("prod", "production"):
+    if not FRONTEND_URL:
+        raise RuntimeError(
+            "ENV=production, но FRONTEND_URL не задан — CORS не сможет "
+            "разрешить ни один origin. Задай FRONTEND_URL в .env.prod."
+        )
+    _cors_origins = [FRONTEND_URL]
+else:
+    _cors_origins = [
         "http://localhost:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5173",
@@ -212,7 +241,11 @@ app.add_middleware(
         "http://192.168.0.147:5173",
         "http://192.168.0.147:5174",
         *([FRONTEND_URL] if FRONTEND_URL else []),
-    ],
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
