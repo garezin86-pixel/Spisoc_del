@@ -73,6 +73,7 @@ class AbstractTaskRepository(ABC):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
+        is_done: bool | None = None,
     ) -> list[SpisokModel]:
         raise NotImplementedError
 
@@ -146,6 +147,19 @@ class AbstractTaskRepository(ABC):
         self,
         *,
         user_id: int,
+        project_id: int | None = None,
+        only_mine: bool = False,
+        only_author: bool = False,
+    ) -> list[SpisokModel]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_calendar_tasks(
+        self,
+        *,
+        user_id: int,
+        date_from: datetime,
+        date_to: datetime,
         project_id: int | None = None,
         only_mine: bool = False,
         only_author: bool = False,

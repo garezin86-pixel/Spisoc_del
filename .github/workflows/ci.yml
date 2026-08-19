@@ -46,6 +46,7 @@ jobs:
       REDIS_PORT: 6379
       REDIS_DB: 0
       ADMIN_SECRET_KEY: test-admin-key
+      REFRESH_SECRET_KEY: test-refresh-key
       BOT_TOKEN: 0000000000:test-token
       SUPER_ADMIN_TG_ID: 0
 
@@ -80,10 +81,32 @@ jobs:
           name: coverage-report
           path: htmlcov/
 
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
   deploy:
     name: Deploy to server
     runs-on: ubuntu-latest
-    needs: lint-and-test
+    needs: [lint-and-test, frontend]
     if: false
     # if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 

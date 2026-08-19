@@ -2,13 +2,14 @@
 Unit-тесты сервисов — исправленные пароли (min_length=6).
 """
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
 
 from src.core.security import hash_password
-from src.models.task import SpisokModel
+from src.models.task import SpisokModel, TaskStatus
 from src.models.user import UserModel
 from src.repositories.mock_repositories import (
     MockGroupRepository,
@@ -101,6 +102,87 @@ class TestAuthService:
         assert exc.value.status_code == 400
 
 
+class FakeRedisStore:
+    """Лёгкий dict-backed фейк Redis — в отличие от AsyncMock, реально хранит
+    значения и умеет getdel атомарно (get+pop одной операцией), поэтому на
+    нём можно честно проверить, что повторный refresh с уже использованным
+    токеном действительно отклоняется, а не всегда "успешен" как с AsyncMock
+    (у которого getdel() без явной настройки вернул бы truthy MagicMock)."""
+
+    def __init__(self):
+        self._store: dict[str, str] = {}
+
+    async def set(self, key, value, ex=None):
+        self._store[key] = value
+        return True
+
+    async def get(self, key):
+        return self._store.get(key)
+
+    async def delete(self, key):
+        return 1 if self._store.pop(key, None) is not None else 0
+
+    async def getdel(self, key):
+        return self._store.pop(key, None)
+
+
+class TestAuthServiceRefreshRotation:
+    """Регресс: refresh() раньше делал redis.get() и redis.delete()
+    отдельными вызовами — между ними было окно гонки, в котором два
+    параллельных запроса с одним refresh-токеном оба проходили проверку
+    "токен существует" и оба получали новую пару токенов. Теперь используется
+    атомарный redis.getdel()."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_returns_new_tokens_for_valid_token(self):
+        user = make_user_model()
+        redis = FakeRedisStore()
+        service = AuthService(MockUserRepository(users=[user]), redis)
+
+        login_result = await service.login(UserLogin(username="user1", password="pass123"))
+        refreshed = await service.refresh(login_result.refresh_token)
+
+        assert refreshed.access_token is not None
+        assert refreshed.refresh_token is not None
+        assert refreshed.refresh_token != login_result.refresh_token
+
+    @pytest.mark.asyncio
+    async def test_refresh_rejects_already_used_token(self):
+        """Второй refresh тем же токеном (после того как он уже "сгорел") —
+        должен получить 401, а не новую пару токенов."""
+        user = make_user_model()
+        redis = FakeRedisStore()
+        service = AuthService(MockUserRepository(users=[user]), redis)
+
+        login_result = await service.login(UserLogin(username="user1", password="pass123"))
+        await service.refresh(login_result.refresh_token)  # первый refresh — сжигает токен
+
+        with pytest.raises(HTTPException) as exc:
+            await service.refresh(login_result.refresh_token)  # повтор тем же токеном
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_refresh_uses_atomic_getdel_not_get_then_delete(self):
+        """Замок на реализацию: consume-проверка должна идти через ОДИН
+        атомарный вызов getdel(), а не через раздельные get()+delete() —
+        именно раздельность и создавала гонку."""
+        user = make_user_model()
+        redis = AsyncMock()
+        redis.set = AsyncMock(return_value=True)
+        redis.getdel = AsyncMock(return_value=str(user.id))
+        service = AuthService(MockUserRepository(users=[user]), redis)
+
+        login_result = await service.login(UserLogin(username="user1", password="pass123"))
+        redis.get.reset_mock()
+        redis.delete.reset_mock()
+
+        await service.refresh(login_result.refresh_token)
+
+        redis.getdel.assert_called_once()
+        redis.get.assert_not_called()
+        redis.delete.assert_not_called()
+
+
 class TestUserService:
     @pytest.mark.asyncio
     async def test_create_user_as_admin_success(self):
@@ -184,6 +266,53 @@ class TestTaskService:
         """Pydantic отклоняет на уровне схемы."""
         with pytest.raises(Exception):
             SpisokAddSchema(title="T", user_id=1, group_id=2)  # type: ignore
+
+    @pytest.mark.asyncio
+    async def test_filter_tasks_forwards_is_done_to_repository(self):
+        """Регресс: filter_tasks() принимал is_done, но никогда не передавал
+        его в repo.get_filtered_tasks() — фильтрация по статусу done молча
+        не работала бы, если её кто-то использует (например, бот)."""
+        author = make_user_model(id=1)
+        done_task = make_task_model(id=1, title="Done", status=TaskStatus.done, author_id=1)
+        todo_task = make_task_model(id=2, title="Todo", status=TaskStatus.todo, author_id=1)
+        service = self._make_service(tasks=[done_task, todo_task], users=[author])
+
+        only_done = await service.filter_tasks(
+            author, filter_user_group=None, group_id=None, filter_type=None, is_done=True, limit=50, offset=0
+        )
+        only_not_done = await service.filter_tasks(
+            author, filter_user_group=None, group_id=None, filter_type=None, is_done=False, limit=50, offset=0
+        )
+        everything = await service.filter_tasks(
+            author, filter_user_group=None, group_id=None, filter_type=None, is_done=None, limit=50, offset=0
+        )
+
+        assert [t.id for t in only_done] == [1]
+        assert [t.id for t in only_not_done] == [2]
+        assert {t.id for t in everything} == {1, 2}
+
+    @pytest.mark.asyncio
+    async def test_get_calendar_tasks_filters_by_deadline_range_and_visibility(self):
+        """Регресс на баг с типизацией: AbstractTaskRepository не объявлял
+        get_calendar_tasks (несмотря на то, что TaskRepository его реализует),
+        из-за чего статические анализаторы (Pyright/Pylance) не видели метод
+        через self.task_repo: AbstractTaskRepository. Заодно проверяет саму
+        логику — диапазон дат и видимость по умолчанию (автор или исполнитель)."""
+        author = make_user_model(id=1)
+        other_user = make_user_model(id=2)
+        in_range_mine = make_task_model(id=1, title="In range, mine", author_id=1, deadline=datetime(2030, 6, 15))
+        in_range_other = make_task_model(
+            id=2, title="In range, foreign", author_id=2, user_id=2, deadline=datetime(2030, 6, 20)
+        )
+        out_of_range = make_task_model(id=3, title="Out of range", author_id=1, deadline=datetime(2030, 7, 15))
+        no_deadline = make_task_model(id=4, title="No deadline", author_id=1, deadline=None)
+        service = self._make_service(
+            tasks=[in_range_mine, in_range_other, out_of_range, no_deadline], users=[author, other_user]
+        )
+
+        result = await service.get_calendar_tasks(author, date_from=datetime(2030, 6, 1), date_to=datetime(2030, 7, 1))
+
+        assert [t.id for t in result] == [1]  # только "своя" задача в диапазоне
 
     @pytest.mark.asyncio
     async def test_delete_by_author(self):

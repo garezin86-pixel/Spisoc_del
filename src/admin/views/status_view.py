@@ -57,7 +57,7 @@ class StatusView(BaseView):
         except Exception as e:
             db_status = f"❌ Ошибка: {str(e)}"
 
-        bot_status = "❌ Не запущен"  # ← добавили обратно
+        bot_status = "❌ Не запущен"
         try:
             from src.bot.setup import get_bot
 

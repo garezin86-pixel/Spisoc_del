@@ -4,6 +4,7 @@ Mock-репозитории для тестов.
 """
 
 from collections import namedtuple
+from datetime import datetime
 
 from src.models.comment import CommentModel
 from src.models.group import GroupModel
@@ -197,8 +198,15 @@ class MockTaskRepository(AbstractTaskRepository):
         filter_user_group=None,
         group_id: int | None = None,
         filter_type=None,
+        is_done: bool | None = None,
     ) -> list[SpisokModel]:
-        return self._tasks[offset : offset + limit]
+        tasks = self._tasks
+        if is_done is not None:
+            if is_done:
+                tasks = [t for t in tasks if t.status == TaskStatus.done]
+            else:
+                tasks = [t for t in tasks if t.status != TaskStatus.done]
+        return tasks[offset : offset + limit]
 
     async def get_filtered_tasks_total(
         self,
@@ -283,6 +291,32 @@ class MockTaskRepository(AbstractTaskRepository):
             tasks = [t for t in tasks if t.author_id == user_id]
 
         return tasks
+
+    async def get_calendar_tasks(
+        self,
+        *,
+        user_id: int,
+        date_from: datetime,
+        date_to: datetime,
+        project_id: int | None = None,
+        only_mine: bool = False,
+        only_author: bool = False,
+    ) -> list[SpisokModel]:
+        tasks = [t for t in self._tasks if t.deadline is not None and date_from <= t.deadline < date_to]
+
+        if project_id is not None:
+            tasks = [t for t in tasks if t.project_id == project_id]
+        elif only_mine:
+            tasks = [t for t in tasks if t.user_id == user_id]
+        elif only_author:
+            tasks = [t for t in tasks if t.author_id == user_id]
+        else:
+            tasks = [t for t in tasks if t.author_id == user_id or t.user_id == user_id]
+
+        # deadline точно не None на этом этапе (отфильтровали строкой выше),
+        # но Pyright не протаскивает это сужение типа в отдельную lambda —
+        # `or datetime.min` только для типизации, эта ветка недостижима.
+        return sorted(tasks, key=lambda t: t.deadline or datetime.min)
 
     # === Экспорт и аналитика ===
     async def export_tasks(

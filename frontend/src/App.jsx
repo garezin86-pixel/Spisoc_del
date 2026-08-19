@@ -128,6 +128,28 @@ const ROLE_COLORS = {
     user: { color: "var(--accent-light)", bg: "rgba(124,106,240,0.12)" },
 };
 
+// Горизонтальные ряды вкладок (каналы чата, ЛС-диалоги и т.п.) раньше можно
+// было прокручивать только стрелками/drag — обычное колесо мыши скроллило
+// страницу насквозь, а не сам ряд. Хук вешает нативный (не-passive) wheel
+// listener и переводит вертикальный скролл колеса в горизонтальный внутри
+// элемента; preventDefault нужен, чтобы страница за рядом не скроллилась
+// одновременно — через React onWheel (passive по умолчанию) это не сделать.
+function useHorizontalWheelScroll() {
+    const ref = useRef(null);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        function onWheel(e) {
+            if (e.deltaY === 0) return;
+            el.scrollLeft += e.deltaY;
+            e.preventDefault();
+        }
+        el.addEventListener("wheel", onWheel, { passive: false });
+        return () => el.removeEventListener("wheel", onWheel);
+    }, []);
+    return ref;
+}
+
 // ─── Icons ────────────────────────────────────────────────
 function Icon({ d, size = 14 }) {
     return (
@@ -533,7 +555,14 @@ function UserProfilePage({ userId, token, currentUserId, onClose, onOpenTask }) 
 // ─── ChatPanel — переиспользуемое тело чата (список сообщений + инпут).
 // Используется внутри всплывающего окна ChatBubble. Каналы: "Общий чат"
 // (group_id=null) и по одному на каждую группу, в которой состоит юзер.
-function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveChannel, wsEvent, onClose }) {
+// Плюс личные сообщения (ЛС): activeDm !== null переключает панель в режим
+// переписки один-на-один — эндпоинты /chat/dm/... вместо /chat/messages,
+// и activeDm имеет приоритет над activeChannel (см. isDm ниже).
+function ChatPanel({
+    token, currentUserId, channels, activeChannel, setActiveChannel,
+    dmConversations, activeDm, setActiveDm, onNewDmConversation, onCloseDm,
+    wsEvent, onClose,
+}) {
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
@@ -541,16 +570,29 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
     const [draft, setDraft] = useState("");
     const [sending, setSending] = useState(false);
     const [error, setError] = useState(null);
+    const [dmPickerOpen, setDmPickerOpen] = useState(false);
+    const [dmSearch, setDmSearch] = useState("");
+    const [pickerUsers, setPickerUsers] = useState([]);
+    const [pickerLoading, setPickerLoading] = useState(false);
     const listRef = useRef(null);
     const shouldStickToBottom = useRef(true);
+    const channelsRowRef = useHorizontalWheelScroll();
+    const dmRowRef = useHorizontalWheelScroll();
+
+    const isDm = activeDm != null;
 
     const load = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
             const params = new URLSearchParams({ limit: "50" });
-            if (activeChannel != null) params.set("group_id", activeChannel);
-            const data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+            let data;
+            if (isDm) {
+                data = await apiRequest({ path: `/chat/dm/${activeDm}?${params.toString()}`, token });
+            } else {
+                if (activeChannel != null) params.set("group_id", activeChannel);
+                data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+            }
             const items = Array.isArray(data) ? data : [];
             setMessages(items);
             setHasMore(items.length === 50);
@@ -560,7 +602,7 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
         } finally {
             setLoading(false);
         }
-    }, [token, activeChannel]);
+    }, [token, activeChannel, activeDm, isDm]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -583,8 +625,13 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
             const el = listRef.current;
             const prevHeight = el?.scrollHeight || 0;
             const params = new URLSearchParams({ limit: "50", before_id: String(messages[0].id) });
-            if (activeChannel != null) params.set("group_id", activeChannel);
-            const data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+            let data;
+            if (isDm) {
+                data = await apiRequest({ path: `/chat/dm/${activeDm}?${params.toString()}`, token });
+            } else {
+                if (activeChannel != null) params.set("group_id", activeChannel);
+                data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+            }
             const older = Array.isArray(data) ? data : [];
             setHasMore(older.length === 50);
             setMessages(prev => [...older, ...prev]);
@@ -598,30 +645,44 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
         }
     }
 
-    // Живые обновления: событие приходит для ЛЮБОГО канала — фильтруем по
-    // текущему активному, чтобы сообщения из чужого канала сюда не попадали.
+    // Живые обновления: событие приходит для ЛЮБОГО канала/диалога —
+    // фильтруем по текущему открытому. ЛС отличаем по recipient_id !== null
+    // (у сообщений общего/группового канала recipient_id всегда null).
     useEffect(() => {
         if (!wsEvent) return;
         const { event, data } = wsEvent;
-        const eventChannel = data?.group_id ?? null;
-        if (eventChannel !== (activeChannel ?? null)) return;
+        if (isDm) {
+            const isThisDm = data?.recipient_id != null && (
+                (data.user_id === activeDm && data.recipient_id === currentUserId) ||
+                (data.user_id === currentUserId && data.recipient_id === activeDm)
+            );
+            if (!isThisDm) return;
+        } else {
+            const isGeneralMatch = (data?.recipient_id ?? null) == null && (data?.group_id ?? null) === (activeChannel ?? null);
+            if (!isGeneralMatch) return;
+        }
         if (event === "chat_message") {
             setMessages(prev => (prev.some(m => m.id === data.id) ? prev : [...prev, data]));
         } else if (event === "chat_message_deleted") {
             setMessages(prev => prev.filter(m => m.id !== data.id));
         }
-    }, [wsEvent, activeChannel]);
+    }, [wsEvent, activeChannel, activeDm, isDm, currentUserId]);
 
     // Подстраховка на случай проблем с доставкой WS (например, если сокет
     // незаметно отвалился): пока попап открыт, раз в 5 сек тихо подтягиваем
-    // самые свежие сообщения канала и домешиваем недостающие (дедуп по id,
-    // как и в WS-обработчике выше) — без сброса скролла и без "моргания".
+    // самые свежие сообщения канала/диалога и домешиваем недостающие (дедуп
+    // по id, как и в WS-обработчике выше) — без сброса скролла и без "моргания".
     useEffect(() => {
         const interval = setInterval(async () => {
             try {
                 const params = new URLSearchParams({ limit: "50" });
-                if (activeChannel != null) params.set("group_id", activeChannel);
-                const data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+                let data;
+                if (isDm) {
+                    data = await apiRequest({ path: `/chat/dm/${activeDm}?${params.toString()}`, token });
+                } else {
+                    if (activeChannel != null) params.set("group_id", activeChannel);
+                    data = await apiRequest({ path: `/chat/messages?${params.toString()}`, token });
+                }
                 if (!Array.isArray(data) || data.length === 0) return;
                 setMessages(prev => {
                     const known = new Set(prev.map(m => m.id));
@@ -634,7 +695,7 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
             }
         }, 5000);
         return () => clearInterval(interval);
-    }, [token, activeChannel]);
+    }, [token, activeChannel, activeDm, isDm]);
 
     async function send() {
         const content = draft.trim();
@@ -642,10 +703,9 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
         setSending(true);
         setDraft("");
         try {
-            const saved = await apiRequest({
-                path: "/chat/messages", token, method: "POST",
-                body: { content, group_id: activeChannel },
-            });
+            const saved = isDm
+                ? await apiRequest({ path: `/chat/dm/${activeDm}`, token, method: "POST", body: { content } })
+                : await apiRequest({ path: "/chat/messages", token, method: "POST", body: { content, group_id: activeChannel } });
             shouldStickToBottom.current = true;
             // Добавляем сразу из ответа POST, не дожидаясь WS — надёжнее, чем
             // полагаться только на broadcast (задержки/потеря сети и т.п.).
@@ -671,31 +731,136 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
         }
     }
 
+    useEffect(() => {
+        if (!dmPickerOpen) return;
+        setPickerLoading(true);
+        // ⚠️ size ограничен le=100 на бэкенде (см. PaginationParams) — запрос
+        // с size=200 падал с 422, catch тихо оставлял pickerUsers пустым,
+        // из-за чего поиск всегда показывал "никого не нашли".
+        apiRequest({ path: "/users?page=1&size=100", token })
+            .then(data => setPickerUsers(extractItems(data)))
+            .catch(() => setPickerUsers([]))
+            .finally(() => setPickerLoading(false));
+    }, [dmPickerOpen, token]);
+
+    function pickDmUser(u) {
+        onNewDmConversation?.({ user_id: u.id, username: u.username, last_message: "", last_message_at: null });
+        setActiveDm(u.id);
+        setDmPickerOpen(false);
+        setDmSearch("");
+    }
+
+    const filteredPickerUsers = pickerUsers.filter(u =>
+        u.id !== currentUserId && (!dmSearch || (u.username || "").toLowerCase().includes(dmSearch.toLowerCase()))
+    );
+
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", gap: 4, overflowX: "auto", flex: 1, minWidth: 0 }}>
-                    {channels.map(c => (
+            <div style={{ borderBottom: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 4px" }}>
+                    <div ref={channelsRowRef} style={{ display: "flex", gap: 4, overflowX: "auto", flex: 1, minWidth: 0 }}>
+                        {channels.map(c => (
+                            <button
+                                key={c.group_id ?? "general"}
+                                className={`tab-btn${!isDm && (activeChannel ?? null) === (c.group_id ?? null) ? " active" : ""}`}
+                                style={{ fontSize: 12, padding: "4px 10px", flexShrink: 0, whiteSpace: "nowrap" }}
+                                onClick={() => { setActiveDm(null); setActiveChannel(c.group_id); }}
+                            >
+                                {c.group_id == null ? "💬" : "👥"} {c.name}
+                            </button>
+                        ))}
+                    </div>
+                    {onClose && (
+                        <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ flexShrink: 0 }}>✕</button>
+                    )}
+                </div>
+
+                <div ref={dmRowRef} style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, padding: "0 12px 8px", overflowX: "auto" }}>
+                    {dmConversations.map(c => (
                         <button
-                            key={c.group_id ?? "general"}
-                            className={`tab-btn${(activeChannel ?? null) === (c.group_id ?? null) ? " active" : ""}`}
-                            style={{ fontSize: 12, padding: "4px 10px", flexShrink: 0, whiteSpace: "nowrap" }}
-                            onClick={() => setActiveChannel(c.group_id)}
+                            key={c.user_id}
+                            className={`tab-btn${isDm && activeDm === c.user_id ? " active" : ""}`}
+                            style={{
+                                fontSize: 12, padding: "4px 6px 4px 10px", flexShrink: 0,
+                                whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6,
+                            }}
+                            onClick={() => setActiveDm(c.user_id)}
                         >
-                            {c.group_id == null ? "💬" : "👥"} {c.name}
+                            <span>👤 {c.username}</span>
+                            {onCloseDm && (
+                                <span
+                                    role="button"
+                                    title="Закрыть диалог"
+                                    onClick={(e) => { e.stopPropagation(); onCloseDm(c.user_id); }}
+                                    style={{
+                                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                        width: 16, height: 16, borderRadius: "50%",
+                                        opacity: 0.6, fontSize: 11, lineHeight: 1,
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; e.currentTarget.style.background = "rgba(255,255,255,0.15)"; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.6; e.currentTarget.style.background = "transparent"; }}
+                                >
+                                    ✕
+                                </span>
+                            )}
                         </button>
                     ))}
+                    {/* <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 12, flexShrink: 0, whiteSpace: "nowrap" }}
+                        onClick={() => setDmPickerOpen(o => !o)}
+                    >
+                        + Личное
+                    </button> */}
+
+                    {dmPickerOpen && (
+                        <div style={{
+                            position: "absolute", top: "100%", left: 12, zIndex: 20,
+                            width: 220, maxHeight: 220, overflowY: "auto",
+                            background: "var(--surface)", border: "1px solid var(--border)",
+                            borderRadius: 8, padding: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                        }}>
+                            {/* <input
+                                className="input input-sm"
+                                placeholder="Найти пользователя…"
+                                value={dmSearch}
+                                onChange={e => setDmSearch(e.target.value)}
+                                autoFocus
+                                style={{
+                                    marginBottom: 6, width: "100%",
+                                    background: "#2a3040",
+                                    border: "1px solid rgba(255,255,255,0.18)",
+                                }}
+                            /> */}
+                            {pickerLoading ? (
+                                <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px 2px" }}>Загрузка…</div>
+                            ) : filteredPickerUsers.length === 0 ? (
+                                <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px 2px" }}>Никого не найдено</div>
+                            ) : (
+                                filteredPickerUsers.map(u => (
+                                    <div
+                                        key={u.id}
+                                        onClick={() => pickDmUser(u)}
+                                        style={{ padding: "6px 8px", cursor: "pointer", fontSize: 13, borderRadius: 6 }}
+                                        onMouseEnter={e => { e.currentTarget.style.background = "var(--surface2)"; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                                    >
+                                        {u.username}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
                 </div>
-                {onClose && (
-                    <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ flexShrink: 0 }}>✕</button>
-                )}
             </div>
 
             <div ref={listRef} onScroll={onScroll} style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px" }}>
                 {loading ? (
                     <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
                 ) : messages.length === 0 ? (
-                    <div className="empty-state"><div className="empty-icon">💬</div>Пока никто ничего не написал</div>
+                    <div className="empty-state"><div className="empty-icon">{isDm ? "✉️" : "💬"}</div>
+                        {isDm ? "Пока нет сообщений — напишите первым" : "Пока никто ничего не написал"}
+                    </div>
                 ) : (
                     <>
                         {hasMore && (
@@ -750,7 +915,7 @@ function ChatPanel({ token, currentUserId, channels, activeChannel, setActiveCha
             <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
                 <input
                     className="input"
-                    placeholder="Написать сообщение…"
+                    placeholder={isDm ? "Написать личное сообщение…" : "Написать сообщение…"}
                     value={draft}
                     onChange={e => setDraft(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
@@ -778,6 +943,8 @@ function ChatBubble({ token, currentUserId, wsEvent }) {
     });
     const [channels, setChannels] = useState([{ group_id: null, name: "Общий чат" }]);
     const [activeChannel, setActiveChannel] = useState(null);
+    const [dmConversations, setDmConversations] = useState([]);
+    const [activeDm, setActiveDm] = useState(null);
     const [unread, setUnread] = useState(0);
 
     const draggingRef = useRef(false);
@@ -788,6 +955,24 @@ function ChatBubble({ token, currentUserId, wsEvent }) {
     openRef.current = open;
     const activeChannelRef = useRef(activeChannel);
     activeChannelRef.current = activeChannel;
+    const activeDmRef = useRef(activeDm);
+    activeDmRef.current = activeDm;
+
+    // window.openDmWith — глобальный хук (по аналогии с window.openUserProfile),
+    // чтобы открыть личный чат с конкретным пользователем из ЛЮБОГО места
+    // приложения (например, кнопка "Написать" на странице "Команда"), не
+    // прокидывая ChatBubble-состояние через пропсы во все компоненты.
+    useEffect(() => {
+        window.openDmWith = (userId, username) => {
+            setDmConversations(prev =>
+                prev.some(c => c.user_id === userId) ? prev : [{ user_id: userId, username, last_message: "", last_message_at: null }, ...prev]
+            );
+            setActiveDm(userId);
+            setOpen(true);
+            setUnread(0);
+        };
+        return () => { delete window.openDmWith; };
+    }, []);
 
     useEffect(() => {
         apiRequest({ path: "/chat/channels", token }).then(data => {
@@ -796,14 +981,46 @@ function ChatBubble({ token, currentUserId, wsEvent }) {
     }, [token]);
 
     useEffect(() => {
+        apiRequest({ path: "/chat/dm/conversations", token }).then(data => {
+            if (Array.isArray(data)) setDmConversations(data);
+        }).catch(() => { /* тихо игнорируем — список диалогов просто будет пуст */ });
+    }, [token]);
+
+    useEffect(() => {
         try { localStorage.setItem("spisoc_chat_bubble_pos", JSON.stringify(pos)); } catch { /* ignore */ }
     }, [pos]);
 
-    // Бейдж непрочитанных — считаем только пока попап закрыт и только чужие сообщения.
+    // Бейдж непрочитанных для общего/группового канала — только пока попап
+    // закрыт и только чужие сообщения. ЛС сюда не должны попадать (иначе
+    // задвоятся со счётчиком ниже) — отличаем по recipient_id !== null.
     useEffect(() => {
         if (!wsEvent || wsEvent.event !== "chat_message") return;
+        if (wsEvent.data?.recipient_id != null) return;
         if (wsEvent.data?.user_id === currentUserId) return;
         if (openRef.current && (wsEvent.data?.group_id ?? null) === (activeChannelRef.current ?? null)) return;
+        setUnread(u => u + 1);
+    }, [wsEvent, currentUserId]);
+
+    // ЛС: обновляем список диалогов (новый диалог/поднимаем существующий
+    // наверх) и считаем непрочитанные отдельно от общего канала.
+    useEffect(() => {
+        if (!wsEvent || wsEvent.event !== "chat_message") return;
+        const { data } = wsEvent;
+        if (data?.recipient_id == null) return;
+        if (data.user_id !== currentUserId && data.recipient_id !== currentUserId) return;
+        const partnerId = data.user_id === currentUserId ? data.recipient_id : data.user_id;
+        setDmConversations(prev => {
+            const existing = prev.find(c => c.user_id === partnerId);
+            const updated = {
+                user_id: partnerId,
+                username: existing?.username ?? (data.user_id === currentUserId ? existing?.username : data.username) ?? `#${partnerId}`,
+                last_message: data.content,
+                last_message_at: data.created_at,
+            };
+            return [updated, ...prev.filter(c => c.user_id !== partnerId)];
+        });
+        if (data.user_id === currentUserId) return; // своё же сообщение — не считаем непрочитанным
+        if (openRef.current && activeDmRef.current === partnerId) return;
         setUnread(u => u + 1);
     }, [wsEvent, currentUserId]);
 
@@ -868,6 +1085,16 @@ function ChatBubble({ token, currentUserId, wsEvent }) {
                         channels={channels}
                         activeChannel={activeChannel}
                         setActiveChannel={setActiveChannel}
+                        dmConversations={dmConversations}
+                        activeDm={activeDm}
+                        setActiveDm={setActiveDm}
+                        onNewDmConversation={(conv) => setDmConversations(prev =>
+                            prev.some(c => c.user_id === conv.user_id) ? prev : [conv, ...prev]
+                        )}
+                        onCloseDm={(userId) => {
+                            setDmConversations(prev => prev.filter(c => c.user_id !== userId));
+                            setActiveDm(prev => (prev === userId ? null : prev));
+                        }}
                         wsEvent={wsEvent}
                         onClose={() => setOpen(false)}
                     />
@@ -4416,7 +4643,7 @@ function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
 // ─── Groups Tab ───────────────────────────────────────────
 // ─── TeamTab — справочник всей команды (плоский список, в отличие от
 // "Группы", где пользователи сгруппированы и есть управление составом) ────
-function TeamTab({ token }) {
+function TeamTab({ token, currentUserId }) {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -4506,6 +4733,16 @@ function TeamTab({ token }) {
                                         )}
                                     </div>
                                 </div>
+                                {u.id !== currentUserId && (
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        title="Написать личное сообщение"
+                                        onClick={(e) => { e.stopPropagation(); window.openDmWith?.(u.id, u.username); }}
+                                        style={{ flexShrink: 0, padding: "4px 8px" }}
+                                    >
+                                        ✉️
+                                    </button>
+                                )}
                             </div>
                         );
                     })}
@@ -7266,7 +7503,7 @@ function App() {
                     {/* ── TEAM TAB ── */}
                     {tab === "team" && (
                         <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
-                            <TeamTab token={token} />
+                            <TeamTab token={token} currentUserId={currentUserId} />
                         </div>
                     )}
                     {tab === "templates" && (

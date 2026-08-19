@@ -70,7 +70,7 @@ def get_task_service(session: SessionDep) -> TaskService:
         task_repo=TaskRepository(session),
         user_repo=UserRepository(session),
         group_repo=GroupRepository(session),
-        tag_repo=TagRepository(session),  # ← новая строка
+        tag_repo=TagRepository(session),
         session=session,
     )
 

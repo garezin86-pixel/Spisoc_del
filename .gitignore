@@ -13,6 +13,13 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+
+# Тесты / линт
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # База данных
 *.db
@@ -25,6 +32,11 @@ __pycache__/
 # Логи
 *.log
 
+# Прочий мусор из Windows / IDE
+*.lnk
+Thumbs.db
+.DS_Store
+
 # Alembic (если не нужно коммитить кэш)
 alembic/versions/__pycache__/
 
@@ -34,3 +46,7 @@ plan.md
 
 # Папка с файлами
 storage/
+
+# Фронтенд (дублируется в frontend/.gitignore, но на всякий случай)
+frontend/node_modules/
+frontend/dist/

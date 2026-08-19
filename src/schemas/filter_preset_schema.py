@@ -17,7 +17,7 @@ class FilterPresetCreate(BaseModel):
     tag_id: Optional[int] = Field(default=None, ge=1)
     project_id: Optional[int] = Field(default=None, ge=1)
     filter_user_group: Optional[FilterUserGroup] = None
-    filter_type: Optional[TaskFilter] = None  # ← новое поле
+    filter_type: Optional[TaskFilter] = None
 
 
 class FilterPresetSchema(BaseModel):
@@ -30,7 +30,7 @@ class FilterPresetSchema(BaseModel):
     tag_id: Optional[int] = None
     project_id: Optional[int] = None
     filter_user_group: Optional[FilterUserGroup] = None
-    filter_type: Optional[TaskFilter] = None  # ← новое поле
+    filter_type: Optional[TaskFilter] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
