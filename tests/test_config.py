@@ -41,6 +41,8 @@ class TestProductionRequiresSecrets:
             SECRET_KEY="real-secret",
             ADMIN_SECRET_KEY="real-admin",
             REFRESH_SECRET_KEY="real-refresh",
+            DATABASE_URL="postgresql+asyncpg://user:pass@postgres:5432/db",
+            REDIS_HOST="redis",
         )
         assert s.env == "production"
 
@@ -58,6 +60,58 @@ class TestProductionRequiresSecrets:
             monkeypatch.delenv(var, raising=False)
         with pytest.raises(Exception):
             config.Settings(_env_file=None)
+
+
+class TestProductionRequiresRealHosts:
+    """Регресс: DATABASE_URL/REDIS_HOST дефолтились на localhost, и в
+    отличие от секретов это не проверялось в проде вообще. Забытый
+    .env.prod означал не громкую ошибку, а попытку приложения внутри
+    контейнера подключиться к localhost (то есть к самому себе)."""
+
+    def test_production_with_localhost_database_url_raises(self):
+        with pytest.raises(Exception):
+            config.Settings(
+                _env_file=None,
+                ENV="production",
+                SECRET_KEY="a",
+                ADMIN_SECRET_KEY="b",
+                REFRESH_SECRET_KEY="c",
+                REDIS_HOST="redis",
+                # DATABASE_URL не задан -> дефолтный localhost
+            )
+
+    def test_production_with_localhost_redis_host_raises(self):
+        with pytest.raises(Exception):
+            config.Settings(
+                _env_file=None,
+                ENV="production",
+                SECRET_KEY="a",
+                ADMIN_SECRET_KEY="b",
+                REFRESH_SECRET_KEY="c",
+                DATABASE_URL="postgresql+asyncpg://user:pass@postgres:5432/db",
+                # REDIS_HOST не задан -> дефолтный localhost
+            )
+
+    def test_production_with_real_hosts_succeeds(self):
+        s = config.Settings(
+            _env_file=None,
+            ENV="production",
+            SECRET_KEY="a",
+            ADMIN_SECRET_KEY="b",
+            REFRESH_SECRET_KEY="c",
+            DATABASE_URL="postgresql+asyncpg://user:pass@postgres:5432/db",
+            REDIS_HOST="redis",
+        )
+        assert "localhost" not in s.database_url
+        assert s.redis_host == "redis"
+
+    def test_dev_env_allows_localhost_hosts(self, monkeypatch):
+        """В деве localhost — это нормальный, ожидаемый адрес."""
+        for var in ("DATABASE_URL", "REDIS_HOST", "ENV"):
+            monkeypatch.delenv(var, raising=False)
+        s = config.Settings(_env_file=None, ENV="dev")
+        assert "localhost" in s.database_url
+        assert s.redis_host == "localhost"
 
 
 class TestAdminAllowedIpsType:

@@ -50,6 +50,18 @@ class Settings(BaseSettings):
             return []
         return [ip.strip() for ip in self.admin_allowed_ips_raw.split(",") if ip.strip()]
 
+    # Тот же паттерн, что и admin_allowed_ips: /metrics отдаёт Prometheus по
+    # умолчанию всем подряд. Пустое значение = не ограничиваем (как раньше,
+    # чтобы не сломать dev/CI без явной настройки). В проде — задать список
+    # (обычно достаточно IP контейнера prometheus в docker-сети).
+    metrics_allowed_ips_raw: str = Field(default="", alias="METRICS_ALLOWED_IPS")
+
+    @property
+    def metrics_allowed_ips(self) -> list[str]:
+        if not self.metrics_allowed_ips_raw:
+            return []
+        return [ip.strip() for ip in self.metrics_allowed_ips_raw.split(",") if ip.strip()]
+
     # Telegram
     bot_token: str = Field(default="", alias="BOT_TOKEN")
     # ID Telegram-группы, привязанной к общему каналу командного чата (см.
@@ -114,6 +126,26 @@ class Settings(BaseSettings):
                     f"{', '.join(missing)}. Создай .env.prod (см. .env.prod.example) "
                     "или задай их через переменные окружения перед запуском."
                 )
+
+            # Секреты — не единственное, что может тихо остаться дев-дефолтом.
+            # DATABASE_URL/REDIS_HOST по умолчанию смотрят на localhost — если
+            # забыли задать их в .env.prod, контейнер не упадёт с понятной
+            # ошибкой, а попробует (и не сможет) подключиться к localhost
+            # внутри себя. Ловим это явно, как и секреты выше.
+            localhost_like = [
+                name
+                for name, value in (
+                    ("DATABASE_URL", self.database_url),
+                    ("REDIS_HOST", self.redis_host),
+                )
+                if "localhost" in value or "127.0.0.1" in value
+            ]
+            if localhost_like:
+                raise ValueError(
+                    "ENV=production, но эти переменные указывают на localhost/"
+                    f"127.0.0.1 (похоже на дев-дефолт): {', '.join(localhost_like)}. "
+                    "Задай реальные адреса postgres/redis в .env.prod."
+                )
         return self
 
 
@@ -131,6 +163,7 @@ REDIS_DB = settings.redis_db
 REDIS_PASSWORD = settings.redis_password
 ADMIN_SECRET_KEY = settings.admin_secret_key
 ADMIN_ALLOWED_IPS = settings.admin_allowed_ips
+METRICS_ALLOWED_IPS = settings.metrics_allowed_ips
 BOT_TOKEN = settings.bot_token
 CHAT_BRIDGE_GROUP_ID = settings.chat_bridge_group_id
 GROQ_API_KEY = settings.groq_api_key
