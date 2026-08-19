@@ -74,6 +74,7 @@ def make_message(
     tg_id: int = 123456789,
     username: str = "tg_user",
     reply_markup=None,
+    chat_id: int = 999999999,
     as_aiogram_type: bool = False,
 ):
     """
@@ -81,6 +82,13 @@ def make_message(
 
     as_aiogram_type=True — использует create_autospec(Message) чтобы
     isinstance(msg, Message) возвращал True (нужно для middleware).
+
+    chat_id — id чата сообщения (AuthMiddleware проверяет event.chat.id для
+    моста с группой, см. src/bot/middlewares/auth.py). Дефолт — просто
+    заведомо непохожее на реальный Telegram group id число; тесты моста
+    всё равно должны явно патчить CHAT_BRIDGE_GROUP_ID, а не полагаться на
+    то, что chat_id с ним случайно не совпадёт (иначе поведение тестов
+    будет зависеть от значения в локальном .env, как и было до этого фикса).
     """
     if as_aiogram_type:
         from unittest.mock import create_autospec as _cas
@@ -93,6 +101,8 @@ def make_message(
         msg.from_user.id = tg_id
         msg.from_user.username = username
         msg.answer = AsyncMock()
+        msg.chat = MagicMock()
+        msg.chat.id = chat_id
     else:
         msg = AsyncMock()
         msg.text = text
@@ -100,6 +110,8 @@ def make_message(
         msg.from_user.id = tg_id
         msg.from_user.username = username
         msg.answer = AsyncMock()
+        msg.chat = MagicMock()
+        msg.chat.id = chat_id
     return msg
 
 
@@ -163,7 +175,8 @@ class TestAuthMiddleware:
         message = make_message(text="/start", as_aiogram_type=True)
         data = {"state": MagicMock()}
 
-        result = await middleware(handler, message, data)
+        with patch("src.bot.middlewares.auth.CHAT_BRIDGE_GROUP_ID", 0):
+            result = await middleware(handler, message, data)
 
         assert result == "ok"
         handler.assert_called_once_with(message, data)
@@ -208,6 +221,7 @@ class TestAuthMiddleware:
         with (
             patch("src.bot.middlewares.auth.UnitOfWork", return_value=uow),
             patch("src.bot.middlewares.auth.get_session_maker"),
+            patch("src.bot.middlewares.auth.CHAT_BRIDGE_GROUP_ID", 0),
         ):
             await middleware(handler, message, data)
 
@@ -234,6 +248,7 @@ class TestAuthMiddleware:
         with (
             patch("src.bot.middlewares.auth.UnitOfWork", return_value=uow),
             patch("src.bot.middlewares.auth.get_session_maker"),
+            patch("src.bot.middlewares.auth.CHAT_BRIDGE_GROUP_ID", 0),
         ):
             await middleware(handler, message, data)
 
@@ -260,10 +275,54 @@ class TestAuthMiddleware:
         with (
             patch("src.bot.middlewares.auth.UnitOfWork", return_value=uow),
             patch("src.bot.middlewares.auth.get_session_maker"),
+            patch("src.bot.middlewares.auth.CHAT_BRIDGE_GROUP_ID", 0),
         ):
             await middleware(handler, message, data)
 
         handler.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_bridge_group_message_skips_auth_check(self, middleware):
+        """Сообщение из привязанной Telegram-группы (мост) должно пройти к
+        хендлеру напрямую, минуя проверку регистрации/блокировки — даже для
+        незарегистрированного пользователя. Раньше эта ветка вообще не была
+        покрыта тестами."""
+        bridge_group_id = -100123456789
+        handler = AsyncMock(return_value="ok")
+        message = make_message(text="привет всем", chat_id=bridge_group_id, as_aiogram_type=True)
+        data = {"state": MagicMock()}
+
+        with patch("src.bot.middlewares.auth.CHAT_BRIDGE_GROUP_ID", bridge_group_id):
+            result = await middleware(handler, message, data)
+
+        assert result == "ok"
+        handler.assert_called_once_with(message, data)
+
+    @pytest.mark.asyncio
+    async def test_non_bridge_group_message_is_still_checked(self, middleware):
+        """Сообщение из ДРУГОЙ группы (не привязанной как мост) не должно
+        обходить проверку регистрации — иначе любая группа стала бы дырой."""
+        from unittest.mock import create_autospec
+
+        from aiogram.fsm.context import FSMContext
+
+        handler = AsyncMock()
+        message = make_message(text="/my", chat_id=-100999999999, as_aiogram_type=True)
+        fsm = create_autospec(FSMContext, instance=True)
+        fsm.get_state = AsyncMock(return_value=None)
+        data = {"state": fsm}
+
+        uow = make_uow(user=None)
+
+        with (
+            patch("src.bot.middlewares.auth.UnitOfWork", return_value=uow),
+            patch("src.bot.middlewares.auth.get_session_maker"),
+            patch("src.bot.middlewares.auth.CHAT_BRIDGE_GROUP_ID", -100123456789),  # другой id, не совпадает
+        ):
+            await middleware(handler, message, data)
+
+        handler.assert_not_called()
+        message.answer.assert_called_once()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

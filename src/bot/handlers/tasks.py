@@ -1003,10 +1003,10 @@ async def add_task_comment(message: Message, state: FSMContext):
         await state.set_state(EditTask.edit_type)
         data = await state.get_data()
         user_role = data.get("user_role", "user")
-        kb = task_edit_manager_keyboard() if user_role in ("admin", "manager") else task_edit_keyboard()  # ← добавить
+        kb = task_edit_manager_keyboard() if user_role in ("admin", "manager") else task_edit_keyboard()
         await message.answer(
             "❌ Отменено. Возвращаемся к редактированию задачи.",
-            reply_markup=kb,  # ← было task_edit_keyboard()
+            reply_markup=kb,
         )
         return
 

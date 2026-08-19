@@ -1,6 +1,6 @@
 import os
 
-from pydantic import Field, field_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +10,12 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    # Окружение. Дефолт "production" — намеренно fail-safe: та же логика уже
+    # используется в src/core/sentry.py и src/core/logging.py (os.getenv("ENV",
+    # "production")). Если забыл выставить ENV — считаем что это прод и требуем
+    # все критичные секреты, а не тихо стартуем на дев-дефолтах.
+    env: str = Field(default="production", alias="ENV")
 
     # JWT
     secret_key: str = Field(default="", alias="SECRET_KEY")
@@ -30,18 +36,19 @@ class Settings(BaseSettings):
 
     # SQLAdmin
     admin_secret_key: str = Field(default="", alias="ADMIN_SECRET_KEY")
-    # admin_allowed_ips: list[str] = Field(
-    #     default_factory=list, alias="ADMIN_ALLOWED_IPS"
-    # )
-    # Замени поле и валидатор на это:
-    admin_allowed_ips: str = Field(default="", alias="ADMIN_ALLOWED_IPS")
 
-    @field_validator("admin_allowed_ips", mode="after")
-    @classmethod
-    def parse_allowed_ips(cls, v: str) -> list[str]:  # type: ignore[override]
-        if not v:
+    # Хранится как обычная строка ("1.2.3.4,5.6.7.8"), а не list[str] —
+    # pydantic-settings трактует list-типы как "сложные" и пытается сначала
+    # распарсить переменную окружения как JSON, что падает на обычной
+    # comma-separated строке ещё до вызова любых validator'ов. Поэтому парсинг
+    # в список вынесен в отдельный @property ниже — там уже честный list[str].
+    admin_allowed_ips_raw: str = Field(default="", alias="ADMIN_ALLOWED_IPS")
+
+    @property
+    def admin_allowed_ips(self) -> list[str]:
+        if not self.admin_allowed_ips_raw:
             return []
-        return [ip.strip() for ip in v.split(",") if ip.strip()]
+        return [ip.strip() for ip in self.admin_allowed_ips_raw.split(",") if ip.strip()]
 
     # Telegram
     bot_token: str = Field(default="", alias="BOT_TOKEN")
@@ -81,10 +88,39 @@ class Settings(BaseSettings):
     vapid_public_key: str = Field(default="", alias="VAPID_PUBLIC_KEY")
     vapid_claims_email: str = Field(default="admin@example.com", alias="VAPID_CLAIMS_EMAIL")
 
+    @model_validator(mode="after")
+    def _require_real_secrets_in_production(self) -> "Settings":
+        """Не даёт приложению тихо стартовать в проде с пустыми секретами.
+
+        Раньше SECRET_KEY/ADMIN_SECRET_KEY/REFRESH_SECRET_KEY дефолтились в "" —
+        если забыть создать .env.prod (а в docker-compose.prod.yml он помечен
+        required: false), контейнер стартовал "успешно", просто подписывая JWT
+        пустой строкой. Это тихая дыра в безопасности, а не громкая ошибка.
+        В тестах ENV=test — проверка не применяется.
+        """
+        if self.env.lower() in ("prod", "production"):
+            missing = [
+                name
+                for name, value in (
+                    ("SECRET_KEY", self.secret_key),
+                    ("ADMIN_SECRET_KEY", self.admin_secret_key),
+                    ("REFRESH_SECRET_KEY", self.refresh_secret_key),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "ENV=production, но не заданы обязательные секреты: "
+                    f"{', '.join(missing)}. Создай .env.prod (см. .env.prod.example) "
+                    "или задай их через переменные окружения перед запуском."
+                )
+        return self
+
 
 settings = Settings()
 
 # Совместимость со старым кодом — убирай постепенно
+ENV = settings.env
 SECRET_KEY = settings.secret_key
 ALGORITHM = settings.algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes

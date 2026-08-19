@@ -65,7 +65,7 @@ class UserAdmin(ModelView, model=UserModel):
         "authored_tasks",
     ]
 
-    # ← добавили comments и groups — убирает лишние поля из формы
+    # Убирает лишние поля (comments, groups и т.д.) из формы создания/редактирования
     form_excluded_columns = [
         UserModel.password_hash,
         UserModel.assigned_tasks,
@@ -87,7 +87,6 @@ class UserAdmin(ModelView, model=UserModel):
 
     form_widget_args = {"telegram_id": {"readonly": True}}
 
-    # ← добавили manager
     form_args = {
         "role": {
             "label": "Роль",

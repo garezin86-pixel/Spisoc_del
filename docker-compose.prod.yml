@@ -2,7 +2,7 @@ services:
   app:
     env_file:
       - path: .env.prod
-        required: false
+        required: true  # прод не должен молча стартовать на дев-дефолтах из docker-compose.yml
     environment:
       ENV: production
     restart: always
@@ -10,7 +10,7 @@ services:
   bot:
     env_file:
       - path: .env.prod
-        required: false
+        required: true  # прод не должен молча стартовать на дев-дефолтах из docker-compose.yml
     environment:
       ENV: production
     restart: always

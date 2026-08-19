@@ -173,16 +173,17 @@ class AuthService:
             unauthorized("Невалидный токен: отсутствуют обязательные поля")
             raise RuntimeError
 
-        # Проверяем что токен не отозван (есть в Redis)
-        stored = await self.redis.get(_redis_key(jti))
+        # Атомарно читаем и сразу удаляем jti (GETDEL) — раньше это были два
+        # отдельных вызова (GET, затем DELETE), между которыми было окно гонки:
+        # два параллельных запроса на refresh с одним и тем же токеном оба
+        # проходили проверку "существует", и оба получали новую пару токенов.
+        # GETDEL делает это одной атомарной командой Redis.
+        stored = await self.redis.getdel(_redis_key(jti))
         if not stored:
             # Токен уже использован или отозван — возможна кража токена
             await logger.awarning("refresh_token_reuse", user_id=user_id, jti=jti)
             unauthorized("Токен отозван или уже использован")
             raise RuntimeError
-
-        # Удаляем старый jti (token rotation)
-        await self.redis.delete(_redis_key(jti))
 
         # Получаем пользователя и проверяем что он активен
         db_user = await self.user_repo.get_by_id(int(user_id))

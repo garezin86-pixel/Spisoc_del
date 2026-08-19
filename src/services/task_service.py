@@ -9,7 +9,7 @@ from src.core.constants import (
     ENTER_GROUP_ID,
     GROUP_NOT_FOUND,
     NO_ACCESS,
-    TAG_NOT_FOUND,  # (добавить в существующий импорт)
+    TAG_NOT_FOUND,
     TASK_NOT_FOUND,
     USER_ID_OR_GROUP_ID,
     USER_NOT_FOUND,
@@ -50,8 +50,6 @@ from src.schemas.task import (
     TaskImportSummary,
 )
 from src.schemas.task_dependency import TaskDependenciesSchema, TaskRefSchema
-
-# (добавить в существующий импорт)
 from src.services.notifications import notify_task_assigned
 from src.services.permissions import (
     can_delete_task,
@@ -86,7 +84,7 @@ class TaskService:
         self.task_repo = task_repo
         self.user_repo = user_repo
         self.group_repo = group_repo
-        self.tag_repo = tag_repo  # ← новая строка
+        self.tag_repo = tag_repo
         self.session = session
 
     async def add_task(self, data: SpisokAddSchema, current_user: UserModel) -> SpisokModel:
@@ -254,6 +252,7 @@ class TaskService:
             filter_user_group=filter_user_group,
             group_id=group_id,
             filter_type=filter_type,
+            is_done=is_done,
         )
 
     async def get_task(self, task_id: int, current_user: UserModel) -> SpisokModel:
@@ -331,7 +330,7 @@ class TaskService:
         исполнитель не должен произвольно сдвигать срок.
 
         Side-effects:
-            - При переводе is_done=True (если было False) отправляет Telegram-уведомление
+            - При переходе в статус done (если он не был done) отправляет Telegram-уведомление
               автору задачи через _notify_task_done.
             - Инкрементирует Prometheus-счётчик tasks_completed при выполнении.
             - Пишет audit-лог.
@@ -530,8 +529,7 @@ class TaskService:
                 {
                     "id": t.id,
                     "title": t.title,
-                    # "is_done": t.is_done,
-                    "status": t.status.value if t.status else "backlog",  # ← добавить
+                    "status": t.status.value if t.status else "backlog",
                     "priority": t.priority,
                     "deadline": t.deadline.strftime("%d.%m.%Y") if t.deadline else None,
                     "created_at": (t.created_at.strftime("%d.%m.%Y") if t.created_at else None),
@@ -656,7 +654,7 @@ class TaskService:
 
         Отдельный эндпоинт от update_task — потому что это именно
         канбан-операция, не частичное редактирование задачи.
-        Синхронизирует is_done при переходе в done/из done.
+        Обновляет completed_at при переходе в done/из done (см. update_task).
         """
         task = await self.task_repo.get_by_id(task_id)
         if not task:
@@ -679,7 +677,7 @@ class TaskService:
             task.completed_at = None
 
         if self.session is not None:
-            self.session.info["audit_user_id"] = current_user.id  # ← добавить
+            self.session.info["audit_user_id"] = current_user.id
 
         updated_task = await self.task_repo.update(task)
 

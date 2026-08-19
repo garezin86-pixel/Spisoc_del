@@ -670,7 +670,7 @@ async def view_my_group(message: Message):
             else:
                 text += "Нет участников"
 
-            texts.append(text)  # ← вот это строка была пропущена
+            texts.append(text)
 
     await message.answer("\n\n".join(texts), parse_mode="HTML")
 
