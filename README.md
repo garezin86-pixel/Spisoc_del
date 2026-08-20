@@ -259,7 +259,12 @@ Pre-commit хуки настроены в `.pre-commit-config.yaml`.
 docker compose -f docker-compose.dev.yml up
 
 # Production
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# --env-file обязателен: без него ${POSTGRES_USER:?...}, ${POSTGRES_PASSWORD:?...}
+# и ${GRAFANA_ADMIN_PASSWORD:?...} не увидят значения из .env.prod (env_file:
+# внутри сервисов не участвует в подстановке ${...} самого compose-файла) —
+# деплой либо упадёт с ошибкой "variable is not set", либо (в старых версиях
+# compose) тихо возьмёт дев-дефолты вроде postgres:postgres.
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ## API

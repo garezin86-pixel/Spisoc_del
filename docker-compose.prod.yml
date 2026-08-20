@@ -5,6 +5,18 @@ services:
         required: true  # прод не должен молча стартовать на дев-дефолтах из docker-compose.yml
     environment:
       ENV: production
+      # ВАЖНО: `environment:` всегда перебивает `env_file:` для одного и того
+      # же имени переменной. Значит DATABASE_URL из .env.prod (через env_file
+      # выше) в любом случае был бы проигнорирован — реально использовался бы
+      # DATABASE_URL из базового docker-compose.yml с фолбэком
+      # ${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}, то есть
+      # postgres:postgres, даже если в .env.prod указаны другие креды.
+      # Поэтому здесь пересобираем DATABASE_URL из тех же обязательных
+      # POSTGRES_*-переменных, что и сам контейнер postgres ниже — это
+      # гарантирует, что app/bot и postgres всегда используют одни и те же
+      # креды, и что деплой упадёт с понятной ошибкой, если их забыли задать
+      # (см. также docker compose --env-file .env.prod в README).
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?POSTGRES_USER обязателен в проде}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен в проде}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB обязателен в проде}
     restart: always
 
   bot:
@@ -13,11 +25,19 @@ services:
         required: true  # прод не должен молча стартовать на дев-дефолтах из docker-compose.yml
     environment:
       ENV: production
+      # См. комментарий у app выше — та же причина.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?POSTGRES_USER обязателен в проде}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен в проде}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB обязателен в проде}
     restart: always
 
   postgres:
     ports: []
     restart: always
+    environment:
+      # Те же обязательные переменные, что использованы выше для DATABASE_URL —
+      # так они физически не могут разъехаться с app/bot.
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB обязателен в проде}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER обязателен в проде}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен в проде}
 
   redis:
     ports: []
