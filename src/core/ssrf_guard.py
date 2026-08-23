@@ -60,7 +60,7 @@ def validate_webhook_url_sync(url: str) -> None:
     except socket.gaierror as exc:
         raise ValueError(f"Не удалось резолвить хост '{hostname}': {exc}") from exc
     for family, _type, _proto, _canonname, sockaddr in infos:
-        ip_str = sockaddr[0]
+        ip_str = str(sockaddr[0])
         if _is_blocked_ip(ip_str):
             raise ValueError(
                 f"URL резолвится в адрес из приватного/внутреннего диапазона "
@@ -80,7 +80,7 @@ async def assert_webhook_url_safe(url: str) -> None:
     except socket.gaierror as exc:
         raise ValueError(f"Не удалось резолвить хост '{hostname}': {exc}") from exc
     for family, _type, _proto, _canonname, sockaddr in infos:
-        ip_str = sockaddr[0]
+        ip_str = str(sockaddr[0])
         if _is_blocked_ip(ip_str):
             raise ValueError(
                 f"URL резолвится в адрес из приватного/внутреннего диапазона ({ip_str}) — отправка заблокирована"
