@@ -1,5 +1,6 @@
 # tests/test_webhooks.py
 import asyncio
+import socket
 import uuid
 
 import pytest
@@ -18,6 +19,33 @@ pytestmark = pytest.mark.asyncio
 
 def build_service(session) -> WebhookService:
     return WebhookService(WebhookRepository(session))
+
+
+@pytest.fixture(autouse=True)
+def fake_dns(monkeypatch):
+    """
+    src.core.ssrf_guard резолвит хост через реальный socket.getaddrinfo —
+    и в src.schemas.webhook (create/update), и в webhook_dispatcher перед
+    каждой отправкой (см. docstring ssrf_guard про DNS rebinding). Все
+    вебхук-тесты используют *.example.com — без этой подмены каждый такой
+    тест реально бы ходил в сеть за DNS, что медленно, нестабильно и не
+    сработает в песочницах без сетевого доступа.
+
+    asyncio.loop.getaddrinfo() внутри тоже вызывает именно socket.getaddrinfo
+    (через run_in_executor), поэтому одной подмены достаточно для обеих
+    точек проверки — синхронной (схема) и асинхронной (диспетчер).
+
+    Возвращает публичный (не приватный/не loopback) IP — реальная логика
+    SSRF-проверки (is_private/is_loopback/...) продолжает исполняться и
+    реально тестируется отдельными test_ssrf_* тестами ниже на localhost/
+    приватных адресах.
+    """
+
+    def _fake_getaddrinfo(host, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -509,3 +537,65 @@ class TestWebhookEndToEndViaRealApp:
         resp = await client.delete(f"/api/webhooks/{webhook_id}", headers={"Authorization": f"Bearer {intruder_token}"})
 
         assert resp.status_code == 404
+
+
+class TestWebhookSsrfGuard:
+    """
+    Регресс: раньше _validate_url проверял только схему (http/https), хост —
+    никак. Пользователь мог зарегистрировать вебхук на http://169.254.169.254
+    (cloud metadata) или http://localhost:9090 — сервер сам стучался бы туда
+    с правами приложения. См. src/core/ssrf_guard.py.
+    """
+
+    @pytest.mark.parametrize(
+        "url,resolved_ip",
+        [
+            ("http://localhost/hook", "127.0.0.1"),
+            ("http://127.0.0.1:8000/hook", "127.0.0.1"),
+            ("http://internal.corp/hook", "10.0.0.5"),  # RFC1918
+            ("http://internal.corp/hook", "172.16.0.5"),  # RFC1918
+            ("http://internal.corp/hook", "192.168.1.5"),  # RFC1918
+            ("http://metadata.internal/hook", "169.254.169.254"),  # cloud metadata
+            ("http://internal.corp/hook", "0.0.0.0"),
+        ],
+    )
+    async def test_create_rejects_private_and_internal_hosts(self, monkeypatch, url, resolved_ip):
+        def _fake_getaddrinfo(host, *args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (resolved_ip, 0))]
+
+        monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+
+        with pytest.raises(ValueError):
+            WebhookCreate(url=url, events=[WebhookEvent.task_done])
+
+    async def test_create_accepts_public_host(self):
+        # fake_dns (autouse) резолвит в публичный 93.184.216.34 — должно пройти.
+        webhook = WebhookCreate(url="https://hooks.example.com/ok", events=[WebhookEvent.task_done])
+        assert webhook.url == "https://hooks.example.com/ok"
+
+    async def test_dns_rebinding_is_caught_at_dispatch_time_not_only_at_creation(
+        self, session, monkeypatch, fake_httpx, captured_tasks
+    ):
+        """
+        Создаём вебхук, когда хост резолвится в публичный IP (проходит
+        валидацию схемы). К моменту реальной отправки DNS "переехал" на
+        приватный адрес — диспетчер обязан поймать это САМ, отдельно от
+        проверки при создании, а не полагаться на неё.
+        """
+        user = await make_user(session)
+        service = build_service(session)
+        await service.create_webhook(
+            user, WebhookCreate(url="https://rebind.example.com/hook", events=[WebhookEvent.task_done])
+        )
+
+        def _rebound_getaddrinfo(host, *args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
+
+        monkeypatch.setattr(socket, "getaddrinfo", _rebound_getaddrinfo)
+
+        dispatch_webhook_event(WebhookEvent.task_done, [user.id], {"task_id": 1})
+        await _flush(captured_tasks)
+
+        # Главное: реального HTTP-запроса быть не должно — SSRF-проверка
+        # должна остановить доставку до вызова httpx.
+        assert fake_httpx.calls == []

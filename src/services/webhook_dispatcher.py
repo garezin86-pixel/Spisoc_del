@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 import httpx
 import structlog
 
+from src.core.ssrf_guard import assert_webhook_url_safe
 from src.db import get_session_maker
 from src.models.enums import WebhookEvent
 from src.repositories.webhook_repository import WebhookRepository
@@ -48,13 +49,23 @@ def _build_body(event: str, payload: dict) -> bytes:
 
 
 async def _post(url: str, secret: str, event: str, body: bytes) -> tuple[int | None, str | None]:
+    # Повторная проверка перед КАЖДОЙ отправкой, не только при создании
+    # вебхука — см. docstring src/core/ssrf_guard.py про DNS rebinding.
+    try:
+        await assert_webhook_url_safe(url)
+    except ValueError as exc:
+        return None, str(exc)[:500]
+
     headers = {
         "Content-Type": "application/json",
         "X-Webhook-Event": event,
         "X-Webhook-Signature": f"sha256={_sign(secret, body)}",
     }
     try:
-        async with httpx.AsyncClient(timeout=WEBHOOK_TIMEOUT_SECONDS) as client:
+        # follow_redirects=False явно (это и есть дефолт httpx, но зафиксировано
+        # намеренно): иначе 3xx-редирект на приватный адрес обошёл бы проверку
+        # выше — httpx резолвил и стучался бы уже по новому URL без неё.
+        async with httpx.AsyncClient(timeout=WEBHOOK_TIMEOUT_SECONDS, follow_redirects=False) as client:
             response = await client.post(url, content=body, headers=headers)
             return response.status_code, None
     except httpx.HTTPError as exc:

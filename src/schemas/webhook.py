@@ -3,12 +3,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.ssrf_guard import validate_webhook_url_sync
 from src.models.enums import WebhookEvent
 
 
 def _validate_url(v: str) -> str:
-    if not (v.startswith("http://") or v.startswith("https://")):
-        raise ValueError("URL должен начинаться с http:// или https://")
+    # Проверяет не только схему (http/https), но и резолвит хост, отклоняя
+    # приватные/внутренние/loopback-адреса — см. src/core/ssrf_guard.py.
+    validate_webhook_url_sync(v)
     return v
 
 
