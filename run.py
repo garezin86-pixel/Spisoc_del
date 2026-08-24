@@ -1,3 +1,4 @@
+import os
 import signal
 import subprocess
 import sys
@@ -11,6 +12,19 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 # ── Окружение ─────────────────────────────────────────────────────────────────
 IS_WINDOWS = sys.platform == "win32"
 IS_PROD = not IS_WINDOWS  # На Render всегда Linux
+
+# Кому доверять заголовки X-Forwarded-For/X-Forwarded-Proto. Без этого
+# request.client.host (используется в rate-limiter'е, ADMIN_ALLOWED_IPS,
+# METRICS_ALLOWED_IPS) видит IP прокси перед приложением, а не реального
+# клиента — рейт-лимит на логин становится общим на всех, а IP-allowlist'ы
+# либо пропускают всех, либо не пропускают никого.
+#
+# На Render публичный интернет не может достучаться до процесса напрямую —
+# только через LB Render'а, поэтому там безопасно доверять всегда ("*").
+# Если вместо Render используется VPS + свой nginx/Caddy — переопредели
+# этой переменной на IP/CIDR самого reverse proxy, а не "*", иначе клиент
+# сможет подделать X-Forwarded-For напрямую.
+FORWARDED_ALLOW_IPS = os.environ.get("FORWARDED_ALLOW_IPS", "*" if IS_PROD else "127.0.0.1")
 
 
 # ── Python-интерпретатор ──────────────────────────────────────────────────────
@@ -89,6 +103,9 @@ def build_services() -> list[ManagedProcess]:
                 "0.0.0.0",
                 "--port",
                 "8000",
+                "--proxy-headers",
+                "--forwarded-allow-ips",
+                FORWARDED_ALLOW_IPS,
                 *(["--reload"] if not IS_PROD else []),
             ],
         )
