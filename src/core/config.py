@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # все критичные секреты, а не тихо стартуем на дев-дефолтах.
     env: str = Field(default="production", alias="ENV")
 
+    # Название бренда — используется в заголовке Swagger/OpenAPI (main.py) и
+    # во фронтенде (frontend/.env.local -> VITE_APP_NAME, читается отдельно
+    # Vite-ом при сборке, не отсюда). Позволяет разворачивать инстанс под
+    # чужим именем для self-hosted клиентов, не трогая код.
+    app_name: str = Field(default="Spisok Del", alias="APP_NAME")
+
     # JWT
     secret_key: str = Field(default="", alias="SECRET_KEY")
     algorithm: str = Field(default="HS256", alias="ALGORITHM")
@@ -72,6 +78,13 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     super_admin_tg_id: int = Field(default=0, alias="SUPER_ADMIN_TG_ID")
+
+    # Rate-limit на голосовые команды бота (src/services/voice_rate_limit.py).
+    # Каждая голосовая команда — минимум 2 платных вызова Groq (Whisper STT +
+    # LLaMA tool calling), без лимита один пользователь может неожиданно
+    # раздуть счёт за Groq API. Дефолт: 10 команд за 10 минут на пользователя.
+    voice_rate_limit_count: int = Field(default=10, alias="VOICE_RATE_LIMIT_COUNT")
+    voice_rate_limit_window_seconds: int = Field(default=600, alias="VOICE_RATE_LIMIT_WINDOW_SECONDS")
 
     # Monitoring
     grafana_admin_password: str = Field(default="admin", alias="GRAFANA_ADMIN_PASSWORD")
@@ -153,6 +166,7 @@ settings = Settings()
 
 # Совместимость со старым кодом — убирай постепенно
 ENV = settings.env
+APP_NAME = settings.app_name
 SECRET_KEY = settings.secret_key
 ALGORITHM = settings.algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
@@ -167,6 +181,8 @@ METRICS_ALLOWED_IPS = settings.metrics_allowed_ips
 BOT_TOKEN = settings.bot_token
 CHAT_BRIDGE_GROUP_ID = settings.chat_bridge_group_id
 GROQ_API_KEY = settings.groq_api_key
+VOICE_RATE_LIMIT_COUNT = settings.voice_rate_limit_count
+VOICE_RATE_LIMIT_WINDOW_SECONDS = settings.voice_rate_limit_window_seconds
 GEMINI_API_KEY = settings.gemini_api_key
 SUPER_ADMIN_TG_ID = settings.super_admin_tg_id
 

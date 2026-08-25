@@ -20,6 +20,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from src.admin.setup import setup_admin
 from src.bot.setup import init_bot_username
 from src.core.config import (
+    APP_NAME,
     BOT_TOKEN,
     ENV,
     FRONTEND_URL,
@@ -142,11 +143,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     lifespan=lifespan,
     redirect_slashes=True,
-    title="Spisok Del API",
-    description="""
+    title=f"{APP_NAME} API",
+    description=f"""
 ## Описание
 
-REST API для системы управления задачами **Spisok Del**.
+REST API для системы управления задачами **{APP_NAME}**.
 
 Поддерживает:
 - управление задачами (создание, фильтрация, soft/hard delete, корзина)
@@ -185,7 +186,7 @@ Authorization: Bearer <access_token>
 """,
     version="1.0.0",
     contact={
-        "name": "Spisok Del",
+        "name": APP_NAME,
     },
     openapi_tags=[
         {"name": "Auth", "description": "Авторизация и получение JWT-токена"},

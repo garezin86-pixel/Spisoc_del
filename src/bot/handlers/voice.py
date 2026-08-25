@@ -28,6 +28,7 @@ from src.models.user import UserModel
 from src.services.chat_memory import add_message, get_history
 from src.services.notifications import notify_task_assigned, notify_task_updated
 from src.services.voice_ai import process_voice_message
+from src.services.voice_rate_limit import check_voice_rate_limit
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -293,6 +294,14 @@ async def handle_voice(message: Message, state: FSMContext, bot: Bot):
             await message.answer("❌ Сначала зарегистрируйтесь через /start")
             return
         user_id = user.id
+
+    # Проверяем ДО скачивания файла и вызовов Groq — иначе rate limit не
+    # защищает от расходов, которые уже случились к моменту проверки.
+    allowed, retry_after = await check_voice_rate_limit(user_id)
+    if not allowed:
+        minutes = max(1, retry_after // 60)
+        await message.answer(f"⏳ Слишком много голосовых команд подряд. Попробуйте снова через ~{minutes} мин.")
+        return
 
     status_msg = await message.answer("🎤 Слушаю…")
 

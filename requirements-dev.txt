@@ -23,3 +23,4 @@ pre-commit==4.6.0
 
 # Дополнительные тестовые утилиты
 httpx==0.28.1  # уже в requirements.txt, но явно для ясности
+fakeredis==2.37.1  # реальная семантика INCR/EXPIRE/TTL без настоящего Redis (test_voice_rate_limit.py)

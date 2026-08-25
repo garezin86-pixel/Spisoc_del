@@ -56,6 +56,10 @@ py-vapid==1.9.4
 # Cloudflare R2 (S3-совместимое хранилище для вложений)
 aioboto3==15.5.0
 aiobotocore>=2.13.0
+# Синхронный boto3 — НЕ тянется автоматически через aioboto3 (тот зависит
+# от aiobotocore, не от boto3). Нужен только для scripts/upload_backup_to_r2.py
+# (одноразовый CLI-скрипт бэкапа из cron, async там не нужен).
+boto3==1.40.61
 
 # Scheduling
 APScheduler==3.11.2

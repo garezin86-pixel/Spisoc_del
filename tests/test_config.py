@@ -21,7 +21,13 @@ class TestProductionRequiresSecrets:
 
     def test_production_without_secrets_raises(self):
         with pytest.raises(Exception):  # pydantic ValidationError
-            config.Settings(_env_file=None, ENV="production", SECRET_KEY="", ADMIN_SECRET_KEY="", REFRESH_SECRET_KEY="")
+            config.Settings(
+                _env_file=None,
+                ENV="production",
+                SECRET_KEY="",
+                ADMIN_SECRET_KEY="",
+                REFRESH_SECRET_KEY="",
+            )
 
     def test_production_with_partial_secrets_raises(self):
         """Даже один незаданный секрет из трёх должен блокировать старт."""
@@ -123,6 +129,7 @@ class TestAdminAllowedIpsType:
     def test_parses_comma_separated_ips_into_list(self):
         s = config.Settings(
             _env_file=None,
+            ENV="dev",
             ADMIN_ALLOWED_IPS="1.2.3.4, 5.6.7.8,9.9.9.9",
             SECRET_KEY="a",
             ADMIN_SECRET_KEY="b",
@@ -132,5 +139,11 @@ class TestAdminAllowedIpsType:
         assert isinstance(s.admin_allowed_ips, list)
 
     def test_empty_by_default(self):
-        s = config.Settings(_env_file=None, SECRET_KEY="a", ADMIN_SECRET_KEY="b", REFRESH_SECRET_KEY="c", ENV="dev")
+        s = config.Settings(
+            _env_file=None,
+            SECRET_KEY="a",
+            ADMIN_SECRET_KEY="b",
+            REFRESH_SECRET_KEY="c",
+            ENV="dev",
+        )
         assert s.admin_allowed_ips == []
