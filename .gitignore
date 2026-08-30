@@ -50,3 +50,4 @@ storage/
 # Фронтенд (дублируется в frontend/.gitignore, но на всякий случай)
 frontend/node_modules/
 frontend/dist/
+backups/
