@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setTokenRefreshHandler } from "./api";
 import { ChatBubble } from "./components/ChatBubble";
 import { CommandPalette } from "./components/CommandPalette";
@@ -11,7 +11,7 @@ import { TrashCard } from "./components/TrashCard";
 import { UserProfileAvatar } from "./components/UserProfileAvatar";
 import { initialForm } from "./constants/forms";
 import { ICONS } from "./constants/icons";
-import { ROLE_LABELS, ROLE_COLORS } from "./constants/roles";
+import { ROLE_COLORS, ROLE_LABELS } from "./constants/roles";
 import { STATUS_LIST } from "./constants/status";
 import { CalendarTab } from "./features/CalendarTab";
 import { ChangePasswordCard } from "./features/ChangePasswordCard";
@@ -733,10 +733,10 @@ function App() {
             <div className="login-page">
                 <div className="auth-card">
                     <div className="login-logo">
-                        <div className="logo-mark">S</div>
+                        <div className="logo-mark">{import.meta.env.VITE_APP_LOGO}</div>
                         <div>
-                            <div className="brand-name">Spisoc</div>
-                            <div className="brand-tagline">Управление задачами</div>
+                            <div className="brand-name">{import.meta.env.VITE_APP_NAME}</div>
+                            <div className="brand-tagline">{import.meta.env.VITE_APP_DESCRIPTION}</div>
                         </div>
                     </div>
                     <div className="auth-title">Добро пожаловать</div>
@@ -791,10 +791,10 @@ function App() {
         <div className="page-shell">
             <header className="app-header">
                 <div className="app-header-left">
-                    <div className="logo-mark">S</div>
+                    <div className="logo-mark">{import.meta.env.VITE_APP_LOGO}</div>
                     <div>
-                        <div className="brand-name">Spisoc</div>
-                        <div className="brand-tagline">Менеджер задач</div>
+                        <div className="brand-name">{import.meta.env.VITE_APP_NAME}</div>
+                        <div className="brand-tagline">{import.meta.env.VITE_APP_DESCRIPTION}</div>
                     </div>
                 </div>
                 <div className="header-right">
