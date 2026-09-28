@@ -22,6 +22,18 @@ security = HTTPBearer()
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
+def _ensure_access_token(payload: dict) -> None:
+    """
+    Пускаем только настоящий access-токен. Остальные JWT, подписанные тем же
+    SECRET_KEY (например, промежуточный mfa_token из create_mfa_token, который
+    выдаётся после верного пароля, но ДО ввода кода 2FA), содержат "sub", но
+    аутентификацией служить не должны — иначе второй фактор можно обойти,
+    подставив mfa_token вместо access-токена.
+    """
+    if payload.get("type") != "access":
+        raise jwt.InvalidTokenError("Not an access token")
+
+
 def _enforce_pat_scope(request: Request, user: UserModel) -> None:
     """
     Если пользователь аутентифицирован read_only PAT-токеном (см.
@@ -58,6 +70,7 @@ async def get_current_user(
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        _ensure_access_token(payload)
         sub = payload.get("sub")
         if sub is None:
             raise jwt.InvalidTokenError("No sub")
@@ -115,4 +128,6 @@ def decode_access_token(token: str) -> dict:
     if not SECRET_KEY or not ALGORITHM:
         raise RuntimeError("JWT config missing")
 
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    _ensure_access_token(payload)
+    return payload
