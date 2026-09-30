@@ -9,9 +9,10 @@ from sqlalchemy import DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 
-class ChatMessageModel(Base):
+class ChatMessageModel(TenantMixin, Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True)

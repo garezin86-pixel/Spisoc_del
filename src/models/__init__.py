@@ -18,6 +18,7 @@ from src.models.template import TaskTemplateItemModel, TaskTemplateModel
 from src.models.two_factor_recovery_code import TwoFactorRecoveryCodeModel
 from src.models.user import UserModel
 from src.models.webhook import WebhookModel
+from src.models.workspace import WorkspaceModel
 
 __all__ = [
     "ProjectModel",
@@ -43,4 +44,5 @@ __all__ = [
     "FilterPresetModel",
     "WebhookModel",
     "ChatMessageModel",
+    "WorkspaceModel",
 ]

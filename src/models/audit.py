@@ -85,6 +85,14 @@ class AuditLog(Base):
     # NULL — для фоновых задач (Telegram-бот, планировщик)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Берётся с изменяемой сущности (instance.workspace_id), а не из сессии:
+    # фоновые задачи (бот, планировщик) работают без current_user, но
+    # изменяемая сущность свой workspace всегда знает. NULL — переходный
+    # период до backfill или сущность без TenantMixin.
+    workspace_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Имя таблицы: "spisok_del", "comments", "users", ...
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -165,6 +173,7 @@ class SoftDeleteMixin:
         session.add(
             AuditLog(
                 user_id=user_id,
+                workspace_id=getattr(self, "workspace_id", None),
                 entity_type=self.__tablename__,  # type: ignore[attr-defined]
                 entity_id=self.id,  # type: ignore[attr-defined]
                 action=AuditAction.delete,
@@ -185,6 +194,7 @@ class SoftDeleteMixin:
         session.add(
             AuditLog(
                 user_id=user_id,
+                workspace_id=getattr(self, "workspace_id", None),
                 entity_type=self.__tablename__,  # type: ignore[attr-defined]
                 entity_id=self.id,  # type: ignore[attr-defined]
                 action=AuditAction.restore,
@@ -293,6 +303,7 @@ def _on_after_flush(session: Session | AsyncSession, flush_context: Any) -> None
         entries.append(
             AuditLog(
                 user_id=user_id,
+                workspace_id=getattr(instance, "workspace_id", None),
                 entity_type=instance.__tablename__,  # type: ignore[attr-defined]
                 entity_id=instance.id,  # type: ignore[attr-defined]
                 action=AuditAction.create,
@@ -310,6 +321,7 @@ def _on_after_flush(session: Session | AsyncSession, flush_context: Any) -> None
         entries.append(
             AuditLog(
                 user_id=user_id,
+                workspace_id=getattr(instance, "workspace_id", None),
                 entity_type=instance.__tablename__,  # type: ignore[attr-defined]
                 entity_id=instance.id,  # type: ignore[attr-defined]
                 action=AuditAction.update,

@@ -9,9 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
 from src.models.enums import TaskPriority
+from src.models.mixins import TenantMixin
 
 
-class TaskTemplateModel(Base):
+class TaskTemplateModel(TenantMixin, Base):
     __tablename__ = "task_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)

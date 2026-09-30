@@ -6,6 +6,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.group import GroupModel
@@ -22,7 +23,7 @@ project_member = Table(
 )
 
 
-class ProjectModel(Base):
+class ProjectModel(TenantMixin, Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.user import UserModel
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 _JSONVariant = JSONB().with_variant(JSON(), "sqlite")
 
 
-class WebhookModel(Base):
+class WebhookModel(TenantMixin, Base):
     """
     Исходящий вебхук — противоположность PAT-токену. PAT — это «извне
     достучаться до нас» (pull), вебхук — «уведомить внешнюю систему, когда

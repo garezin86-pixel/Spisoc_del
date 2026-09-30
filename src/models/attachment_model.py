@@ -6,13 +6,14 @@ from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.task import SpisokModel
     from src.models.user import UserModel
 
 
-class AttachmentModel(Base):
+class AttachmentModel(TenantMixin, Base):
     """
     Вложение к задаче.
 

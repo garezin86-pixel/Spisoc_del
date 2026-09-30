@@ -5,6 +5,7 @@ from sqlalchemy import Column, ForeignKey, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.task import SpisokModel
@@ -21,7 +22,7 @@ user_group = Table(
 )
 
 
-class GroupModel(Base):
+class GroupModel(TenantMixin, Base):
     __tablename__ = "groups"
 
     id: Mapped[int] = mapped_column(primary_key=True)

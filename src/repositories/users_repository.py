@@ -86,11 +86,19 @@ class UserRepository(AbstractUserRepository):
         await self.session.commit()
 
     async def get_admin_by_username(self, username: str) -> UserModel | None:
-        """Возвращает пользователя только если он существует и имеет роль admin."""
+        """Возвращает пользователя только если он существует и имеет доступ в SQLAdmin.
+
+        До мультитенантности здесь проверялась role == "admin" — этого было
+        достаточно, пока admin означал "единственный доверенный человек,
+        то есть вы". После того как role="admin" стало означать "админ
+        СВОЕГО workspace" (см. UserModel.is_platform_admin), проверка на
+        role привела бы к тому, что админ любой компании получал бы
+        доступ к данным всех остальных компаний через сырой CRUD SQLAdmin.
+        """
         return await self.session.scalar(
             select(UserModel).where(
                 UserModel.username == username,
-                UserModel.role == "admin",
+                UserModel.is_platform_admin.is_(True),
             )
         )
 

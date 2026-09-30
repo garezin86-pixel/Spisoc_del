@@ -12,6 +12,7 @@ from src.db import Base
 # from enum import Enum
 from src.models.audit import AuditMixin, SoftDeleteMixin
 from src.models.enums import RecurrenceRule, TaskPriority, TaskStatus
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.attachment_model import AttachmentModel
@@ -39,7 +40,7 @@ class TimestampMixin:
     )
 
 
-class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, Base):
+class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, TenantMixin, Base):
     __tablename__ = "spisok_del"
 
     id: Mapped[int] = mapped_column(primary_key=True)

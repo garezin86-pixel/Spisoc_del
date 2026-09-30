@@ -6,12 +6,13 @@ from sqlalchemy import CheckConstraint, DateTime, ForeignKey, UniqueConstraint, 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.task import SpisokModel
 
 
-class TaskDependencyModel(Base):
+class TaskDependencyModel(TenantMixin, Base):
     """
     Ребро графа "blocker блокирует blocked" (blocked не может перейти в done,
     пока blocker не закрыт). Простая M2M-таблица поверх spisok_del — без

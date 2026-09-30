@@ -5,12 +5,13 @@ from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.task import SpisokModel
 
 
-class TaskChecklistItemModel(Base):
+class TaskChecklistItemModel(TenantMixin, Base):
     """Пункт чек-листа внутри задачи (подзадача без собственного жизненного цикла).
 
     В отличие от полноценной задачи (SpisokModel), пункт чек-листа не имеет

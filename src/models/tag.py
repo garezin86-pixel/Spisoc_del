@@ -5,6 +5,7 @@ from sqlalchemy import Column, ForeignKey, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.task import SpisokModel
@@ -18,7 +19,7 @@ task_tags = Table(
 )
 
 
-class TagModel(Base):
+class TagModel(TenantMixin, Base):
     """Свободный тег для задач (например, #клиент-X, #срочно-не-по-дедлайну).
 
     Теги глобальны для всей команды (не привязаны к одному пользователю) —

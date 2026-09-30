@@ -71,8 +71,11 @@ class MockUserRepository(AbstractUserRepository):
             user.role = role
 
     async def get_admin_by_username(self, username: str) -> UserModel | None:
+        # См. src/repositories/users_repository.py — доступ в SQLAdmin даёт
+        # is_platform_admin, а не role == "admin" (тот означает "админ
+        # своего workspace" и не должен пускать в чужие данные).
         return next(
-            (u for u in self._users if u.username == username and u.role == "admin"),
+            (u for u in self._users if u.username == username and getattr(u, "is_platform_admin", False)),
             None,
         )
 

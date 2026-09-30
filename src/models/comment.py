@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
 from src.models.audit import AuditMixin, SoftDeleteMixin
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.user import (
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     )
 
 
-class CommentModel(AuditMixin, SoftDeleteMixin, Base):
+class CommentModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     __tablename__ = "comments"
 
     id: Mapped[int] = mapped_column(primary_key=True)

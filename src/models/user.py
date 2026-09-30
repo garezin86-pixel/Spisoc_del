@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
 from src.models.group import user_group
+from src.models.mixins import TenantMixin
 
 if TYPE_CHECKING:
     from src.models.attachment_model import AttachmentModel
@@ -27,7 +28,7 @@ class UserRole(str, Enum):
         return self.value
 
 
-class UserModel(Base):
+class UserModel(TenantMixin, Base):
     __tablename__ = "users"
     # Разрешает обычные (без Mapped[]) аннотации на этом классе — нужно для
     # pat_scope ниже, который специально НЕ должен быть колонкой БД.
@@ -38,6 +39,17 @@ class UserModel(Base):
     username: Mapped[str] = mapped_column(unique=True)
     password_hash: Mapped[str]
     role: Mapped[str] = mapped_column(String, default=UserRole.user)
+    # Доступ в SQLAdmin (см. src/admin/views/admin_auth.py) — НЕ то же самое,
+    # что role == "admin". role="admin" означает "админ своего workspace"
+    # (может редактировать чужие задачи, управлять своей командой — см.
+    # src/services/permissions.py), а is_platform_admin — доступ к сырому
+    # CRUD по ВСЕМ workspace сразу. Каждая новая компания при регистрации
+    # получает своего role="admin", но is_platform_admin у него всегда
+    # False: это поле никогда не выставляется через API/регистрацию/инвайты,
+    # только вручную в БД. См. миграцию f5a6b7c8d9e0 (backfill для тех, кто
+    # был admin ещё в однотенантной версии — они и раньше имели доступ в
+    # SQLAdmin, здесь ничего не меняется по факту, только явно называется).
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
     # Токен для подписки на iCal-фид дедлайнов (см. src/routers/calendar_router.py).
