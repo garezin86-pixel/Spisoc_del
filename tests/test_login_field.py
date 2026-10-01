@@ -71,13 +71,17 @@ class TestLoginBasedAuth:
         repo = UserRepository(session)
         assert await repo.get_by_login("nobody.x") is None
 
-    async def test_old_user_without_login_still_found_by_username(self, session):
-        """Обратная совместимость: у пользователей без login поиск должен идти по username."""
+    async def test_every_user_has_login_after_backfill_and_not_null(self, session):
+        """login теперь NOT NULL (миграция a1b2c3d4e5f7) — "пользователя без
+        login" больше не существует. make_user() по умолчанию берёт login
+        равным username (см. tests/conftest.py); отдельно, через
+        build_login_base, реальная транслитерация проверяется в
+        TestBuildLoginBase выше."""
         user = await make_user(session, username="legacy_user", password="pass123")
         repo = UserRepository(session)
 
-        assert await repo.get_by_login("legacy_user") is None
-        found = await repo.get_by_username("legacy_user")
+        assert user.login == "legacy_user"
+        found = await repo.get_by_login(user.login)
         assert found is not None and found.id == user.id
 
 

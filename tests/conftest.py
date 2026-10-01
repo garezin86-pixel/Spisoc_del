@@ -66,11 +66,22 @@ async def make_user(
     password: str = "password123",  # ← минимум 6 символов
     role: str = "user",
     is_active: bool = True,
+    login: str = None,
 ) -> UserModel:
     if username is None:
         username = unique("user")
+    if login is None:
+        # login теперь NOT NULL (см. миграцию a1b2c3d4e5f7). По умолчанию
+        # просто равен username — так десятки существующих тестов, которые
+        # логинятся через POST /auth/login с тем же username, что передали
+        # в make_user(), продолжают работать без изменений. Тестов именно
+        # на транслитерацию (build_login_base) это не подменяет — они лежат
+        # отдельно в TestBuildLoginBase и передают login= явно, когда им
+        # нужно отличие от username (см. test_login_field.py).
+        login = username
     user = UserModel(
         username=username,
+        login=login,
         password_hash=hash_password(password),
         role=role,
         is_active=is_active,

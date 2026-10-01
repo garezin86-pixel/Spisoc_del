@@ -10,6 +10,7 @@ from src.core.security import hash_password, verify_password
 from src.models.user import UserModel
 from src.repositories.abstract import AbstractUserRepository
 from src.schemas.user import UserRegister, UserUpdate
+from src.services.login_service import generate_unique_login
 
 
 class UserService:
@@ -42,8 +43,10 @@ class UserService:
         if existing:
             user_already_exists(USER_ALREADY_EXISTS)
 
+        login = await generate_unique_login(data.username, self.user_repo)
         new_user = UserModel(
             username=data.username,
+            login=login,
             password_hash=hash_password(data.password),
             role=data.role,
         )

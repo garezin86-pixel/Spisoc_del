@@ -28,6 +28,7 @@ def make_user_model(**kwargs) -> UserModel:
     defaults = dict(
         id=1,
         username="user1",
+        login="user1",
         password_hash=hash_password("pass123"),
         role="user",
         is_active=True,

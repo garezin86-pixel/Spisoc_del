@@ -59,9 +59,12 @@ class AuthService:
             user_already_exists(USER_ALREADY_EXISTS)
 
         from src.models.user import UserModel
+        from src.services.login_service import generate_unique_login
 
+        login = await generate_unique_login(user.username, self.user_repo)
         new_user = UserModel(
             username=user.username,
+            login=login,
             password_hash=hash_password(user.password),
             role="user",
         )
@@ -103,12 +106,11 @@ class AuthService:
         Refresh token сохраняется в Redis с TTL = REFRESH_TOKEN_EXPIRE_DAYS.
         Ключ: refresh:{jti} → user_id (строка).
         """
+        # Fallback на username убран: миграция a1b2c3d4e5f7 проставила login
+        # всем существующим пользователям и сделала поле NOT NULL, а все три
+        # места создания пользователя (бот, веб-регистрация, админка) теперь
+        # всегда его задают — см. src/services/login_service.py.
         db_user = await self.user_repo.get_by_login(user.username)
-        if not db_user:
-            # Обратная совместимость: у пользователей, созданных до этой
-            # фичи (или вручную через админку), login не проставлен —
-            # они по-прежнему входят по username, как и раньше.
-            db_user = await self.user_repo.get_by_username(user.username)
         if not db_user or not verify_password(user.password, db_user.password_hash):
             await logger.awarning("login_failed", username=user.username)
             invalid_credentials(INVALID_CREDENTIALS)

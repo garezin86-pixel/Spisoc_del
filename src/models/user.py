@@ -79,7 +79,7 @@ class UserModel(TenantMixin, Base):
     # специально для входа и @упоминаний в комментариях. Nullable — у
     # пользователей, созданных до этой фичи, login не проставлен, и вход у
     # них по-прежнему идёт по username (см. AuthService.login).
-    login: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    login: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     # Пароль сгенерирован автоматически и прислан текстом в Telegram —
     # просим сменить при первом же веб-входе, чтобы не полагаться на то,
     # что чат с ботом защищён так же, как обычный пароль, придуманный самим
