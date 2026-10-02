@@ -11,6 +11,14 @@ class AbstractUserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_workspace_id_by_slug(self, slug: str) -> int | None:
+        """ВРЕМЕННО, пока нет полноценной регистрации компании (см.
+        src/services/auth_service.py:register) — находит id workspace по
+        slug, чтобы привязать самостоятельно регистрирующегося пользователя
+        к Default workspace."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_by_id(self, user_id: int) -> UserModel | None:
         raise NotImplementedError
 

@@ -28,9 +28,16 @@ from src.schemas.stats import UsersStats as _UsersStats
 
 
 class MockUserRepository(AbstractUserRepository):
-    def __init__(self, users: list[UserModel] | None = None):
+    def __init__(self, users: list[UserModel] | None = None, default_workspace_id: int | None = None):
         self._users: list[UserModel] = users or []
         self._next_id = max((u.id for u in self._users), default=0) + 1
+        # ВРЕМЕННО: см. AbstractUserRepository.get_workspace_id_by_slug —
+        # в unit-тестах слоя сервисов (без реальной БД) достаточно одного
+        # фиксированного значения, слоты по slug здесь не нужны.
+        self._default_workspace_id = default_workspace_id
+
+    async def get_workspace_id_by_slug(self, slug: str) -> int | None:
+        return self._default_workspace_id
 
     async def get_all(self) -> list[UserModel]:
         return list(self._users)

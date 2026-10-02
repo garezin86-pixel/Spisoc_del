@@ -59,7 +59,19 @@ class AuthService:
             user_already_exists(USER_ALREADY_EXISTS)
 
         from src.models.user import UserModel
+        from src.models.workspace import DEFAULT_WORKSPACE_SLUG
         from src.services.login_service import generate_unique_login
+
+        # ВРЕМЕННО: пока нет полноценной регистрации компании (company_name
+        # → новый workspace, или присоединение по инвайт-токену), все
+        # самостоятельно регистрирующиеся через /auth/register попадают в
+        # Default workspace. Это тот же workspace, куда backfill-миграция
+        # (d3e4f5a6b7c8) поместила все данные, существовавшие до
+        # мультитенантности. Убрать, когда появится company_name/инвайты.
+        # См. AbstractUserRepository.get_workspace_id_by_slug — через
+        # абстракцию репозитория, а не напрямую в .session, чтобы
+        # MockUserRepository (unit-тесты сервисного слоя) тоже работал.
+        default_workspace_id = await self.user_repo.get_workspace_id_by_slug(DEFAULT_WORKSPACE_SLUG)
 
         login = await generate_unique_login(user.username, self.user_repo)
         new_user = UserModel(
@@ -67,6 +79,7 @@ class AuthService:
             login=login,
             password_hash=hash_password(user.password),
             role="user",
+            workspace_id=default_workspace_id,
         )
         created_user = await self.user_repo.create(new_user)
         await logger.ainfo("user_registered", user_id=created_user.id)

@@ -6,13 +6,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 
 class TenantMixin:
-    """Добавляет модели колонку workspace_id.
+    """Добавляет модели колонку workspace_id (NOT NULL, FK на workspaces).
 
-    Nullable на переходный период (Этап 0.5, шаг 1 миграции): существующие
-    строки получат id Default workspace отдельной data-миграцией (шаг 2),
-    после чего колонка станет NOT NULL (шаг 3). Не добавляйте новых записей
-    без workspace_id — фильтр в src/db/tenant_scope.py считает NULL "ничьим"
-    и в чтение по конкретному workspace такие строки не попадут.
+    Значение подставляется автоматически слушателем SQLAlchemy "before_flush"
+    из session.info["workspace_id"] — см. src/db/tenant_scope.py. Вызывающий
+    код обычно НЕ должен передавать workspace_id в конструктор явно; если же
+    передал — слушатель его не перезатирает.
 
     Порядок в списке базовых классов модели не важен, но традиционно ставьте
     TenantMixin последним перед Base, чтобы колонка была видна сразу под
@@ -20,9 +19,9 @@ class TenantMixin:
         class FooModel(SoftDeleteMixin, TenantMixin, Base):
     """
 
-    workspace_id: Mapped[int | None] = mapped_column(
+    workspace_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("workspaces.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )

@@ -1,5 +1,3 @@
-import secrets
-
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -12,7 +10,8 @@ from src.core.security import hash_password
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.user import UserModel
-from src.utils.login_generator import build_login_base, generate_temp_password
+from src.services.login_service import generate_unique_login
+from src.utils.login_generator import generate_temp_password
 
 router = Router()
 logger = structlog.get_logger()
@@ -116,22 +115,7 @@ async def registration_accept(callback: CallbackQuery):
         # Генерируем короткий уникальный login отдельно от username (в
         # username остаётся полное ФИО — используется везде в интерфейсе
         # как отображаемое имя, см. src/utils/login_generator.py).
-        # При коллизии добавляем цифру в конце: ivanov.i, ivanov.i2, ...
-        base_login = build_login_base(fio)
-        login = base_login
-        suffix = 2
-        # Ограничение на число попыток — защита от бесконечного цикла, если
-        # get_by_login вдруг всегда возвращает что-то "истинное" (баг в моке
-        # теста уже один раз приводил ровно к этому — см. test_bot.py).
-        MAX_ATTEMPTS = 1000
-        for _ in range(MAX_ATTEMPTS):
-            if not await uow.users.get_by_login(login):
-                break
-            login = f"{base_login}{suffix}"
-            suffix += 1
-        else:
-            await logger.aerror("login_generation_exhausted", base_login=base_login)
-            login = f"{base_login}{secrets.token_hex(3)}"
+        login = await generate_unique_login(fio, uow.users)
 
         temp_password = generate_temp_password()
 

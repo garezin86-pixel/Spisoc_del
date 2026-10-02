@@ -2,6 +2,7 @@ from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import UserModel
+from src.models.workspace import WorkspaceModel
 from src.repositories.abstract.base_user_repository import AbstractUserRepository
 
 
@@ -51,6 +52,9 @@ class UserRepository(AbstractUserRepository):
     async def get_by_login(self, login: str) -> UserModel | None:
         """Ищет по отдельному полю login (см. src/utils/login_generator.py) — используется при входе и @упоминаниях."""
         return await self.session.scalar(select(UserModel).where(UserModel.login == login))
+
+    async def get_workspace_id_by_slug(self, slug: str) -> int | None:
+        return await self.session.scalar(select(WorkspaceModel.id).where(WorkspaceModel.slug == slug))
 
     async def update(self, user: UserModel) -> UserModel:
         """Фиксирует изменения пользователя (commit + refresh).

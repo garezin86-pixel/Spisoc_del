@@ -13,10 +13,30 @@ logger = logging.getLogger(__name__)
 
 _engine = None
 _new_session = None
+_tenant_autofill_installed = False
+
+
+def _ensure_tenant_autofill() -> None:
+    """Лениво регистрирует слушатель из src/db/tenant_scope.py при первом
+    создании сессии — НЕ на верхнем уровне модуля: src.db.tenant_scope
+    импортирует src.models.mixins, а импорт src.models (через __init__.py
+    пакета) тянет модели, которые сами делают `from src.db import Base` —
+    на верхнем уровне это даёт циклический импорт, потому что src.db ещё не
+    успел доопределить Base на момент этого импорта. К моменту первого
+    вызова get_session_maker()/get_engine() модуль src.db уже полностью
+    загружен, поэтому здесь это безопасно."""
+    global _tenant_autofill_installed
+    if _tenant_autofill_installed:
+        return
+    from src.db.tenant_scope import install_tenant_autofill
+
+    install_tenant_autofill()
+    _tenant_autofill_installed = True
 
 
 def get_engine():
     global _engine
+    _ensure_tenant_autofill()
     if _engine is None:
         _engine = create_async_engine(
             DATABASE_URL,

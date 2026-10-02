@@ -11,6 +11,7 @@ from src.core.constants import (
 )
 from src.core.exceptions import current_admin, no_access, unauthorized, user_not_found
 from src.db import SessionDep
+from src.db.tenant_scope import set_session_workspace
 from src.models.enums import PatScope
 from src.models.user import UserModel, UserRole
 from src.services.pat_service import TOKEN_PREFIX, authenticate_by_pat
@@ -63,6 +64,7 @@ async def get_current_user(
             unauthorized("Токен недействителен, отозван или истёк")
             raise AssertionError("unreachable")  # unauthorized() всегда бросает исключение
         _enforce_pat_scope(request, user)
+        set_session_workspace(session, user.workspace_id)
         return user
 
     if not SECRET_KEY or not ALGORITHM:
@@ -91,6 +93,7 @@ async def get_current_user(
         unauthorized(ACCOUNT_DISABLED)
         raise
 
+    set_session_workspace(session, user.workspace_id)
     return user
 
 

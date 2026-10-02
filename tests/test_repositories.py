@@ -22,12 +22,15 @@ from src.repositories.mock_repositories import (
 # ---------------------------------------------------------------------------
 
 
-def make_user(id: int, username: str, role: str = "user", is_active: bool = True) -> UserModel:
+def make_user(
+    id: int, username: str, role: str = "user", is_active: bool = True, is_platform_admin: bool = False
+) -> UserModel:
     u = MagicMock(spec=UserModel)
     u.id = id
     u.username = username
     u.role = role
     u.is_active = is_active
+    u.is_platform_admin = is_platform_admin
     u.telegram_id = id * 100
     return u
 
@@ -86,11 +89,20 @@ async def test_user_get_by_username():
 
 
 @pytest.mark.asyncio
-async def test_user_set_role():
+async def test_user_set_role_does_not_grant_platform_admin():
+    """role == "admin" — админ своего workspace, а не платформы (см. is_platform_admin)."""
     user = make_user(1, "charlie", role="user")
     repo = MockUserRepository(users=[user])
 
     await repo.set_role("charlie", "admin")
+
+    assert await repo.get_admin_by_username("charlie") is None
+
+
+@pytest.mark.asyncio
+async def test_get_admin_by_username_requires_is_platform_admin():
+    user = make_user(1, "charlie", role="user", is_platform_admin=True)
+    repo = MockUserRepository(users=[user])
 
     admin = await repo.get_admin_by_username("charlie")
     assert admin is not None

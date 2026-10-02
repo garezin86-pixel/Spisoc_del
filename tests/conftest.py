@@ -21,7 +21,16 @@ import warnings
 
 from src.core.security import hash_password
 from src.db import Base
+from src.db.tenant_scope import _set_test_default_workspace, install_tenant_autofill  # noqa: E402
 from src.models import CommentModel, GroupModel, SpisokModel, UserModel  # noqa: F401
+from src.models.workspace import WorkspaceModel
+
+# Тестовый движок в tests/conftest.py создаётся напрямую (create_async_engine
+# на SQLite), минуя src.db.get_engine() — поэтому ленивая регистрация внутри
+# get_engine() сюда не доходит, регистрируем явно здесь же. Слушатель вешается
+# на класс Session целиком, а не на конкретный движок, так что одного вызова
+# на процесс pytest достаточно для всех тестов.
+install_tenant_autofill()
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -47,6 +56,36 @@ async def engine():
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await _engine.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _default_test_workspace(engine):
+    """Создаёт один workspace на тест и делает его "умолчанием" для ЛЮБОЙ
+    сессии, созданной в рамках этого теста — даже если тест создаёт
+    собственный async_sessionmaker(engine, ...) напрямую (так делают
+    десятки тестовых файлов), а не через фикстуру `session` ниже. Работает
+    через contextvar + событие SQLAlchemy "init", см.
+    src/db/tenant_scope.py — без этого почти любая попытка создать
+    UserModel/SpisokModel/... в тесте падает на NOT NULL workspace_id.
+
+    autouse=True: включается для каждого теста, использующего `engine`
+    (прямо или косвенно через `session`/`client`), без явного запроса.
+    Если тесту для чего-то нужен ВТОРОЙ workspace (кросс-тенантные
+    сценарии) — создавайте его вручную, это не мешает: автозаполнение
+    подставляет workspace_id только когда он не передан явно.
+    """
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with async_session() as sess:
+        ws = WorkspaceModel(name="Test Workspace", slug=f"test-{uuid.uuid4().hex[:8]}")
+        sess.add(ws)
+        await sess.commit()
+        workspace_id = ws.id
+
+    _set_test_default_workspace(workspace_id)
+    try:
+        yield workspace_id
+    finally:
+        _set_test_default_workspace(None)
 
 
 @pytest_asyncio.fixture
