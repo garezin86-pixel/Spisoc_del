@@ -96,7 +96,7 @@ class ChatService:
         if group_id is None:
             # Общий канал — рассылаем всем подключённым (переиспользуем тот же
             # механизм, что и у task_created/comment_added, см. ws_events.py).
-            await ws_manager.broadcast_all("chat_message", payload)
+            await ws_manager.broadcast_all("chat_message", payload, workspace_id=current_user.workspace_id)
             if origin == "web":
                 await _mirror_to_telegram(current_user.username, message.content)
         else:
@@ -165,7 +165,7 @@ class ChatService:
 
         payload = {"id": message_id, "group_id": group_id}
         if group_id is None:
-            await ws_manager.broadcast_all("chat_message_deleted", payload)
+            await ws_manager.broadcast_all("chat_message_deleted", payload, workspace_id=current_user.workspace_id)
         else:
             member_ids = await self.chat_repo.get_group_member_ids(group_id)
             if not member_ids:

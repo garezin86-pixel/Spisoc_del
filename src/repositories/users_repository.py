@@ -1,6 +1,7 @@
 from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.db.tenant_scope import set_session_workspace
 from src.models.user import UserModel
 from src.models.workspace import WorkspaceModel
 from src.repositories.abstract.base_user_repository import AbstractUserRepository
@@ -76,9 +77,18 @@ class UserRepository(AbstractUserRepository):
 
         Зачем: Telegram-бот идентифицирует пользователей по telegram_id,
         а не по username/password. Этот метод — точка входа для бота.
+
+        telegram_id глобально уникален, поэтому сам поиск идёт без фильтра по
+        workspace. Но после того как пользователь найден, сессия ПРИВЯЗЫВАЕТСЯ
+        к его workspace (если ещё не привязана) — так все последующие запросы
+        этого обработчика бота фильтруются автоматически, как и в HTTP-запросах
+        (см. get_current_user). Это единая точка входа для всех хендлеров бота.
         """
         result = await self.session.execute(select(UserModel).where(UserModel.telegram_id == telegram_id))
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
+        if user is not None and self.session.sync_session.info.get("workspace_id") is None:
+            set_session_workspace(self.session.sync_session, user.workspace_id)
+        return user
 
     async def set_role(self, username: str, role: str) -> None:
         """Обновляет роль пользователя через UPDATE без загрузки объекта.

@@ -33,6 +33,11 @@ async def notify_comment_added(comment_id: int):
         if not comment:
             return
 
+        # Комментарий загружен по id без фильтра (фоновая задача не знает
+        # workspace заранее) — дальше работаем только внутри его компании,
+        # иначе get_all() ниже вернул бы пользователей ВСЕХ компаний.
+        uow.set_workspace(comment.workspace_id)
+
         task = comment.task
         commenter = comment.user
 

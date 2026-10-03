@@ -27,16 +27,21 @@ class WSManager:
     def __init__(self):
         # user_id → set of WebSocket connections
         self._connections: dict[int, set[WebSocket]] = defaultdict(set)
+        # user_id → workspace_id. Нужен, чтобы broadcast_all не рассылал
+        # событие пользователям чужих компаний.
+        self._workspace_of: dict[int, int | None] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: int) -> None:
+    async def connect(self, websocket: WebSocket, user_id: int, workspace_id: int | None = None) -> None:
         await websocket.accept()
         self._connections[user_id].add(websocket)
+        self._workspace_of[user_id] = workspace_id
         logger.info("WS connected: user_id=%s total=%s", user_id, self.total_connections)
 
     def disconnect(self, websocket: WebSocket, user_id: int) -> None:
         self._connections[user_id].discard(websocket)
         if not self._connections[user_id]:
             del self._connections[user_id]
+            self._workspace_of.pop(user_id, None)
         logger.info("WS disconnected: user_id=%s total=%s", user_id, self.total_connections)
 
     @property
@@ -62,9 +67,15 @@ class WSManager:
             return_exceptions=True,
         )
 
-    async def broadcast_all(self, event: str, data: dict) -> None:
-        """Рассылает событие всем подключённым пользователям."""
-        user_ids = list(self._connections.keys())
+    async def broadcast_all(self, event: str, data: dict, *, workspace_id: int | None) -> None:
+        """Рассылает событие всем подключённым пользователям ОДНОГО workspace.
+
+        workspace_id обязателен (keyword-only, без значения по умолчанию) —
+        чтобы нельзя было случайно разослать событие всем компаниям сразу.
+        Соединения без известного workspace (None) получают событие только
+        если workspace_id тоже None (платформенный режим/тесты).
+        """
+        user_ids = [uid for uid in list(self._connections.keys()) if self._workspace_of.get(uid) == workspace_id]
         await self.broadcast_to_users(user_ids, event, data)
 
 
