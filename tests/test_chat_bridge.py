@@ -24,8 +24,21 @@ def make_tg_message(*, text="привет из телеграма", tg_id=123456
     return msg
 
 
-def make_user(*, id=1, username="alice", is_active=True):
+BRIDGE_WS = 7  # workspace, к которому привязан мост в этих тестах
+
+
+@pytest.fixture(autouse=True)
+def _bridge_workspace():
+    with (
+        patch("src.bot.handlers.chat_bridge.CHAT_BRIDGE_WORKSPACE_ID", BRIDGE_WS),
+        patch("src.services.chat_service.CHAT_BRIDGE_WORKSPACE_ID", BRIDGE_WS),
+    ):
+        yield
+
+
+def make_user(*, id=1, username="alice", is_active=True, workspace_id=BRIDGE_WS):
     u = MagicMock()
+    u.workspace_id = workspace_id
     u.id = id
     u.username = username
     u.is_active = is_active
@@ -139,6 +152,31 @@ class TestChatBridgeIncoming:
             await chat_bridge.handle_bridge_group_message(message)
             MockService.assert_not_called()
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bridge_ws", [BRIDGE_WS + 1, 0])
+    async def test_user_from_other_workspace_is_ignored(self, bridge_ws):
+        """Участник группы из другой компании (или мост без workspace) в общий чат не пишет."""
+        message = make_tg_message()
+        user = make_user()  # workspace BRIDGE_WS
+
+        with (
+            patch("src.bot.handlers.chat_bridge.CHAT_BRIDGE_GROUP_ID", 999),
+            patch("src.bot.handlers.chat_bridge.CHAT_BRIDGE_WORKSPACE_ID", bridge_ws),
+            patch("src.bot.handlers.chat_bridge.get_session_maker"),
+            patch("src.bot.handlers.chat_bridge.UnitOfWork") as MockUow,
+            patch.object(chat_bridge, "ChatService") as MockService,
+        ):
+            uow_instance = AsyncMock()
+            uow_instance.__aenter__ = AsyncMock(return_value=uow_instance)
+            uow_instance.__aexit__ = AsyncMock(return_value=False)
+            uow_instance.users = AsyncMock()
+            uow_instance.users.get_by_telegram_id = AsyncMock(return_value=user)
+            MockUow.return_value = uow_instance
+
+            await chat_bridge.handle_bridge_group_message(message)
+
+            MockService.return_value.send_message.assert_not_called()
+
 
 class TestChatServiceOutgoingMirror:
     """Веб → Telegram (ChatService._mirror_to_telegram)."""
@@ -242,6 +280,27 @@ class TestChatServiceOutgoingMirror:
             result = await service.send_message(user, "привет", group_id=None, origin="web")
 
             assert result is not None  # не упало
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bridge_ws", [BRIDGE_WS + 1, 0])
+    async def test_other_workspace_message_is_not_mirrored(self, bridge_ws):
+        """Сообщение общего чата чужой компании в привязанную группу не уходит."""
+        repo = AsyncMock()
+        repo.create = AsyncMock(return_value=MagicMock(id=1, content="секрет", group_id=None, user=None))
+        service = chat_service.ChatService(repo)
+        user = make_user()  # workspace BRIDGE_WS
+
+        with (
+            patch("src.services.chat_service.CHAT_BRIDGE_GROUP_ID", 999),
+            patch("src.services.chat_service.CHAT_BRIDGE_WORKSPACE_ID", bridge_ws),
+            patch("src.services.chat_service.get_bot") as mock_get_bot,
+            patch("src.services.chat_service.ws_manager") as mock_ws,
+        ):
+            mock_ws.broadcast_all = AsyncMock()
+
+            await service.send_message(user, "секрет", group_id=None, origin="web")
+
+            mock_get_bot.assert_not_called()
 
 
 class TestAuthMiddlewareBridgeExemption:

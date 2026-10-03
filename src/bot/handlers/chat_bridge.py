@@ -16,7 +16,7 @@ import structlog
 from aiogram import F, Router
 from aiogram.types import Message
 
-from src.core.config import CHAT_BRIDGE_GROUP_ID
+from src.core.config import CHAT_BRIDGE_GROUP_ID, CHAT_BRIDGE_WORKSPACE_ID
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.repositories.chat_repository import ChatRepository
@@ -52,6 +52,15 @@ async def handle_bridge_group_message(message: Message):
             return
 
         if not user.is_active:
+            return
+
+        # Мост привязан к одному workspace: участник группы из другой
+        # компании не должен писать в чужой общий чат.
+        if user.workspace_id != CHAT_BRIDGE_WORKSPACE_ID:
+            await logger.ainfo(
+                "chat_bridge_foreign_workspace_sender",
+                telegram_id=message.from_user.id,
+            )
             return
 
         service = ChatService(ChatRepository(uow.session))

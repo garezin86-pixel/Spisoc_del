@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # ID Telegram-группы, привязанной к общему каналу командного чата (см.
     # src/bot/handlers/chat_bridge.py). 0/не задано — мост выключен.
     chat_bridge_group_id: int = Field(default=0, alias="CHAT_BRIDGE_GROUP_ID")
+    # ID workspace, чей общий чат зеркалится в эту группу. Группа одна на весь
+    # сервис, а компаний может быть несколько — без привязки сообщения одной
+    # компании попадали бы в группу другой (и наоборот). 0/не задано — мост
+    # выключен, даже если задан CHAT_BRIDGE_GROUP_ID.
+    chat_bridge_workspace_id: int = Field(default=0, alias="CHAT_BRIDGE_WORKSPACE_ID")
 
     # AI
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
@@ -180,6 +185,7 @@ ADMIN_ALLOWED_IPS = settings.admin_allowed_ips
 METRICS_ALLOWED_IPS = settings.metrics_allowed_ips
 BOT_TOKEN = settings.bot_token
 CHAT_BRIDGE_GROUP_ID = settings.chat_bridge_group_id
+CHAT_BRIDGE_WORKSPACE_ID = settings.chat_bridge_workspace_id
 GROQ_API_KEY = settings.groq_api_key
 VOICE_RATE_LIMIT_COUNT = settings.voice_rate_limit_count
 VOICE_RATE_LIMIT_WINDOW_SECONDS = settings.voice_rate_limit_window_seconds

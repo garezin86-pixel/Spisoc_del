@@ -2,7 +2,7 @@
 import structlog
 
 from src.bot.setup import get_bot
-from src.core.config import CHAT_BRIDGE_GROUP_ID
+from src.core.config import CHAT_BRIDGE_GROUP_ID, CHAT_BRIDGE_WORKSPACE_ID
 from src.core.exceptions import no_access, not_found
 from src.core.ws_manager import ws_manager
 from src.models.chat_message import ChatMessageModel
@@ -36,11 +36,14 @@ def _check_channel_access(current_user: UserModel, group_id: int | None) -> None
         no_access("Вы не состоите в этой группе")
 
 
-async def _mirror_to_telegram(username: str, content: str) -> None:
+async def _mirror_to_telegram(username: str, content: str, workspace_id: int) -> None:
     """Дублирует сообщение общего канала в привязанную Telegram-группу (мост,
     см. src/bot/handlers/chat_bridge.py). Настраивается через CHAT_BRIDGE_GROUP_ID —
-    если не задан, мост просто выключен, ничего никуда не шлём."""
-    if not CHAT_BRIDGE_GROUP_ID:
+    если не задан, мост просто выключен, ничего никуда не шлём.
+
+    Мост принадлежит ОДНОМУ workspace (CHAT_BRIDGE_WORKSPACE_ID): сообщения
+    других компаний в группу не попадают."""
+    if not CHAT_BRIDGE_GROUP_ID or workspace_id != CHAT_BRIDGE_WORKSPACE_ID:
         return
     try:
         bot = get_bot()
@@ -98,7 +101,7 @@ class ChatService:
             # механизм, что и у task_created/comment_added, см. ws_events.py).
             await ws_manager.broadcast_all("chat_message", payload, workspace_id=current_user.workspace_id)
             if origin == "web":
-                await _mirror_to_telegram(current_user.username, message.content)
+                await _mirror_to_telegram(current_user.username, message.content, current_user.workspace_id)
         else:
             member_ids = await self.chat_repo.get_group_member_ids(group_id)
             await ws_manager.broadcast_to_users(member_ids, "chat_message", payload)

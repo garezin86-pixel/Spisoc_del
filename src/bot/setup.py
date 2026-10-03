@@ -64,6 +64,14 @@ async def start_bot():
         bot_instance = get_bot()
         dp_instance = get_dispatcher()
 
+        from src.core.config import CHAT_BRIDGE_GROUP_ID, CHAT_BRIDGE_WORKSPACE_ID
+
+        if CHAT_BRIDGE_GROUP_ID and not CHAT_BRIDGE_WORKSPACE_ID:
+            await logger.awarning(
+                "chat_bridge_disabled_no_workspace",
+                hint="CHAT_BRIDGE_GROUP_ID задан, но CHAT_BRIDGE_WORKSPACE_ID нет — мост выключен",
+            )
+
         from src.bot.handlers.global_navigation import set_main_menu
 
         await set_main_menu(bot_instance)
