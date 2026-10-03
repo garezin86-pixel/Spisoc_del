@@ -18,17 +18,29 @@ set_session_workspace), а слушатель SQLAlchemy "before_flush" сам
 когда одна операция намеренно пишет в другой workspace, например при
 принятии приглашения).
 
-Это закрывает ТОЛЬКО запись (INSERT). Чтение (SELECT) всё ещё не
-фильтруется по workspace автоматически — это отдельная, ещё не сделанная
-часть (do_orm_execute + with_loader_criteria, см. обсуждение мультитенантности
-в истории задачи). Сервисы по-прежнему обязаны сами фильтровать выборки по
-workspace_id, иначе один пользователь может прочитать чужие данные по id.
+Чтение (SELECT) и UPDATE/DELETE фильтруются слушателем "do_orm_execute"
+(_scope_orm_execute ниже): если у сессии задан workspace_id, к КАЖДОМУ
+ORM-запросу автоматически добавляется `workspace_id = :ws` для всех
+моделей с TenantMixin (with_loader_criteria, включая алиасы, JOIN-ы и
+ленивые загрузки связей). Сервисам не нужно фильтровать вручную.
+
+Важные границы (читать перед тем, как на это полагаться):
+  * Fail-open: если session.info["workspace_id"] не задан (None) —
+    фильтра нет. Так работают логин, бот, планировщик, SQLAdmin и сам
+    get_current_user (он загружает пользователя ДО того, как узнает его
+    workspace). Эти пути надо отдельно привязывать к workspace.
+  * Не покрывается: сырой text(), чистый Core (select(table.c.x) без ORM-
+    сущности) и session.get() для объекта, который уже лежит в identity
+    map этой же сессии (SQL не выполняется).
+  * Тестовый запасной workspace (_test_default_workspace_id) на чтение НЕ
+    влияет — только на запись, иначе существующие тесты, создающие данные
+    в нескольких workspace, начали бы получать пустые выборки.
 """
 
 import threading
 
 from sqlalchemy import event
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 
 from src.models.mixins import TenantMixin
 
@@ -88,12 +100,30 @@ def _autofill_workspace_id(session: Session, _flush_context, _instances) -> None
             obj.workspace_id = workspace_id
 
 
+def _scope_orm_execute(state: ORMExecuteState) -> None:
+    """Добавляет фильтр по workspace к любому ORM-запросу сессии."""
+    if state.is_column_load:
+        # Подгрузка отложенных колонок объекта, который уже прошёл фильтр.
+        return
+    workspace_id = state.session.info.get("workspace_id")
+    if workspace_id is None:
+        return
+    state.statement = state.statement.options(
+        with_loader_criteria(
+            TenantMixin,
+            lambda cls: cls.workspace_id == workspace_id,
+            include_aliases=True,
+        )
+    )
+
+
 def install_tenant_autofill() -> None:
-    """Регистрирует слушатель один раз за процесс (idempotent)."""
+    """Регистрирует слушатели (запись и чтение) один раз за процесс (idempotent)."""
     global _INSTALLED
     if _INSTALLED:
         return
     event.listen(Session, "before_flush", _autofill_workspace_id)
+    event.listen(Session, "do_orm_execute", _scope_orm_execute)
     _INSTALLED = True
 
 

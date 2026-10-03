@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, Index, String
+from sqlalchemy import BigInteger, Boolean, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
@@ -36,7 +36,7 @@ class UserModel(TenantMixin, Base):
     __allow_unmapped__ = True
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(unique=True)
+    username: Mapped[str]  # уникален только внутри workspace — см. __table_args__
     password_hash: Mapped[str]
     role: Mapped[str] = mapped_column(String, default=UserRole.user)
     # Доступ в SQLAdmin (см. src/admin/views/admin_auth.py) — НЕ то же самое,
@@ -142,7 +142,11 @@ class UserModel(TenantMixin, Base):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (Index("ix_users_telegram_active", "telegram_id", "is_active"),)
+    __table_args__ = (
+        Index("ix_users_telegram_active", "telegram_id", "is_active"),
+        # Совпадает с миграцией e4f5a6b7c8d9: username уникален в пределах workspace.
+        UniqueConstraint("workspace_id", "username", name="uq_users_workspace_username"),
+    )
 
     owned_projects: Mapped[list["ProjectModel"]] = relationship(
         "ProjectModel",
