@@ -23,20 +23,15 @@ class AuthMiddleware(BaseMiddleware):
         if CHAT_BRIDGE_GROUP_ID and event.chat.id == CHAT_BRIDGE_GROUP_ID:
             return await handler(event, data)
 
-        # Пропускаем /start, заявку и /chatid (нужен ДО того, как группа
-        # привязана и её участники зарегистрированы — иначе узнать chat_id
-        # новой группы для настройки моста будет нечем)
-        if event.text and (
-            event.text.startswith("/start") or event.text == "📝 Подать заявку" or event.text.startswith("/chatid")
-        ):
+        # Пропускаем /start (в том числе /start ws_<token> — вход по приглашению
+        # для людей без учётки) и /chatid (нужен ДО того, как группа привязана и
+        # её участники зарегистрированы — иначе узнать chat_id новой группы для
+        # настройки моста будет нечем)
+        if event.text and (event.text.startswith("/start") or event.text.startswith("/chatid")):
             return await handler(event, data)
 
-        # Пропускаем состояния регистрации
         fsm_context = data.get("state")
         if not isinstance(fsm_context, FSMContext):
-            return await handler(event, data)
-        current_state = await fsm_context.get_state()
-        if current_state and "Registration" in current_state:
             return await handler(event, data)
 
         async with UnitOfWork(get_session_maker()) as uow:

@@ -19,6 +19,7 @@ from src.models.two_factor_recovery_code import TwoFactorRecoveryCodeModel
 from src.models.user import UserModel
 from src.models.webhook import WebhookModel
 from src.models.workspace import WorkspaceModel
+from src.models.workspace_invite import WorkspaceInviteModel
 
 __all__ = [
     "ProjectModel",
@@ -45,4 +46,5 @@ __all__ = [
     "WebhookModel",
     "ChatMessageModel",
     "WorkspaceModel",
+    "WorkspaceInviteModel",
 ]

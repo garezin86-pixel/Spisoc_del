@@ -4,7 +4,6 @@
 Охват:
   - AuthMiddleware          (middlewares/auth.py)
   - cmd_start / deeplink    (handlers/start.py)
-  - registration flow       (handlers/registration.py)
   - commands level 1-4      (handlers/commands.py)
   - trash handlers          (handlers/trash.py)  — входная точка
 
@@ -182,26 +181,36 @@ class TestAuthMiddleware:
         handler.assert_called_once_with(message, data)
 
     @pytest.mark.asyncio
-    async def test_passes_application_button(self, middleware):
-        """Кнопка «Подать заявку» должна пройти без проверки."""
+    async def test_passes_start_with_invite_deeplink(self, middleware):
+        """/start ws_<token> должен пройти без проверки: у человека по приглашению ещё нет учётки."""
         handler = AsyncMock(return_value="ok")
-        message = make_message(text="📝 Подать заявку")
+        message = make_message(text="/start ws_AbCdEf123456")
         data = {"state": MagicMock()}
 
         await middleware(handler, message, data)
         handler.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_passes_registration_fsm_state(self, middleware):
-        """В состоянии Registration.* должен пропускать без проверки."""
-        handler = AsyncMock(return_value="ok")
-        message = make_message(text="Иванов Иван Иванович")
-        fsm = AsyncMock()
-        fsm.get_state = AsyncMock(return_value="Registration:waiting_for_fio")
-        data = {"state": fsm}
+    async def test_old_application_button_no_longer_bypasses_auth(self, middleware):
+        """Старый flow «Подать заявку» убран: эта кнопка больше не обходит проверку доступа."""
+        from unittest.mock import create_autospec
 
-        await middleware(handler, message, data)
-        handler.assert_called_once()
+        from aiogram.fsm.context import FSMContext
+
+        handler = AsyncMock()
+        message = make_message(text="📝 Подать заявку", as_aiogram_type=True)
+        fsm = create_autospec(FSMContext, instance=True)
+        fsm.get_state = AsyncMock(return_value=None)
+        uow = make_uow(user=None)
+
+        with (
+            patch("src.bot.middlewares.auth.UnitOfWork", return_value=uow),
+            patch("src.bot.middlewares.auth.get_session_maker"),
+            patch("src.bot.middlewares.auth.CHAT_BRIDGE_GROUP_ID", 0),
+        ):
+            await middleware(handler, message, {"state": fsm})
+
+        handler.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_blocks_unknown_user(self, middleware):
@@ -334,7 +343,7 @@ class TestCmdStart:
     """Тесты для обычного /start."""
 
     @pytest.mark.asyncio
-    async def test_start_unknown_user_shows_registration_button(self):
+    async def test_start_unknown_user_asks_for_invite_link(self):
         from src.bot.handlers.start import cmd_start
 
         message = make_message()
@@ -347,9 +356,10 @@ class TestCmdStart:
             await cmd_start(message)
 
         message.answer.assert_called_once()
-        call_kwargs = message.answer.call_args
-        # Проверяем reply_markup передан (кнопка заявки)
-        assert call_kwargs.kwargs.get("reply_markup") is not None or len(call_kwargs.args) > 0
+        call = message.answer.call_args
+        # Старой кнопки «Подать заявку» больше нет — только просьба прислать ссылку-приглашение.
+        assert call.kwargs.get("reply_markup") is None
+        assert "приглашен" in call.args[0]
 
     @pytest.mark.asyncio
     async def test_start_inactive_user_blocked(self):
@@ -405,176 +415,6 @@ class TestCmdStart:
             await cmd_start(message)
 
         mock_kb.assert_called_once()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# handlers/registration.py
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-class TestRegistration:
-    """Тесты для flow регистрации."""
-
-    @pytest.mark.asyncio
-    async def test_registration_start_sets_state(self):
-        from src.bot.handlers.registration import registration_start
-
-        message = make_message(text="📝 Подать заявку")
-        state = AsyncMock()
-
-        await registration_start(message, state)
-
-        state.set_state.assert_called_once()
-        message.answer.assert_called_once()
-        assert "ФИО" in message.answer.call_args[0][0]
-
-    @pytest.mark.asyncio
-    async def test_registration_fio_too_short(self):
-        from src.bot.handlers.registration import registration_fio
-
-        message = make_message(text="Ив")
-        state = AsyncMock()
-
-        await registration_fio(message, state)
-
-        message.answer.assert_called_once()
-        assert "ФИО" in message.answer.call_args[0][0]
-        # State не должен очищаться при ошибке валидации
-        state.clear.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_registration_fio_cancel(self):
-        from src.bot.handlers.registration import registration_fio
-
-        message = make_message(text="❌ Отмена")
-        state = AsyncMock()
-
-        await registration_fio(message, state)
-
-        state.clear.assert_called_once()
-        message.answer.assert_called_once()
-        assert "Отменено" in message.answer.call_args[0][0]
-
-    @pytest.mark.asyncio
-    async def test_registration_fio_valid_notifies_admin(self):
-        from src.bot.handlers.registration import registration_fio
-
-        message = make_message(text="Иванов Иван Иванович")
-        message.from_user.id = 999
-        message.from_user.username = "ivan"
-        state = AsyncMock()
-
-        mock_bot = AsyncMock()
-        mock_bot.send_message = AsyncMock()
-
-        with (
-            patch("src.bot.setup.get_bot", return_value=mock_bot),
-            patch("src.bot.handlers.registration.SUPER_ADMIN_TG_ID", 777),
-        ):
-            await registration_fio(message, state)
-
-        mock_bot.send_message.assert_called_once()
-        call_kwargs = mock_bot.send_message.call_args
-        assert call_kwargs.kwargs.get("chat_id") == 777 or call_kwargs.args[0] == 777
-        message.answer.assert_called_once()
-        assert "отправлена" in message.answer.call_args[0][0]
-
-    @pytest.mark.asyncio
-    async def test_registration_accept_creates_user(self):
-        from unittest.mock import create_autospec
-
-        from aiogram.types import Message as AiogramMessage
-
-        from src.bot.handlers.registration import (
-            pending_registrations,
-            registration_accept,
-        )
-
-        tg_id = 999
-        pending_registrations[tg_id] = "Иванов Иван Иванович"
-
-        callback = AsyncMock()
-        callback.data = f"reg_accept:{tg_id}"
-        # isinstance(callback.message, Message) должен быть True
-        callback.message = create_autospec(AiogramMessage, instance=True)
-        callback.message.text = "📋 Новая заявка"
-        callback.message.edit_text = AsyncMock()
-
-        uow = make_uow(user=None)  # пользователь ещё не существует
-
-        mock_bot = AsyncMock()
-
-        with (
-            patch("src.bot.handlers.registration.UnitOfWork", return_value=uow),
-            patch("src.bot.handlers.registration.get_session_maker"),
-            patch("src.bot.setup.get_bot", return_value=mock_bot),
-        ):
-            await registration_accept(callback)
-
-        # Должен создать пользователя через репозиторий
-        uow.users.create.assert_called_once()
-        # Должен уведомить пользователя
-        mock_bot.send_message.assert_called_once()
-        call_kwargs = mock_bot.send_message.call_args
-        assert call_kwargs.kwargs.get("chat_id") == tg_id or call_kwargs.args[0] == tg_id
-
-    @pytest.mark.asyncio
-    async def test_registration_accept_already_registered(self):
-        """Если пользователь уже зарегистрирован — не создавать дубль."""
-        from unittest.mock import create_autospec
-
-        from aiogram.types import Message as AiogramMessage
-
-        from src.bot.handlers.registration import (
-            pending_registrations,
-            registration_accept,
-        )
-
-        tg_id = 888
-        pending_registrations[tg_id] = "Петров Пётр Петрович"
-
-        callback = AsyncMock()
-        callback.data = f"reg_accept:{tg_id}"
-        callback.message = create_autospec(AiogramMessage, instance=True)
-        callback.message.text = "📋 Заявка"
-        callback.message.edit_text = AsyncMock()
-
-        existing_user = make_user(id=10, telegram_id=tg_id)
-        uow = make_uow(user=existing_user)
-
-        with (
-            patch("src.bot.handlers.registration.UnitOfWork", return_value=uow),
-            patch("src.bot.handlers.registration.get_session_maker"),
-        ):
-            await registration_accept(callback)
-
-        uow.users.create.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_registration_decline_notifies_user(self):
-        from unittest.mock import create_autospec
-
-        from aiogram.types import Message as AiogramMessage
-
-        from src.bot.handlers.registration import registration_decline
-
-        tg_id = 777
-        callback = AsyncMock()
-        callback.data = f"reg_decline:{tg_id}"
-        callback.message = create_autospec(AiogramMessage, instance=True)
-        callback.message.text = "📋 Заявка"
-        callback.message.edit_text = AsyncMock()
-
-        mock_bot = AsyncMock()
-
-        with patch("src.bot.setup.get_bot", return_value=mock_bot):
-            await registration_decline(callback)
-
-        mock_bot.send_message.assert_called_once()
-        call_kwargs = mock_bot.send_message.call_args
-        assert call_kwargs.kwargs.get("chat_id") == tg_id or call_kwargs.args[0] == tg_id
-        text = call_kwargs.kwargs.get("text") or call_kwargs.args[1]
-        assert "отклонена" in text
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

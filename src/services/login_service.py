@@ -1,6 +1,6 @@
 # src/services/login_service.py
 """Генерация уникального login из ФИО — общая для всех мест, где заводится
-пользователь: Telegram-бот (src/bot/handlers/registration.py), веб-
+пользователь: Telegram-бот (src/bot/handlers/start.py (вход по приглашению)), веб-
 регистрация и создание пользователя из админки (src/services/auth_service.py,
 src/services/user_service.py).
 

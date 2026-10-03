@@ -86,6 +86,10 @@ class AuthService:
         users_registered.inc()
         return created_user
 
+    async def issue_tokens(self, db_user) -> TokenSchema:
+        """Публично выдаёт пару токенов — для автологина сразу после регистрации."""
+        return await self._issue_tokens(db_user)
+
     async def _issue_tokens(self, db_user) -> TokenSchema:
         """Общий хвост выдачи пары access+refresh — переиспользуется обычным логином и login_with_2fa."""
         access_token = create_access_token({"sub": str(db_user.id), "role": db_user.role, "username": db_user.username})

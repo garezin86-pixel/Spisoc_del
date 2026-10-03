@@ -9,10 +9,13 @@ from src.db import SessionDep
 from src.models.user import UserModel
 from src.repositories.two_factor_repository import TwoFactorRepository
 from src.repositories.users_repository import UserRepository
+from src.repositories.workspace_repository import WorkspaceRepository
 from src.schemas.token import RefreshRequest, TokenSchema, TwoFactorLoginRequest
 from src.schemas.user import UserLogin
+from src.schemas.workspace import RegisterRequest
 from src.services.auth_service import AuthService
 from src.services.two_factor_service import TwoFactorService
+from src.services.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -42,6 +45,32 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 async def login(request: Request, user: UserLogin, session: SessionDep):
     redis = get_redis()
     return await AuthService(UserRepository(session), redis).login(user)
+
+
+@router.post(
+    "/register",
+    response_model=TokenSchema,
+    status_code=201,
+    summary="Регистрация: новая компания или вход по приглашению",
+    description=(
+        "Ровно одно из полей: `company_name` — создаёт новую компанию, пользователь становится её "
+        "администратором (доступно только если включён ALLOW_COMPANY_REGISTRATION); `invite_token` — "
+        "присоединение к существующей компании с ролью user. Роль в запросе не принимается. "
+        "В ответ сразу выдаются токены."
+    ),
+    responses={
+        400: {"description": "Приглашение недействительно/истекло или имя занято в этой компании"},
+        403: {"description": "Создание компаний отключено"},
+        422: {"description": "Не указан ровно один из company_name / invite_token"},
+        429: {"description": "Слишком много попыток"},
+    },
+)
+@limiter.limit("5/minute")
+async def register(request: Request, data: RegisterRequest, session: SessionDep):
+    user_repo = UserRepository(session)
+    service = WorkspaceService(WorkspaceRepository(session), user_repo)
+    user = await (service.register_company(data) if data.company_name else service.join_by_invite(data))
+    return await AuthService(user_repo, get_redis()).issue_tokens(user)
 
 
 @router.post(

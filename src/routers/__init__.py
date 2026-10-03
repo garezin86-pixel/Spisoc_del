@@ -18,6 +18,7 @@ from .templates_router import router as templates_router
 from .two_factor_router import router as two_factor_router
 from .users_router import router as users_router
 from .webhook_router import router as webhook_router
+from .workspace_router import router as workspace_router
 from .ws_router import router as ws_router
 
 api_router = APIRouter(prefix="/api")
@@ -41,3 +42,4 @@ api_router.include_router(pat_router)
 api_router.include_router(webhook_router)
 api_router.include_router(ws_router)
 api_router.include_router(notifications_router)
+api_router.include_router(workspace_router)

@@ -8,7 +8,6 @@ from src.bot.handlers.dm_bridge import router as dm_bridge_router
 from src.bot.handlers.notification_actions import router as notification_actions_router
 from src.bot.handlers.notification_settings import router as notification_router
 from src.bot.handlers.projects import router as projects_router
-from src.bot.handlers.registration import router as registration_router
 from src.bot.handlers.start import router as start_router
 from src.bot.handlers.tasks import router as tasks_router
 from src.bot.handlers.trash import router as trash_router
@@ -35,6 +34,5 @@ def register_handlers(dp: Dispatcher):
     dp.include_router(notification_actions_router)
     dp.include_router(tasks_router)
     dp.include_router(admin_router)
-    dp.include_router(registration_router)
     dp.include_router(attachments_router)
     dp.include_router(trash_router)
