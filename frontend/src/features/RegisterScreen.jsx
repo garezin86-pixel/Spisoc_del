@@ -1,14 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../api";
-
-// Тексты ошибок бэкенда приходят на английском (USER_ALREADY_EXISTS и т.п.) — здесь
-// переводим только то, что человек реально может увидеть на этом экране.
-function friendlyError(err) {
-    if (err.status === 403) return "Создание новых компаний отключено на этом сервере. Попросите ссылку-приглашение у администратора вашей компании.";
-    if (err.status === 429) return "Слишком много попыток. Подождите минуту и повторите.";
-    if (err.message === "User already exists") return "Это имя уже занято в вашей компании. Добавьте, например, отчество или инициал.";
-    return err.message;
-}
+import { registerError } from "../utils/authErrors";
 
 /**
  * Экран регистрации: «Новая компания» (создатель становится админом) или
@@ -60,7 +52,7 @@ export function RegisterScreen({ initialInvite, onRegistered, onBackToLogin }) {
                 .catch(err => {
                     if (!cancelled) setInviteError(err.status === 400
                         ? "Приглашение недействительно или истекло. Попросите администратора прислать новую ссылку."
-                        : friendlyError(err));
+                        : registerError(err));
                 });
         }, 300);
         return () => { cancelled = true; clearTimeout(timer); };
@@ -81,7 +73,7 @@ export function RegisterScreen({ initialInvite, onRegistered, onBackToLogin }) {
             const resp = await apiRequest({ path: "/auth/register", method: "POST", body });
             setDone({ login: resp.login, resp });
         } catch (err) {
-            setError(friendlyError(err));
+            setError(registerError(err));
         } finally {
             setBusy(false);
         }

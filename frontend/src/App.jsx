@@ -32,6 +32,7 @@ import { UserProfilePage } from "./features/UserProfilePage";
 import { WebhooksTab } from "./features/WebhooksTab";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { extractItems } from "./utils/extractItems";
+import { loginError } from "./utils/authErrors";
 import { decodeToken } from "./utils/token";
 
 function App() {
@@ -506,7 +507,7 @@ function App() {
             setToken(resp.access_token);
             setShow2faNudge(!!resp.requires_2fa_setup);
             setMustChangePassword(!!resp.must_change_password);
-        } catch (err) { setError(err.message); }
+        } catch (err) { setError(loginError(err)); }
     }
 
     async function handleLogin2fa(e) {
@@ -522,7 +523,7 @@ function App() {
             setToken(resp.access_token);
             setMfaPending(null);
             setMustChangePassword(!!resp.must_change_password);
-        } catch (err) { setError(err.message); }
+        } catch (err) { setError(loginError(err)); }
     }
 
     // ── task actions ─────────────────────────────────────
