@@ -37,6 +37,14 @@ class TelegramJoinResult(NamedTuple):
     temp_password: str
 
 
+def company_registration_enabled() -> bool:
+    """Включено ли самостоятельное создание компаний (ALLOW_COMPANY_REGISTRATION).
+
+    Читает флаг в момент вызова, а не при импорте, — как и register_company.
+    """
+    return ALLOW_COMPANY_REGISTRATION
+
+
 def build_company_slug_base(company_name: str) -> str:
     """«ООО Ромашка» → «ooo-romashka». Пустой результат → «company»."""
     words = (_transliterate_word(w) for w in company_name.split())
@@ -86,6 +94,18 @@ class WorkspaceService:
             invite = await self.repo.save_invite(invite)
             await logger.ainfo("workspace_invite_revoked", invite_id=invite.id, workspace_id=invite.workspace_id)
         return invite
+
+    async def preview_invite(self, token: str) -> str:
+        """Название компании по действующему приглашению (для экрана регистрации).
+
+        Недействительное/истёкшее/отозванное приглашение — тот же 400 с тем же
+        текстом, что и при регистрации: по ответу нельзя отличить «не было» от «истекло».
+        """
+        invite = await self.repo.get_active_invite_by_token(token)
+        if invite is None:
+            incorrect_request(INVALID_INVITE)
+        name = await self.repo.get_workspace_name(invite.workspace_id)
+        return name or ""
 
     # ── Регистрация в вебе ───────────────────────────────────────────────────
     async def register_company(self, data: RegisterRequest) -> UserModel:

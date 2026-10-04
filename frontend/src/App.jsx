@@ -25,6 +25,8 @@ import { TeamTab } from "./features/TeamTab";
 import { TemplatesTab } from "./features/TemplatesTab";
 import { TimelineTab } from "./features/TimelineTab";
 import { TokensTab } from "./features/TokensTab";
+import { InvitesPanel } from "./features/InvitesPanel";
+import { RegisterScreen } from "./features/RegisterScreen";
 import { TwoFactorTab } from "./features/TwoFactorTab";
 import { UserProfilePage } from "./features/UserProfilePage";
 import { WebhooksTab } from "./features/WebhooksTab";
@@ -38,6 +40,9 @@ function App() {
     const [mfaPending, setMfaPending] = useState(null); // { mfaToken } — ждём код 2FA перед выдачей токенов
     const [show2faNudge, setShow2faNudge] = useState(false);
     const [mustChangePassword, setMustChangePassword] = useState(false);
+    // Ссылка-приглашение ?invite=<код> сразу открывает регистрацию с подставленным кодом.
+    const [inviteFromUrl] = useState(() => new URLSearchParams(window.location.search).get("invite") || "");
+    const [authScreen, setAuthScreen] = useState(inviteFromUrl ? "register" : "login"); // "login" | "register"
 
     // api.js рефрешит access-токен "тихо" внутри apiRequest при 401 и кладёт
     // его в localStorage, но состояние React об этом не знает само по себе —
@@ -728,6 +733,23 @@ function App() {
     const roleColor = ROLE_COLORS[currentRole] ?? ROLE_COLORS.user;
 
     // ── Login screen ─────────────────────────────────────
+    if (!token && authScreen === "register") {
+        return (
+            <RegisterScreen
+                initialInvite={inviteFromUrl}
+                onBackToLogin={() => { setAuthScreen("login"); setError(null); }}
+                onRegistered={(resp) => {
+                    saveTokens(resp.access_token, resp.refresh_token);
+                    // Код приглашения одноразово «сжигать» не нужно, но и оставлять в адресной строке незачем.
+                    window.history.replaceState({}, "", window.location.pathname);
+                    setAuthScreen("login");
+                    setToken(resp.access_token);
+                    setMustChangePassword(false);
+                }}
+            />
+        );
+    }
+
     if (!token) {
         return (
             <div className="login-page">
@@ -775,6 +797,10 @@ function App() {
                                 Войти
                             </button>
                             {error && <div className="alert">{error}</div>}
+                            <button type="button" className="btn btn-ghost btn-sm"
+                                onClick={() => { setAuthScreen("register"); setError(null); }}>
+                                Нет аккаунта? Зарегистрироваться
+                            </button>
                         </form>
                     )}
                 </div>
@@ -1412,6 +1438,7 @@ function App() {
                     {/* ── TEAM TAB ── */}
                     {tab === "team" && (
                         <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
+                            {currentRole === "admin" && <InvitesPanel token={token} />}
                             <TeamTab token={token} currentUserId={currentUserId} />
                         </div>
                     )}

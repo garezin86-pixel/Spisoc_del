@@ -373,3 +373,57 @@ async def test_join_handler_rejects_bad_token_and_existing_user(maker):
         again = _tg_message(555000502)
         await start_handlers._join_workspace(again, invite.token)
     assert "уже зарегистрированы" in again.answer.call_args.args[0]
+
+
+# ── Публичные эндпоинты для экрана регистрации ───────────────────────────────
+async def test_registration_options_reflect_flag(client):
+    off = await client.get("/auth/registration-options")
+    assert off.status_code == 200 and off.json() == {"company_registration_enabled": False}
+    with patch("src.services.workspace_service.ALLOW_COMPANY_REGISTRATION", True):
+        on = await client.get("/auth/registration-options")
+    assert on.json() == {"company_registration_enabled": True}
+
+
+async def test_invite_preview_returns_company_name_without_auth(client, maker):
+    _, admin = await _make_company(maker, "Ромашка")
+    invite = await _new_invite(client, await _headers(client, admin))
+    resp = await client.get(f"/auth/invite/{invite['token']}")
+    assert resp.status_code == 200 and resp.json() == {"company_name": "Ромашка"}
+
+
+async def test_invite_preview_rejects_revoked_expired_and_unknown_identically(client, maker):
+    _, admin = await _make_company(maker, "A")
+    h = await _headers(client, admin)
+    revoked = await _new_invite(client, h)
+    await client.delete(f"/api/workspace/invites/{revoked['id']}", headers=h)
+    expired = await _new_invite(client, h)
+    async with maker() as s:
+        await s.execute(
+            update(WorkspaceInviteModel)
+            .where(WorkspaceInviteModel.id == expired["id"])
+            .values(expires_at=datetime.now(timezone.utc) - timedelta(minutes=1))
+        )
+        await s.commit()
+
+    bodies = []
+    for token in (revoked["token"], expired["token"], "does-not-exist-123"):
+        resp = await client.get(f"/auth/invite/{token}")
+        assert resp.status_code == 400
+        bodies.append(resp.json())
+    assert bodies[0] == bodies[1] == bodies[2]  # по ответу не отличить «истекло» от «не было»
+
+
+async def test_register_returns_login_that_can_be_used_to_sign_in_again(client, maker):
+    """Логин отличается от username («Иван Петров» → petrov.i) и нигде больше не показывается —
+    без него в ответе человек не смог бы войти повторно."""
+    _, admin = await _make_company(maker, "A")
+    invite = await _new_invite(client, await _headers(client, admin))
+    resp = await client.post(
+        "/auth/register", json={"username": "Иван Петров", "password": PASSWORD, "invite_token": invite["token"]}
+    )
+    assert resp.status_code == 201
+    login = resp.json()["login"]
+    assert login and login != "Иван Петров"
+
+    again = await client.post("/auth/login", json={"username": login, "password": PASSWORD})
+    assert again.status_code == 200

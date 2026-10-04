@@ -64,6 +64,9 @@ class WorkspaceRepository:
     async def slug_exists(self, slug: str) -> bool:
         return (await self.session.scalar(select(WorkspaceModel.id).where(WorkspaceModel.slug == slug))) is not None
 
+    async def get_workspace_name(self, workspace_id: int) -> str | None:
+        return await self.session.scalar(select(WorkspaceModel.name).where(WorkspaceModel.id == workspace_id))
+
     async def create_company(self, workspace: WorkspaceModel, admin: UserModel) -> UserModel:
         """Создаёт компанию и её первого админа ОДНОЙ транзакцией.
 

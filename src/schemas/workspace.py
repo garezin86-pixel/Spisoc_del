@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.schemas.token import TokenSchema
 from src.schemas.user import _validate_username
 
 
@@ -54,3 +55,26 @@ class InviteSchema(BaseModel):
     bot_link: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RegistrationOptions(BaseModel):
+    """Что можно на экране регистрации: показывать ли вкладку «Новая компания»."""
+
+    company_registration_enabled: bool
+
+
+class InvitePreview(BaseModel):
+    """Что видит человек по ссылке-приглашению ДО регистрации."""
+
+    company_name: str
+
+
+class RegistrationResult(TokenSchema):
+    """Токены + логин для входа.
+
+    Логин генерируется из имени (например «petrov.i») и отличается от username,
+    а войти можно только по нему. Нигде больше в API он не возвращается, поэтому
+    без этого поля человек, закрыв вкладку, не смог бы войти повторно.
+    """
+
+    login: str

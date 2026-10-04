@@ -12,10 +12,10 @@ from src.repositories.users_repository import UserRepository
 from src.repositories.workspace_repository import WorkspaceRepository
 from src.schemas.token import RefreshRequest, TokenSchema, TwoFactorLoginRequest
 from src.schemas.user import UserLogin
-from src.schemas.workspace import RegisterRequest
+from src.schemas.workspace import InvitePreview, RegisterRequest, RegistrationOptions, RegistrationResult
 from src.services.auth_service import AuthService
 from src.services.two_factor_service import TwoFactorService
-from src.services.workspace_service import WorkspaceService
+from src.services.workspace_service import WorkspaceService, company_registration_enabled
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -47,16 +47,42 @@ async def login(request: Request, user: UserLogin, session: SessionDep):
     return await AuthService(UserRepository(session), redis).login(user)
 
 
+@router.get(
+    "/registration-options",
+    response_model=RegistrationOptions,
+    summary="Доступные варианты регистрации",
+    description="Публичный. Нужен экрану регистрации, чтобы скрыть «Новая компания», когда она отключена.",
+)
+async def registration_options():
+    return RegistrationOptions(company_registration_enabled=company_registration_enabled())
+
+
+@router.get(
+    "/invite/{token}",
+    response_model=InvitePreview,
+    summary="Проверить приглашение",
+    description="Публичный. Возвращает название компании, если приглашение действует; иначе 400.",
+    responses={
+        400: {"description": "Приглашение недействительно или истекло"},
+        429: {"description": "Слишком много запросов"},
+    },
+)
+@limiter.limit("30/minute")
+async def preview_invite(request: Request, token: str, session: SessionDep):
+    service = WorkspaceService(WorkspaceRepository(session), UserRepository(session))
+    return InvitePreview(company_name=await service.preview_invite(token))
+
+
 @router.post(
     "/register",
-    response_model=TokenSchema,
+    response_model=RegistrationResult,
     status_code=201,
     summary="Регистрация: новая компания или вход по приглашению",
     description=(
         "Ровно одно из полей: `company_name` — создаёт новую компанию, пользователь становится её "
         "администратором (доступно только если включён ALLOW_COMPANY_REGISTRATION); `invite_token` — "
         "присоединение к существующей компании с ролью user. Роль в запросе не принимается. "
-        "В ответ сразу выдаются токены."
+        "В ответ сразу выдаются токены и `login` — по нему нужно входить в дальнейшем (он отличается от username)."
     ),
     responses={
         400: {"description": "Приглашение недействительно/истекло или имя занято в этой компании"},
@@ -70,7 +96,8 @@ async def register(request: Request, data: RegisterRequest, session: SessionDep)
     user_repo = UserRepository(session)
     service = WorkspaceService(WorkspaceRepository(session), user_repo)
     user = await (service.register_company(data) if data.company_name else service.join_by_invite(data))
-    return await AuthService(user_repo, get_redis()).issue_tokens(user)
+    tokens = await AuthService(user_repo, get_redis()).issue_tokens(user)
+    return RegistrationResult(**tokens.model_dump(), login=user.login)
 
 
 @router.post(
