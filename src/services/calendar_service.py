@@ -1,6 +1,7 @@
 # src/services/calendar_service.py
 import secrets
 
+from src.db.tenant_scope import set_session_workspace
 from src.models.user import UserModel
 from src.repositories.calendar_repository import CalendarRepository
 from src.utils.ics import build_ics_feed
@@ -26,7 +27,12 @@ class CalendarService:
     async def build_feed_for_token(self, token: str) -> str | None:
         """Возвращает готовый .ics текст, либо None если токен не найден (эндпоинт вернёт 404)."""
         user = await self.calendar_repo.get_user_by_calendar_token(token)
-        if not user:
+        # Токен в URL — единственная «аутентификация» календарных клиентов, поэтому
+        # у заблокированного (уволенного) сотрудника ссылка должна переставать работать,
+        # как и обычный вход. Отвечаем так же, как на неверный токен.
+        if not user or not user.is_active:
             return None
+        # Сессия анонимная; дальше читаем только внутри компании владельца ссылки.
+        set_session_workspace(self.calendar_repo.session.sync_session, user.workspace_id)
         tasks = await self.calendar_repo.get_tasks_with_deadline_for_user(user.id)
         return build_ics_feed(tasks, calendar_name=f"Spisok Del — дедлайны ({user.username})")

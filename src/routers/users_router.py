@@ -299,7 +299,9 @@ async def upload_my_avatar(
         except Exception:  # noqa: BLE001 — не блокируем загрузку нового аватара из-за сбоя очистки старого
             pass
 
-    key = storage.build_key(f"avatars/{current_user.id}", file.filename or "avatar")
+    key = storage.build_key(
+        f"avatars/{current_user.id}", file.filename or "avatar", workspace_id=current_user.workspace_id
+    )
     url = await storage.upload(key=key, data=data, content_type=file.content_type)
 
     current_user.avatar_storage_key = key

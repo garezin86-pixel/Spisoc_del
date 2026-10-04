@@ -26,6 +26,7 @@ from aiogram.types import Message
 
 from src.bot.keyboards.main import cancel_keyboard
 from src.db import get_session_maker
+from src.db.tenant_scope import current_workspace_id
 from src.db.unit_of_work import UnitOfWork
 from src.models.attachment_model import AttachmentModel
 from src.services.active_storage import storage
@@ -129,7 +130,7 @@ async def _upload_to_storage_background(
             return
 
         file_bytes = file_buffer.read()
-        key = storage.build_key(task_id, filename)
+        key = storage.build_key(task_id, filename, workspace_id=current_workspace_id())
 
         url = await storage.upload(key=key, data=file_bytes, content_type=mime_type)
 

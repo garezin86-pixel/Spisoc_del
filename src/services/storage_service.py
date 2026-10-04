@@ -76,17 +76,24 @@ class R2StorageService:
         )
 
     @staticmethod
-    def build_key(task_id: int | str, filename: str) -> str:
+    def build_key(task_id: int | str, filename: str, workspace_id: int | None = None) -> str:
         """
         Формирует уникальный путь в бакете.
-        Пример: attachments/42/a1b2c3d4-photo.jpg
+        Пример: attachments/ws-3/42/a1b2c3d4-photo.jpg (без workspace_id —
+        прежний вид attachments/42/a1b2c3d4-photo.jpg; старые ключи остаются
+        рабочими, полный ключ хранится в БД).
+        Префикс ws-<id> нужен не для защиты (доступ — только через
+        /api/attachments/{id}/download с проверкой прав), а чтобы файлы компании
+        лежали вместе: удалить/выгрузить/посчитать объём одной компании — одна
+        операция по префиксу.
         task_id может быть строкой (например "avatars/7" для аватаров
         пользователей, см. users_router.upload_my_avatar) — это просто
         префикс пути, а не число для арифметики.
         """
         safe_name = filename.replace("/", "_").replace("\\", "_").strip() or "file"
         unique_prefix = uuid.uuid4().hex[:8]
-        return f"attachments/{task_id}/{unique_prefix}-{safe_name}"
+        ws_part = f"ws-{workspace_id}/" if workspace_id is not None else ""
+        return f"attachments/{ws_part}{task_id}/{unique_prefix}-{safe_name}"
 
     async def upload(
         self,

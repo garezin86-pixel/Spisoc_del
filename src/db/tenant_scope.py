@@ -25,10 +25,14 @@ ORM-запросу автоматически добавляется `workspace_
 ленивые загрузки связей). Сервисам не нужно фильтровать вручную.
 
 Важные границы (читать перед тем, как на это полагаться):
-  * Fail-open: если session.info["workspace_id"] не задан (None) —
-    фильтра нет. Так работают логин, бот, планировщик, SQLAdmin и сам
-    get_current_user (он загружает пользователя ДО того, как узнает его
-    workspace). Эти пути надо отдельно привязывать к workspace.
+  * Fail-open: если workspace не определён ни в session.info, ни в
+    контексте (см. workspace_context ниже) — фильтра нет. Так работают
+    логин, планировщик, SQLAdmin и сам get_current_user (он загружает
+    пользователя ДО того, как узнает его workspace). Telegram-бот
+    привязывается автоматически: WorkspaceContextMiddleware на каждый
+    апдейт кладёт workspace пользователя в контекст, и ВСЕ сессии,
+    открытые внутри обработчика (включая фоновые задачи, порождённые им
+    через asyncio.create_task), фильтруются и автозаполняются.
   * Не покрывается: сырой text(), чистый Core (select(table.c.x) без ORM-
     сущности) и session.get() для объекта, который уже лежит в identity
     map этой же сессии (SQL не выполняется).
@@ -38,6 +42,9 @@ ORM-запросу автоматически добавляется `workspace_
 """
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from sqlalchemy import event
 from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
@@ -45,6 +52,11 @@ from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 from src.models.mixins import TenantMixin
 
 _INSTALLED = False
+
+# Запрос с .execution_options(skip_workspace_scope=True) читает ВСЕ компании.
+# Только для идентификаторов, которые по замыслу уникальны глобально и нужны
+# для входа/проверки уникальности (login) — не для пользовательских данных.
+SKIP_WORKSPACE_SCOPE = "skip_workspace_scope"
 
 # Только для тестов: десятки тестовых файлов создают свой собственный
 # async_sessionmaker(engine, ...) напрямую (не через src.db.get_session_maker),
@@ -68,6 +80,39 @@ _test_default_workspace_id: int | None = None
 _test_default_lock = threading.Lock()
 
 
+# Workspace «текущей задачи asyncio» — для кода, который открывает сессии сам
+# (Telegram-бот: десятки хендлеров делают `UnitOfWork(get_session_maker())`
+# и не имеют общего места, где можно вызвать set_session_workspace).
+# В отличие от тестовой переменной выше это именно ContextVar: каждый апдейт
+# бота обрабатывается в своей задаче, а дочерние задачи (create_task) получают
+# копию контекста — фоновая загрузка вложений и уведомления остаются
+# привязанными к компании, из чьего апдейта их запустили.
+_current_workspace: ContextVar[int | None] = ContextVar("current_workspace_id", default=None)
+
+
+@contextmanager
+def workspace_context(workspace_id: int | None) -> Iterator[None]:
+    """Все сессии, открытые внутри блока, привязаны к workspace_id.
+
+    Явно заданный session.info["workspace_id"] приоритетнее контекста.
+    workspace_id=None — ничего не привязывает (платформенный режим).
+    """
+    token = _current_workspace.set(workspace_id)
+    try:
+        yield
+    finally:
+        _current_workspace.reset(token)
+
+
+def current_workspace_id() -> int | None:
+    """Workspace текущего контекста (бот, фоновые задачи из его хендлеров) или None."""
+    return _current_workspace.get()
+
+
+def _effective_workspace(session: Session) -> int | None:
+    return session.info.get("workspace_id") or _current_workspace.get()
+
+
 def _set_test_default_workspace(workspace_id: int | None) -> None:
     global _test_default_workspace_id
     with _test_default_lock:
@@ -87,7 +132,7 @@ def set_session_workspace(session: Session, workspace_id: int | None) -> None:
 
 
 def _autofill_workspace_id(session: Session, _flush_context, _instances) -> None:
-    workspace_id = session.info.get("workspace_id")
+    workspace_id = _effective_workspace(session)
     if workspace_id is None:
         # В проде это всегда None (глобальная переменная ниже заполняется
         # только тестовой фикстурой) — тогда просто ничего не делаем, как и
@@ -105,7 +150,9 @@ def _scope_orm_execute(state: ORMExecuteState) -> None:
     if state.is_column_load:
         # Подгрузка отложенных колонок объекта, который уже прошёл фильтр.
         return
-    workspace_id = state.session.info.get("workspace_id")
+    if state.execution_options.get(SKIP_WORKSPACE_SCOPE):
+        return
+    workspace_id = _effective_workspace(state.session)
     if workspace_id is None:
         return
     state.statement = state.statement.options(

@@ -91,7 +91,7 @@ async def upload_attachment(
     mime_type = file.content_type
 
     # Сохраняем в storage (local или R2 в зависимости от active_storage.py)
-    key = storage.build_key(task_id, filename)
+    key = storage.build_key(task_id, filename, workspace_id=current_user.workspace_id)
     url = await storage.upload(key=key, data=data, content_type=mime_type)
 
     # Создаём запись в БД

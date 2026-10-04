@@ -80,7 +80,12 @@ async def start_bot():
         await logger.ainfo("bot_menu_button", button=str(button))
 
         from src.bot.middlewares.auth import AuthMiddleware
+        from src.bot.middlewares.workspace_context import WorkspaceContextMiddleware
 
+        # Порядок важен: workspace_context — outer на dp.update, т.е. снаружи
+        # AuthMiddleware и всех хендлеров, и после встроенного UserContextMiddleware
+        # (он кладёт event_from_user, который тут нужен).
+        dp_instance.update.outer_middleware(WorkspaceContextMiddleware())
         dp_instance.message.middleware(AuthMiddleware())
 
         from src.bot.handlers import register_handlers

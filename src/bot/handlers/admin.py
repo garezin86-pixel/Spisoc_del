@@ -2,6 +2,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
+from sqlalchemy.exc import IntegrityError
 
 from src.bot.keyboards.main import (
     admin_groups_keyboard,
@@ -15,6 +16,7 @@ from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.user import UserModel
 from src.services.group_service import GroupService
+from src.services.login_service import generate_unique_login
 
 router = Router()
 
@@ -223,11 +225,22 @@ async def add_user_telegram_id(message: Message, state: FSMContext):
 
         new_user = UserModel(
             username=data["username"],
+            login=await generate_unique_login(data["username"], uow.users),
             password_hash=hash_password(data["password"]),
             role=data["role"],
             telegram_id=telegram_id,
         )
-        await uow.users.create(new_user)
+        try:
+            await uow.users.create(new_user)
+        except IntegrityError:
+            # telegram_id уникален глобально: он уже привязан к пользователю (возможно, другой компании).
+            await uow.session.rollback()
+            await state.clear()
+            await message.answer(
+                "❌ Этот Telegram ID уже привязан к другому пользователю.",
+                reply_markup=admin_users_keyboard(),
+            )
+            return
 
     await state.clear()
     await message.answer(

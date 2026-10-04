@@ -1,7 +1,7 @@
 from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.tenant_scope import set_session_workspace
+from src.db.tenant_scope import SKIP_WORKSPACE_SCOPE, set_session_workspace
 from src.models.user import UserModel
 from src.models.workspace import WorkspaceModel
 from src.repositories.abstract.base_user_repository import AbstractUserRepository
@@ -51,8 +51,18 @@ class UserRepository(AbstractUserRepository):
         return await self.session.scalar(select(UserModel).where(UserModel.username == username))
 
     async def get_by_login(self, login: str) -> UserModel | None:
-        """Ищет по отдельному полю login (см. src/utils/login_generator.py) — используется при входе и @упоминаниях."""
-        return await self.session.scalar(select(UserModel).where(UserModel.login == login))
+        """Ищет по отдельному полю login (см. src/utils/login_generator.py).
+
+        ГЛОБАЛЬНО, по всем компаниям, даже в сессии, привязанной к workspace:
+        login уникален во всём сервисе (по нему входят, не зная компании), и
+        generate_unique_login обязан видеть логины чужих компаний — иначе
+        админ одной компании получил бы уже занятый логин и ошибку БД.
+        Данные пользователя из ответа не раскрываются: вызывающие используют
+        только факт существования или вход с проверкой пароля.
+        """
+        return await self.session.scalar(
+            select(UserModel).where(UserModel.login == login).execution_options(**{SKIP_WORKSPACE_SCOPE: True})
+        )
 
     async def get_workspace_id_by_slug(self, slug: str) -> int | None:
         return await self.session.scalar(select(WorkspaceModel.id).where(WorkspaceModel.slug == slug))
