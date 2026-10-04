@@ -44,6 +44,33 @@ class WSManager:
             self._workspace_of.pop(user_id, None)
         logger.info("WS disconnected: user_id=%s total=%s", user_id, self.total_connections)
 
+    async def disconnect_user(self, user_id: int, *, reason: str = "Account disabled") -> int:
+        """Закрывает все соединения пользователя (заблокировали, пока он online).
+
+        Код 4001 — тот же, что при ошибке авторизации: клиент не должен
+        переподключаться с тем же токеном. Возвращает число закрытых соединений.
+        Работает только в этом процессе: при нескольких воркерах нужен общий
+        канал (например, Redis pub/sub) — сейчас сервис запускается одним.
+        """
+        sockets = list(self._connections.pop(user_id, set()))
+        self._workspace_of.pop(user_id, None)
+        for ws in sockets:
+            try:
+                await ws.close(code=4001, reason=reason)
+            except Exception:  # noqa: BLE001 — соединение могло уже закрыться само
+                pass
+        if sockets:
+            logger.info("WS force-disconnected: user_id=%s connections=%s", user_id, len(sockets))
+        return len(sockets)
+
+    async def disconnect_workspace(self, workspace_id: int, *, reason: str = "Company disabled") -> int:
+        """Закрывает соединения всех пользователей компании (компанию отключили)."""
+        user_ids = [uid for uid, ws_id in list(self._workspace_of.items()) if ws_id == workspace_id]
+        closed = 0
+        for uid in user_ids:
+            closed += await self.disconnect_user(uid, reason=reason)
+        return closed
+
     @property
     def total_connections(self) -> int:
         return sum(len(s) for s in self._connections.values())

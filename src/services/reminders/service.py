@@ -107,7 +107,8 @@ async def _send_deadline_reminders(
 
         for task in tasks:
             user = task.user
-            if not user or not user.telegram_id:
+            # Пользователи отключённой компании напоминаний не получают.
+            if not user or not user.telegram_id or not user.workspace_is_active:
                 continue
 
             settings = await uow.notification_settings.get_by_user(user.id)
@@ -185,7 +186,8 @@ async def notify_overdue() -> None:
 
         for task in tasks:
             user = task.user
-            if not user or not user.telegram_id:
+            # Пользователи отключённой компании напоминаний не получают.
+            if not user or not user.telegram_id or not user.workspace_is_active:
                 continue
 
             settings = await uow.notification_settings.get_by_user(user.id)
@@ -300,8 +302,8 @@ async def notify_group_assigned(user_id: int, group_id: int, group_name: str) ->
 
     async with UnitOfWork(session_maker) as uow:
         user = await uow.users.get_by_id(user_id)
-        if not user or not user.telegram_id:
-            logger.warning("User %s has no telegram_id", user_id)
+        if not user or not user.telegram_id or not user.workspace_is_active:
+            logger.warning("User %s has no telegram_id or company is disabled", user_id)
             return
 
         settings = await uow.notification_settings.get_by_user(user.id)

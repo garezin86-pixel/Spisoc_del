@@ -1,8 +1,9 @@
 # src/repositories/webhook_repository.py
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.webhook import WebhookModel
+from src.models.workspace import WorkspaceModel
 
 
 class WebhookRepository:
@@ -54,6 +55,8 @@ class WebhookRepository:
             select(WebhookModel).where(
                 WebhookModel.user_id.in_(user_ids),
                 WebhookModel.is_active.is_(True),
+                # Компания отключена — вебхуки её пользователей молчат.
+                exists().where(WorkspaceModel.id == WebhookModel.workspace_id, WorkspaceModel.is_active.is_(True)),
             )
         )
         return list(result.scalars().all())

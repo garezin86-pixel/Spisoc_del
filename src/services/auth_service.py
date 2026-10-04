@@ -3,7 +3,7 @@ import structlog
 from redis.asyncio import Redis
 
 from src.core.config import REFRESH_TOKEN_EXPIRE_DAYS
-from src.core.constants import INVALID_CREDENTIALS, USER_ALREADY_EXISTS
+from src.core.constants import INVALID_CREDENTIALS, USER_ALREADY_EXISTS, WORKSPACE_DISABLED
 from src.core.exceptions import invalid_credentials, unauthorized, user_already_exists
 from src.core.metrics import users_registered
 from src.core.security import (
@@ -133,6 +133,16 @@ class AuthService:
             invalid_credentials(INVALID_CREDENTIALS)
             raise
 
+        # Пароль верный — теперь можно честно сказать, что компания отключена
+        # (до проверки пароля причину не раскрываем, чтобы не выдавать, какие
+        # логины существуют). Заблокированный ЛИЧНО пользователь токен на
+        # логине по-прежнему получает, но любой его запрос отклоняется в
+        # get_current_user (поведение закреплено тестом
+        # test_login_inactive_user_still_gets_token) — здесь это не менялось.
+        if not db_user.workspace_is_active:
+            unauthorized(WORKSPACE_DISABLED)
+            raise RuntimeError
+
         if getattr(db_user, "totp_enabled", False):
             await logger.ainfo("login_password_ok_awaiting_2fa", user_id=db_user.id)
             return TokenSchema(mfa_required=True, mfa_token=create_mfa_token(db_user.id))
@@ -155,7 +165,7 @@ class AuthService:
 
         user_id = int(payload["sub"])
         db_user = await self.user_repo.get_by_id(user_id)
-        if not db_user or not db_user.is_active:
+        if not db_user or not db_user.is_active or not db_user.workspace_is_active:
             unauthorized("Пользователь не найден или заблокирован")
             raise RuntimeError
 
@@ -206,7 +216,7 @@ class AuthService:
 
         # Получаем пользователя и проверяем что он активен
         db_user = await self.user_repo.get_by_id(int(user_id))
-        if not db_user or not db_user.is_active:
+        if not db_user or not db_user.is_active or not db_user.workspace_is_active:
             unauthorized("Пользователь не найден или заблокирован")
             raise RuntimeError
 

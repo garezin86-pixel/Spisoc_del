@@ -8,6 +8,7 @@ from src.core.constants import (
     FOR_ADMIN_ONLY,
     INVALID_EXPIRED_TOKEN,
     USER_NOT_FOUND,
+    WORKSPACE_DISABLED,
 )
 from src.core.exceptions import current_admin, no_access, unauthorized, user_not_found
 from src.db import SessionDep
@@ -91,6 +92,9 @@ async def get_current_user(
 
     if not user.is_active:
         unauthorized(ACCOUNT_DISABLED)
+        raise
+    if not user.workspace_is_active:
+        unauthorized(WORKSPACE_DISABLED)
         raise
 
     set_session_workspace(session, user.workspace_id)

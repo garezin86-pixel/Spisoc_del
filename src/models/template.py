@@ -44,7 +44,9 @@ class TaskTemplateModel(TenantMixin, Base):
         "TaskTemplateItemModel",
         back_populates="template",
         cascade="all, delete-orphan",
-        order_by="TaskTemplateItemModel.order_index",
+        # id — детерминированный порядок для равных order_index (старые шаблоны, где
+        # у всех пунктов 0): иначе порядок зависит от плана запроса БД.
+        order_by="TaskTemplateItemModel.order_index, TaskTemplateItemModel.id",
         lazy="joined",
     )
 

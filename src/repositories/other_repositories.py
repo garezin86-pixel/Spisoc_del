@@ -297,6 +297,7 @@ class NotificationSettingsRepository:
                 NotificationSettingsModel.weekly_report_enabled.is_(True),
                 UserModel.telegram_id.is_not(None),  # Только с Telegram ID
                 UserModel.is_active.is_(True),  # Только активные
+                UserModel.workspace_is_active,  # и компания не отключена
             )
         )
 
@@ -321,6 +322,7 @@ class NotificationSettingsRepository:
                 NotificationSettingsModel.notify_group_assigned.is_(True),
                 UserModel.telegram_id.is_not(None),  # Только с Telegram ID
                 UserModel.is_active.is_(True),  # Только активные
+                UserModel.workspace_is_active,  # и компания не отключена
             )
         )
 
@@ -357,6 +359,7 @@ class NotificationSettingsRepository:
                 UserModel.is_active.is_(
                     True,
                 ),
+                UserModel.workspace_is_active,
             )
         )
 
@@ -497,6 +500,7 @@ class NotificationSettingsRepository:
                 field.is_(True),
                 UserModel.telegram_id.is_not(None),
                 UserModel.is_active.is_(True),
+                UserModel.workspace_is_active,
             )
         )
 

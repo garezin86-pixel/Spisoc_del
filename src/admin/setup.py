@@ -18,6 +18,7 @@ from src.admin.views.template_admin import TaskTemplateAdmin, TaskTemplateItemAd
 from src.admin.views.trash_admin import TrashTaskAdmin
 from src.admin.views.user_admin import UserAdmin
 from src.admin.views.webhook_admin import WebhookAdmin
+from src.admin.views.workspace_admin import WorkspaceAdmin
 from src.core.config import ADMIN_SECRET_KEY
 from src.db import get_session_maker
 
@@ -43,6 +44,7 @@ def setup_admin(app, engine):
     }
     UserAdmin._session_maker = session_maker  # ← до регистрации
     TaskTemplateAdmin._session_maker = session_maker
+    admin.add_view(WorkspaceAdmin)
     admin.add_view(UserAdmin)
     admin.add_view(GroupAdmin)
     admin.add_view(TaskAdmin)

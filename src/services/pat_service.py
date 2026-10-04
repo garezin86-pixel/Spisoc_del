@@ -97,7 +97,7 @@ async def authenticate_by_pat(session: AsyncSession, raw_token: str) -> UserMode
             return None
 
     user = await session.get(UserModel, pat.user_id)
-    if not user or not user.is_active:
+    if not user or not user.is_active or not user.workspace_is_active:
         return None
 
     await pat_repo.touch_last_used(pat)

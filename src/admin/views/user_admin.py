@@ -15,6 +15,7 @@ from src.core.exceptions import (
     user_not_found_response,
 )
 from src.core.metrics import users_registered
+from src.core.ws_manager import ws_manager
 from src.models import UserModel
 from src.models.user import UserRole
 from src.repositories.groups_repository import GroupRepository
@@ -199,6 +200,9 @@ class UserAdmin(ModelView, model=UserModel):
             if user:
                 user.is_active = not user.is_active
                 await session.commit()
+                if not user.is_active:
+                    # Заблокированный не должен продолжать получать realtime-события.
+                    await ws_manager.disconnect_user(user.id)
         return RedirectResponse(URLS["user"]["list"], status_code=303)
 
     @expose("/stats/{pk}")

@@ -1,7 +1,8 @@
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, Index, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Index, String, UniqueConstraint, exists
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from src.models.push_subscription import PushSubscriptionModel
     from src.models.two_factor_recovery_code import TwoFactorRecoveryCodeModel
     from src.models.webhook import WebhookModel
+    from src.models.workspace import WorkspaceModel
 
 
 class UserRole(str, Enum):
@@ -160,6 +162,32 @@ class UserModel(TenantMixin, Base):
         back_populates="members",
         lazy="selectin",
     )
+
+    # Компания пользователя. Грузится тем же запросом, что и сам пользователь
+    # (joined), чтобы проверка «компания не отключена» не стоила лишнего
+    # обращения к БД на каждый HTTP-запрос и апдейт бота.
+    workspace: Mapped["WorkspaceModel"] = relationship("WorkspaceModel", lazy="joined", innerjoin=True, viewonly=True)
+
+    @hybrid_property
+    def workspace_is_active(self) -> bool:
+        """Компания пользователя не отключена (workspaces.is_active).
+
+        Отдельно от is_active: тот означает «заблокирован этот человек», а этот —
+        «отключена вся его компания». Обе проверки обязательны везде, где
+        решается, можно ли пользователю входить/получать данные.
+        Если компания почему-то не загружена (объект только что создан в
+        сессии) — считаем активной: все проверки доступа работают с
+        пользователем, свежезагруженным из БД, где компания подгружена всегда.
+        """
+        ws = self.__dict__.get("workspace")
+        return True if ws is None else bool(ws.is_active)
+
+    @workspace_is_active.inplace.expression
+    @classmethod
+    def _workspace_is_active_expression(cls):
+        from src.models.workspace import WorkspaceModel
+
+        return exists().where(WorkspaceModel.id == cls.workspace_id, WorkspaceModel.is_active.is_(True))
 
     def __str__(self):
         return f"{self.username}"

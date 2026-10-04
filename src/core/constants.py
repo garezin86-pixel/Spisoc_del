@@ -14,6 +14,7 @@ USER_NOT_FOUND = "User not found"
 USER_ALREADY_EXISTS = "User already exists"
 YOU_CAN_DELETE = "You can delete only yourself"
 ACCOUNT_DISABLED = "Account is disabled"
+WORKSPACE_DISABLED = "Company account is disabled"
 
 # Admin
 FOR_ADMIN_ONLY = "For administrator only"

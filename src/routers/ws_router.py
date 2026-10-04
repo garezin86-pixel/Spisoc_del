@@ -55,9 +55,10 @@ async def websocket_endpoint(
         if not user:
             await websocket.close(code=4001, reason="User not found")
             return
-        if not user.is_active:
-            # HTTP-запросы заблокированного пользователя уже отклоняются (get_current_user) —
-            # realtime-события не должны оставаться исключением.
+        if not user.is_active or not user.workspace_is_active:
+            # HTTP-запросы заблокированного пользователя (или отключённой компании)
+            # уже отклоняются (get_current_user) — realtime-события не должны
+            # оставаться исключением.
             await websocket.close(code=4001, reason="Account disabled")
             return
         workspace_id = user.workspace_id

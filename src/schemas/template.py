@@ -15,7 +15,11 @@ class TemplateItemCreate(BaseModel):
     deadline_offset_days: int | None = Field(None, ge=0, le=3650, description="Дедлайн = дата применения + N дней")
     tags: list[str] = Field(default_factory=list)
     checklist: list[str] = Field(default_factory=list)
-    order_index: int = 0
+    # None = «поставить по порядку в запросе» (0, 1, 2…). Раньше по умолчанию было 0,
+    # из-за чего у всех пунктов без явного order_index он оказывался 0, а ветка
+    # «нумеровать по порядку» в TemplateRepository никогда не срабатывала.
+    # Явный 0 по-прежнему означает «первый пункт».
+    order_index: int | None = Field(default=None, ge=0)
 
 
 class TemplateItemResponse(BaseModel):

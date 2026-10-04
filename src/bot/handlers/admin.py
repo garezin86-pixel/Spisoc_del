@@ -12,6 +12,7 @@ from src.bot.keyboards.main import (
 )
 from src.bot.utils.user_utils import get_main_menu
 from src.core.security import hash_password
+from src.core.ws_manager import ws_manager
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.models.user import UserModel
@@ -295,6 +296,9 @@ async def block_user(message: Message, state: FSMContext):
         user.is_active = not user.is_active
         await uow.users.update(user)
         status = "разблокирован ✅" if user.is_active else "заблокирован 🚫"
+        if not user.is_active:
+            # Заблокированный не должен продолжать получать realtime-события.
+            await ws_manager.disconnect_user(user.id)
 
     await state.clear()
     await message.answer(

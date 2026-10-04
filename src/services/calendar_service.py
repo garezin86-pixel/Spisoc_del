@@ -30,7 +30,7 @@ class CalendarService:
         # Токен в URL — единственная «аутентификация» календарных клиентов, поэтому
         # у заблокированного (уволенного) сотрудника ссылка должна переставать работать,
         # как и обычный вход. Отвечаем так же, как на неверный токен.
-        if not user or not user.is_active:
+        if not user or not user.is_active or not user.workspace_is_active:
             return None
         # Сессия анонимная; дальше читаем только внутри компании владельца ссылки.
         set_session_workspace(self.calendar_repo.session.sync_session, user.workspace_id)
