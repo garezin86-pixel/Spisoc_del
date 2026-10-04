@@ -1,6 +1,6 @@
 import os
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -123,6 +123,16 @@ class Settings(BaseSettings):
     vapid_private_key: str = Field(default="", alias="VAPID_PRIVATE_KEY")
     vapid_public_key: str = Field(default="", alias="VAPID_PUBLIC_KEY")
     vapid_claims_email: str = Field(default="admin@example.com", alias="VAPID_CLAIMS_EMAIL")
+
+    @field_validator("chat_bridge_group_id", "chat_bridge_workspace_id", mode="before")
+    @classmethod
+    def _empty_means_disabled(cls, v):
+        """`CHAT_BRIDGE_GROUP_ID=` (пустая строка в .env, как в .env.*.example)
+        означает «не задано» → 0 (мост выключен), а не ошибку разбора int,
+        из-за которой приложение вообще не запускалось."""
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return 0
+        return v
 
     @model_validator(mode="after")
     def _require_real_secrets_in_production(self) -> "Settings":

@@ -147,3 +147,24 @@ class TestAdminAllowedIpsType:
             ENV="dev",
         )
         assert s.admin_allowed_ips == []
+
+
+class TestEmptyChatBridgeSettings:
+    """Регресс: пустые `CHAT_BRIDGE_GROUP_ID=` / `CHAT_BRIDGE_WORKSPACE_ID=` (как в
+    .env.*.example) роняли запуск ошибкой int_parsing."""
+
+    def test_empty_strings_mean_bridge_disabled(self):
+        s = config.Settings(_env_file=None, ENV="dev", CHAT_BRIDGE_GROUP_ID="", CHAT_BRIDGE_WORKSPACE_ID="  ")
+        assert s.chat_bridge_group_id == 0
+        assert s.chat_bridge_workspace_id == 0
+
+    def test_real_values_still_parsed(self):
+        s = config.Settings(
+            _env_file=None, ENV="dev", CHAT_BRIDGE_GROUP_ID="-1001234567890", CHAT_BRIDGE_WORKSPACE_ID="3"
+        )
+        assert s.chat_bridge_group_id == -1001234567890
+        assert s.chat_bridge_workspace_id == 3
+
+    def test_garbage_is_still_rejected(self):
+        with pytest.raises(Exception):  # pydantic ValidationError
+            config.Settings(_env_file=None, ENV="dev", CHAT_BRIDGE_WORKSPACE_ID="abc")
