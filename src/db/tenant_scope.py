@@ -155,12 +155,24 @@ def _scope_orm_execute(state: ORMExecuteState) -> None:
     workspace_id = _effective_workspace(state.session)
     if workspace_id is None:
         return
+    from src.models.audit import AuditLog  # здесь, а не наверху: модуль моделей тянет src.db
+
     state.statement = state.statement.options(
         with_loader_criteria(
             TenantMixin,
             lambda cls: cls.workspace_id == workspace_id,
             include_aliases=True,
-        )
+        ),
+        # audit_log не TenantMixin (workspace_id там nullable и берётся с изменяемой
+        # сущности), поэтому общий фильтр на него не действовал: лента активности и
+        # история задачи по чужому task_id отдавали события других компаний. Записи
+        # с workspace_id IS NULL (фоновые изменения без компании) в привязанных
+        # сессиях не видны; платформенная сессия (SQLAdmin, фон) по-прежнему видит всё.
+        with_loader_criteria(
+            AuditLog,
+            lambda cls: cls.workspace_id == workspace_id,
+            include_aliases=True,
+        ),
     )
 
 
