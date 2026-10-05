@@ -59,6 +59,8 @@
 
 ## Архитектура
 
+Мультитенантность (компании, изоляция данных, приглашения): [docs/multitenancy.md](docs/multitenancy.md). Словарь терминов CRM: [docs/glossary.md](docs/glossary.md).
+
 ```
 ┌──────────────┐     ┌────────────────────────────────────────────┐
 │   Browser    │────▶│              FastAPI App                   │
@@ -254,6 +256,20 @@ Pre-commit хуки настроены в `.pre-commit-config.yaml`.
 
 ## Docker
 
+Два профиля запуска на базе `docker-compose.yml`:
+
+```bash
+# lite: приложение, бот, PostgreSQL, Redis
+docker compose up -d
+
+# full: lite + Prometheus и Grafana (сервисы с profiles: ["monitoring"])
+docker compose --profile monitoring up -d
+```
+
+React-интерфейс приложение отдаёт из `frontend/dist`, если эта папка есть. Dockerfile фронтенд
+не собирает, поэтому перед `docker compose up` соберите его: `cd frontend && npm ci && npm run build`.
+Без этого в контейнере будет работать только API.
+
 ```bash
 # Локальная разработка
 docker compose -f docker-compose.dev.yml up
@@ -265,6 +281,9 @@ docker compose -f docker-compose.dev.yml up
 # деплой либо упадёт с ошибкой "variable is not set", либо (в старых версиях
 # compose) тихо возьмёт дев-дефолты вроде postgres:postgres.
 docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# Мониторинг в production включается тем же флагом:
+# docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring up -d
 ```
 
 ## API
@@ -275,12 +294,12 @@ docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod
 - **ReDoc:** `/redoc`
 - **OpenAPI JSON:** `/openapi.json`
 
-Все эндпоинты требуют заголовок `Authorization: Bearer <token>` кроме `POST /api/auth/login`.
+Все эндпоинты требуют заголовок `Authorization: Bearer <token>`, кроме публичных: `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/auth/registration-options`, `GET /api/auth/invite/{token}`.
 
 ## Мониторинг
 
 - Prometheus метрики: `/metrics`
-- Grafana дашборд: `http://localhost:3000` (при запуске через docker-compose)
+- Grafana дашборд: `http://localhost:3000` (при запуске через docker-compose с профилем `monitoring`)
 
 Настройка в `monitoring/prometheus.yml`.
 
