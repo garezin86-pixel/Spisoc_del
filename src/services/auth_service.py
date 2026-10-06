@@ -3,7 +3,7 @@ import structlog
 from redis.asyncio import Redis
 
 from src.core.config import REFRESH_TOKEN_EXPIRE_DAYS
-from src.core.constants import INVALID_CREDENTIALS, USER_ALREADY_EXISTS, WORKSPACE_DISABLED
+from src.core.constants import ACCOUNT_DISABLED, INVALID_CREDENTIALS, USER_ALREADY_EXISTS, WORKSPACE_DISABLED
 from src.core.exceptions import invalid_credentials, unauthorized, user_already_exists
 from src.core.metrics import users_registered
 from src.core.security import (
@@ -133,14 +133,17 @@ class AuthService:
             invalid_credentials(INVALID_CREDENTIALS)
             raise
 
-        # Пароль верный — теперь можно честно сказать, что компания отключена
-        # (до проверки пароля причину не раскрываем, чтобы не выдавать, какие
-        # логины существуют). Заблокированный ЛИЧНО пользователь токен на
-        # логине по-прежнему получает, но любой его запрос отклоняется в
-        # get_current_user (поведение закреплено тестом
-        # test_login_inactive_user_still_gets_token) — здесь это не менялось.
+        # Пароль верный — теперь можно честно сказать, почему вход закрыт (до проверки
+        # пароля причину не раскрываем, чтобы не выдавать, какие логины существуют и
+        # заблокированы). Токены не выдаются ни отключённой компании, ни заблокированному
+        # человеку: раньше он получал пару токенов (и refresh в Redis), а потом любой его
+        # запрос отклонялся в get_current_user, и интерфейс молча возвращал его на страницу
+        # входа без объяснений.
         if not db_user.workspace_is_active:
             unauthorized(WORKSPACE_DISABLED)
+            raise RuntimeError
+        if not db_user.is_active:
+            unauthorized(ACCOUNT_DISABLED)
             raise RuntimeError
 
         if getattr(db_user, "totp_enabled", False):

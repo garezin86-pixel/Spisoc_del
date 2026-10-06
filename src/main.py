@@ -75,6 +75,15 @@ async def lifespan(app: FastAPI):
     cache_manager.testing = False
     await logger.ainfo("redis_initialized")
 
+    # ── Шина WebSocket-событий между процессами (бот → веб-клиенты, несколько воркеров) ──
+    from src.core.ws_manager import ws_manager
+
+    try:
+        await ws_manager.start_redis_bridge(redis, listen=True)
+        await logger.ainfo("ws_redis_bridge_started")
+    except Exception as e:
+        await logger.aerror("ws_redis_bridge_start_failed", error=str(e))
+
     # ── Имя бота для deep-link кнопок в уведомлениях ("📋 Открыть задачу") ──
     # API и бот — отдельные процессы (см. run2.py), поэтому кэш _bot_username
     # внутри src/bot/setup.py у бота и у API — РАЗНЫЕ объекты в памяти.
@@ -130,6 +139,11 @@ async def lifespan(app: FastAPI):
             await logger.ainfo("scheduler_stopped")
         except Exception as e:
             await logger.aerror("scheduler_stop_error", error=str(e))
+
+    try:
+        await ws_manager.stop_redis_bridge()
+    except Exception as e:
+        await logger.aerror("ws_redis_bridge_stop_error", error=str(e))
 
     try:
         await redis.close()

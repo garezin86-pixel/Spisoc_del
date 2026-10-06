@@ -22,6 +22,16 @@ Dockerfile
 .dockerignore
 
 node_modules/
+**/node_modules/
+
+# Интерфейс собирается в Dockerfile (этап frontend-build); локальная сборка не нужна
+frontend/dist/
+
+# Артефакты тестов и разработки
+htmlcov/
+.pytest_cache/
+.coverage
+*.patch
 
 *.log
 *.sqlite3

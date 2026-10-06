@@ -67,14 +67,58 @@ class TestAuthLogin:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_login_inactive_user_still_gets_token(self, client, engine):
+    async def test_login_inactive_user_is_rejected_without_tokens(self, client, engine):
+        """Раньше заблокированный получал токены на логине и только потом 401 на первом запросе."""
         async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         async with async_session() as sess:
             await make_user(sess, username="inactive_u", password="pass123", is_active=False)
 
-        login_resp = await client.post("/auth/login", json={"username": "inactive_u", "password": "pass123"})
-        assert login_resp.status_code == 200
+        resp = await client.post("/auth/login", json={"username": "inactive_u", "password": "pass123"})
+        assert resp.status_code == 401
+        assert "Account is disabled" in resp.text
+        assert "access_token" not in resp.text and "refresh_token" not in resp.text
 
-        token = login_resp.json()["access_token"]
-        protected_resp = await client.get("/tasks/filter", headers={"Authorization": f"Bearer {token}"})
-        assert protected_resp.status_code == 401
+    @pytest.mark.asyncio
+    async def test_login_inactive_user_wrong_password_does_not_reveal_block(self, client, engine):
+        """Причина раскрывается только после верного пароля — иначе по ответу можно узнать, кто заблокирован."""
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with async_session() as sess:
+            await make_user(sess, username="inactive_u2", password="pass123", is_active=False)
+
+        resp = await client.post("/auth/login", json={"username": "inactive_u2", "password": "WRONG-pass"})
+        assert resp.status_code == 401
+        assert "Account is disabled" not in resp.text and "Invalid credentials" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_login_inactive_user_gets_no_refresh_token_in_redis(self, client, engine):
+        """Refresh-токен записывается в Redis при выдаче токенов; заблокированному он не должен создаваться.
+        (Redis в тестах — AsyncMock, поэтому проверяем сам вызов записи, а не содержимое ключей.)"""
+        from src.core.redis import get_redis
+
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with async_session() as sess:
+            await make_user(sess, username="inactive_u3", password="pass123", is_active=False)
+        redis = get_redis()
+        redis.set.reset_mock()
+        redis.setex.reset_mock()
+
+        await client.post("/auth/login", json={"username": "inactive_u3", "password": "pass123"})
+
+        assert redis.set.await_count == 0 and redis.setex.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_login_active_user_still_gets_refresh_token_in_redis(self, client, engine):
+        """Парный к предыдущему: защита от пустого теста — у активного запись в Redis происходит."""
+        from src.core.redis import get_redis
+
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        async with async_session() as sess:
+            await make_user(sess, username="active_u3", password="pass123")
+        redis = get_redis()
+        redis.set.reset_mock()
+        redis.setex.reset_mock()
+
+        resp = await client.post("/auth/login", json={"username": "active_u3", "password": "pass123"})
+
+        assert resp.status_code == 200
+        assert redis.set.await_count + redis.setex.await_count >= 1

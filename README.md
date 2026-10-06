@@ -266,9 +266,11 @@ docker compose up -d
 docker compose --profile monitoring up -d
 ```
 
-React-интерфейс приложение отдаёт из `frontend/dist`, если эта папка есть. Dockerfile фронтенд
-не собирает, поэтому перед `docker compose up` соберите его: `cd frontend && npm ci && npm run build`.
-Без этого в контейнере будет работать только API.
+React-интерфейс собирается при сборке образа (этап `frontend-build` в Dockerfile: Node 20, `npm ci`,
+`npm run build`, как в CI) и отдаётся приложением на `/`. Брендинг берётся из `frontend/.env`, если он
+есть, иначе из `frontend/.env.example`. Локальные `frontend/dist` и `node_modules` в образ не попадают.
+В dev-режиме (`docker-compose.dev.yml` монтирует `.:/app`) собранного интерфейса в контейнере нет:
+запускайте `npm run dev` в `frontend/`.
 
 ```bash
 # Локальная разработка

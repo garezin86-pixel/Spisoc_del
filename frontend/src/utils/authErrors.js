@@ -8,6 +8,7 @@
 const BACKEND_MESSAGES = {
     "Invalid credentials": "Неверный логин или пароль",
     "Company account is disabled": "Аккаунт вашей компании отключён. Обратитесь к администратору сервиса.",
+    "Account is disabled": "Ваш аккаунт заблокирован. Обратитесь к администратору вашей компании.",
 };
 
 function transportError(err) {
