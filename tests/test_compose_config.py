@@ -34,6 +34,12 @@ def test_internal_services_publish_ports_on_loopback_only(service, files):
         )
 
 
+def test_postgres_host_port_is_configurable_with_default_5432():
+    """Локальный PostgreSQL на 5432 (частый случай на Windows) не должен делать запуск стека невозможным."""
+    ports = _effective_ports("postgres", "docker-compose.yml")
+    assert ports == ["127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"], ports
+
+
 def test_application_port_is_still_published():
     assert "8000:8000" in _effective_ports("app", "docker-compose.yml", "docker-compose.prod.yml")
 
