@@ -272,9 +272,12 @@ React-интерфейс собирается при сборке образа (
 В dev-режиме (`docker-compose.dev.yml` монтирует `.:/app`) собранного интерфейса в контейнере нет:
 запускайте `npm run dev` в `frontend/`.
 
+Порты PostgreSQL (5432), Redis (63790), Prometheus (9090) и Grafana (3000) публикуются только на
+`127.0.0.1`: с хоста и по ssh-туннелю доступны, из сети — нет. Приложение (8000) слушает все интерфейсы.
+
 ```bash
-# Локальная разработка
-docker compose -f docker-compose.dev.yml up
+# Локальная разработка (dev-файл дополняет базовый, поэтому нужны оба)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 # Production
 # --env-file обязателен: без него ${POSTGRES_USER:?...}, ${POSTGRES_PASSWORD:?...}

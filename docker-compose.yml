@@ -51,7 +51,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
-      - "5432:5432"
+      # Только loopback: с хоста (и по ssh-туннелю) доступен, с внешних интерфейсов — нет.
+      # Запись `ports: []` в override-файле НЕ убирает порты базового файла (списки
+      # ports при слиянии складываются), поэтому «закрыть» порт можно только здесь.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -65,7 +68,7 @@ services:
     image: redis:7-alpine
     container_name: spisoc_redis
     ports:
-      - "63790:6379"
+      - "127.0.0.1:63790:6379"  # только loopback, см. комментарий у postgres
     volumes:
       - redis_data:/data
     healthcheck:
@@ -80,7 +83,7 @@ services:
     container_name: prometheus
     profiles: [ "monitoring" ]
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"  # только loopback, см. комментарий у postgres
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on:
@@ -92,7 +95,7 @@ services:
     container_name: grafana
     profiles: [ "monitoring" ]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"  # только loopback, см. комментарий у postgres
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:

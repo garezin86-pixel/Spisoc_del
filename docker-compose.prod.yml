@@ -36,7 +36,8 @@ services:
     restart: always
 
   postgres:
-    ports: []
+    # Порт публикуется только на loopback (см. docker-compose.yml). `ports: []` здесь
+    # не нужен: при слиянии файлов он ничего не отменяет.
     restart: always
     environment:
       # Те же обязательные переменные, что использованы выше для DATABASE_URL —
@@ -46,20 +47,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен в проде}
 
   redis:
-    ports: []
     restart: always
 
   prometheus:
-    # Не публикуем наружу — доступ только из Docker-сети (например, через
-    # grafana или ssh-туннель/nginx с basic-auth, если нужен внешний доступ).
-    ports: []
+    # Наружу не торчит: порт слушает только loopback сервера (docker-compose.yml),
+    # из Docker-сети доступен grafana. Внешний доступ — ssh-туннель или nginx с basic-auth.
     restart: always
 
   grafana:
-    # Аналогично prometheus: наружу не торчит. Если нужен внешний доступ —
+    # Аналогично prometheus: порт только на loopback. Если нужен внешний доступ —
     # заводить через reverse proxy с TLS и отдельной авторизацией, а не
     # публиковать порт напрямую.
-    ports: []
     restart: always
     environment:
       # ВАЖНО: docker-compose.yml имеет фолбэк ${GRAFANA_ADMIN_PASSWORD:-admin}.
