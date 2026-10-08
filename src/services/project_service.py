@@ -166,11 +166,15 @@ class ProjectService:
         return updated
 
     async def set_project_client(self, project_id: int, client_id: int | None, current_user: UserModel) -> ProjectModel:
-        """Привязывает проект к клиенту или отвязывает (client_id=None)."""
+        """Привязывает проект к клиенту или отвязывает (client_id=None).
+
+        Привязка влияет на процесс работы с клиентом, поэтому ею управляют admin и manager
+        независимо от того, кто владелец проекта (обычный пользователь — никогда).
+        """
         project = await self.project_repo.get_by_id(project_id)
         if not project:
             raise HTTPException(404, "Проект не найден")
-        self._require_owner_or_admin(project, current_user)
+        self._require_manager(current_user)
 
         if client_id is not None:
             await self._require_client_exists(client_id)

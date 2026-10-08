@@ -347,10 +347,42 @@ async def test_project_cannot_bind_deleted_client(client, world):
     assert resp.status_code == 404
 
 
-async def test_project_bind_requires_owner_or_admin(client, world):
+async def test_project_bind_requires_manager_role(client, world):
     _, ids, logins = world
     hm = await _headers(client, logins, "a_manager")
     project = await _make_project(client, hm)
+    url = f"/api/projects/{project['id']}/client"
+    # обычный пользователь не может
     h = await _headers(client, logins, "other")
-    resp = await client.patch(f"/api/projects/{project['id']}/client", json={"client_id": ids["ca"]}, headers=h)
+    resp = await client.patch(url, json={"client_id": ids["ca"]}, headers=h)
+    assert resp.status_code == 403
+    # admin, не являющийся владельцем проекта, может
+    ha = await _headers(client, logins, "a_admin")
+    resp = await client.patch(url, json={"client_id": ids["ca"]}, headers=ha)
+    assert resp.status_code == 200 and resp.json()["client_id"] == ids["ca"]
+
+
+async def test_other_manager_can_bind_not_his_project(client, world):
+    maker, ids, logins = world
+    async with maker() as s:  # второй менеджер в компании A
+        s.add(_user("a_manager2", ids["a"], "manager"))
+        await s.commit()
+        mgr2_login = (await s.execute(select(UserModel).where(UserModel.username == "a_manager2"))).scalar_one().login
+    hm = await _headers(client, logins, "a_manager")
+    project = await _make_project(client, hm)  # владелец — a_manager
+    resp = await client.post("/auth/login", json={"username": mgr2_login, "password": PASSWORD})
+    h2 = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    resp = await client.patch(f"/api/projects/{project['id']}/client", json={"client_id": ids["ca"]}, headers=h2)
+    assert resp.status_code == 200 and resp.json()["client_id"] == ids["ca"]
+
+
+async def test_owner_who_lost_manager_role_cannot_bind(client, world):
+    maker, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    project = await _make_project(client, hm)
+    async with maker() as s:  # владельца понизили до обычного пользователя
+        row = (await s.execute(select(UserModel).where(UserModel.id == ids["a_manager"]))).scalar_one()
+        row.role = "user"
+        await s.commit()
+    resp = await client.patch(f"/api/projects/{project['id']}/client", json={"client_id": ids["ca"]}, headers=hm)
     assert resp.status_code == 403
