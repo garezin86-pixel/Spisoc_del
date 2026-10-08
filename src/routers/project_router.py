@@ -4,18 +4,24 @@ from fastapi import APIRouter, Depends
 from src.core.dependencies import get_current_user
 from src.db import SessionDep
 from src.models.user import UserModel
+from src.repositories.client_repository import ClientRepository
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.pagination import PaginatedResponse, PaginationParams
-from src.schemas.schemas_project import ProjectCreate, ProjectSchema, ProjectUpdate
+from src.schemas.schemas_project import ProjectClientUpdate, ProjectCreate, ProjectSchema, ProjectUpdate
 from src.services.project_service import ProjectService
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
 def get_project_service(session: SessionDep) -> ProjectService:
-    return ProjectService(ProjectRepository(session), UserRepository(session), GroupRepository(session))
+    return ProjectService(
+        ProjectRepository(session),
+        UserRepository(session),
+        GroupRepository(session),
+        ClientRepository(session),
+    )
 
 
 @router.post(
@@ -186,4 +192,27 @@ async def set_project_group(
     current_user: UserModel = Depends(get_current_user),
 ):
     project = await get_project_service(session).set_project_group(project_id, data.group_id, current_user)
+    return ProjectSchema.from_model(project)
+
+
+@router.patch(
+    "/{project_id}/client",
+    response_model=ProjectSchema,
+    summary="Привязать клиента к проекту",
+    description="Назначает или снимает клиента с проекта. "
+    "Передай `client_id: null` чтобы отвязать. "
+    "**Требует быть владельцем или admin.**",
+    responses={
+        200: {"description": "Проект обновлён"},
+        403: {"description": "Нет прав"},
+        404: {"description": "Проект или клиент не найден"},
+    },
+)
+async def set_project_client(
+    project_id: int,
+    data: ProjectClientUpdate,
+    session: SessionDep,
+    current_user: UserModel = Depends(get_current_user),
+):
+    project = await get_project_service(session).set_project_client(project_id, data.client_id, current_user)
     return ProjectSchema.from_model(project)

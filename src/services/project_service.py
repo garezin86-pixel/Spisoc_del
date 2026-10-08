@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from src.models.project import ProjectModel
 from src.models.user import UserModel, UserRole
+from src.repositories.client_repository import ClientRepository
 from src.repositories.groups_repository import GroupRepository
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.users_repository import UserRepository
@@ -27,10 +28,22 @@ class ProjectService:
         project_repo: ProjectRepository,
         user_repo: UserRepository,
         group_repo: GroupRepository | None = None,
+        client_repo: ClientRepository | None = None,
     ):
         self.project_repo = project_repo
         self.user_repo = user_repo
         self.group_repo = group_repo
+        self.client_repo = client_repo
+
+    async def _require_client_exists(self, client_id: int) -> None:
+        """Клиент должен существовать в компании пользователя и не быть удалённым.
+
+        Чужой клиент неотличим от несуществующего (репозиторий скоупится по workspace): 404.
+        """
+        if self.client_repo is None:
+            raise RuntimeError("ProjectService создан без client_repo, а клиент передан")
+        if await self.client_repo.get_by_id(client_id) is None:
+            raise HTTPException(404, "Клиент не найден")
 
     def _require_manager(self, user: UserModel) -> None:
         if user.role not in (UserRole.admin, UserRole.manager):
@@ -45,11 +58,14 @@ class ProjectService:
     async def create_project(self, data: ProjectCreate, current_user: UserModel) -> ProjectModel:
         """Создаёт проект. Владельцем становится текущий пользователь."""
         self._require_manager(current_user)
+        if data.client_id is not None:
+            await self._require_client_exists(data.client_id)
         project = ProjectModel(
             name=data.name,
             description=data.description,
             owner_id=current_user.id,
             group_id=data.group_id,
+            client_id=data.client_id,
         )
         created = await self.project_repo.create(project)
         await logger.ainfo("project_created", project_id=created.id, owner_id=current_user.id)
@@ -147,6 +163,21 @@ class ProjectService:
         project.group_id = group_id
         updated = await self.project_repo.update(project)
         await logger.ainfo("project_group_set", project_id=project_id, group_id=group_id)
+        return updated
+
+    async def set_project_client(self, project_id: int, client_id: int | None, current_user: UserModel) -> ProjectModel:
+        """Привязывает проект к клиенту или отвязывает (client_id=None)."""
+        project = await self.project_repo.get_by_id(project_id)
+        if not project:
+            raise HTTPException(404, "Проект не найден")
+        self._require_owner_or_admin(project, current_user)
+
+        if client_id is not None:
+            await self._require_client_exists(client_id)
+
+        project.client_id = client_id
+        updated = await self.project_repo.update(project)
+        await logger.ainfo("project_client_set", project_id=project_id, client_id=client_id)
         return updated
 
     async def remove_member(self, project_id: int, user_id: int, current_user: UserModel) -> dict:

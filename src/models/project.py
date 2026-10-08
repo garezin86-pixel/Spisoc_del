@@ -35,6 +35,9 @@ class ProjectModel(TenantMixin, Base):
     # Привязка к группе (необязательно)
     group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
 
+    # Привязка к клиенту (необязательно; клиенты удаляются мягко, FK срабатывает только при физическом удалении)
+    client_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -80,6 +83,7 @@ class ProjectModel(TenantMixin, Base):
     __table_args__ = (
         Index("ix_projects_owner_id", "owner_id"),
         Index("ix_projects_group_id", "group_id"),
+        Index("ix_projects_client_id", "client_id"),
     )
 
     def __str__(self):

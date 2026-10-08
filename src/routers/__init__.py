@@ -6,6 +6,7 @@ from .auth_router import router as auth_router
 from .calendar_router import router as calendar_router
 from .chat_router import router as chat_router
 from .checklist_router import router as checklist_router
+from .client_router import router as client_router
 from .comments_router import router as comments_router
 from .group_router import router as group_router
 from .notifications_router import router as notifications_router
@@ -29,6 +30,7 @@ api_router.include_router(tasks_router)
 api_router.include_router(group_router)
 api_router.include_router(comments_router)
 api_router.include_router(project_router)
+api_router.include_router(client_router)
 api_router.include_router(push_router)
 api_router.include_router(templates_router)
 api_router.include_router(two_factor_router)

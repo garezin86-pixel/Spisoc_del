@@ -22,12 +22,19 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     group_id: Optional[int] = Field(None)
+    client_id: Optional[int] = Field(None)
 
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     group_id: Optional[int] = Field(None)
+
+
+class ProjectClientUpdate(BaseModel):
+    """Тело PATCH /projects/{id}/client. client_id: null — отвязать клиента."""
+
+    client_id: Optional[int] = Field(None)
 
 
 class ProjectGroupSchema(BaseModel):
@@ -52,6 +59,7 @@ class ProjectSchema(BaseModel):
     owner: UserSchemaForTask | None
     group: ProjectGroupSchema | None = None
     group_id: Optional[int] = None
+    client_id: Optional[int] = None
     members: list[ProjectMemberSchema] = []
     task_count: int = 0
     done_count: int = 0
@@ -71,6 +79,7 @@ class ProjectSchema(BaseModel):
             members=[ProjectMemberSchema(id=u.id, username=u.username) for u in (project.members or [])],
             group=(ProjectGroupSchema(id=project.group.id, name=project.group.name) if project.group else None),
             group_id=project.group_id,
+            client_id=project.client_id,
             task_count=len(tasks),
             done_count=sum(1 for t in tasks if t.status and t.status.value == "done"),
             created_at=_fmt_dt(project.created_at),
