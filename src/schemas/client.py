@@ -93,6 +93,12 @@ class ClientSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ClientDetailSchema(ClientSchema):
+    """Карточка клиента: плюс дата последнего взаимодействия (None, если их не было)."""
+
+    last_interaction_at: Optional[datetime] = None
+
+
 class ContactCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     position: Optional[str] = Field(None, max_length=200)

@@ -91,7 +91,12 @@ async def test_non_admin_cannot_manage_invites(client, maker):
     ws_id, admin = await _make_company(maker, "A")
     invite = await _new_invite(client, await _headers(client, admin))
     joined = await client.post(
-        "/auth/register", json={"username": _uniq("emp"), "password": PASSWORD, "invite_token": invite["token"]}
+        "/auth/register",
+        json={
+            "username": _uniq("emp"),
+            "password": PASSWORD,
+            "invite_token": invite["token"],
+        },
     )
     assert joined.status_code == 201
     async with maker() as s:
@@ -126,7 +131,12 @@ async def test_revoked_invite_stops_working_and_leaves_active_list(client, maker
     assert len((await client.get("/api/workspace/invites?include_inactive=true", headers=h)).json()) == 1
 
     resp = await client.post(
-        "/auth/register", json={"username": _uniq("emp"), "password": PASSWORD, "invite_token": invite["token"]}
+        "/auth/register",
+        json={
+            "username": _uniq("emp"),
+            "password": PASSWORD,
+            "invite_token": invite["token"],
+        },
     )
     assert resp.status_code == 400
 
@@ -140,7 +150,12 @@ async def test_register_by_invite_joins_company_as_plain_user(client, maker):
     resp = await client.post(
         "/auth/register",
         # role в запросе — попытка повысить себя; схема её не принимает, роль определяет только сценарий
-        json={"username": name, "password": PASSWORD, "invite_token": invite["token"], "role": "admin"},
+        json={
+            "username": name,
+            "password": PASSWORD,
+            "invite_token": invite["token"],
+            "role": "admin",
+        },
     )
     assert resp.status_code == 201
     assert resp.json()["access_token"] and resp.json()["refresh_token"]
@@ -156,7 +171,12 @@ async def test_invite_can_be_used_many_times(client, maker):
     invite = await _new_invite(client, await _headers(client, admin))
     for _ in range(3):
         resp = await client.post(
-            "/auth/register", json={"username": _uniq("emp"), "password": PASSWORD, "invite_token": invite["token"]}
+            "/auth/register",
+            json={
+                "username": _uniq("emp"),
+                "password": PASSWORD,
+                "invite_token": invite["token"],
+            },
         )
         assert resp.status_code == 201
     async with maker() as s:
@@ -179,7 +199,12 @@ async def test_expired_or_unknown_invite_is_rejected(client, maker):
 
     for token in (invite["token"], "does-not-exist-123"):
         resp = await client.post(
-            "/auth/register", json={"username": _uniq("emp"), "password": PASSWORD, "invite_token": token}
+            "/auth/register",
+            json={
+                "username": _uniq("emp"),
+                "password": PASSWORD,
+                "invite_token": token,
+            },
         )
         assert resp.status_code == 400
 
@@ -191,7 +216,12 @@ async def test_invite_of_disabled_company_is_rejected(client, maker):
         await s.execute(update(WorkspaceModel).where(WorkspaceModel.id == ws_id).values(is_active=False))
         await s.commit()
     resp = await client.post(
-        "/auth/register", json={"username": _uniq("emp"), "password": PASSWORD, "invite_token": invite["token"]}
+        "/auth/register",
+        json={
+            "username": _uniq("emp"),
+            "password": PASSWORD,
+            "invite_token": invite["token"],
+        },
     )
     assert resp.status_code == 400
 
@@ -203,13 +233,28 @@ async def test_same_username_allowed_in_different_companies_but_not_within_one(c
     inv_b = await _new_invite(client, await _headers(client, admin_b))
 
     ok_a = await client.post(
-        "/auth/register", json={"username": "Иван Петров", "password": PASSWORD, "invite_token": inv_a["token"]}
+        "/auth/register",
+        json={
+            "username": "Иван Петров",
+            "password": PASSWORD,
+            "invite_token": inv_a["token"],
+        },
     )
     ok_b = await client.post(
-        "/auth/register", json={"username": "Иван Петров", "password": PASSWORD, "invite_token": inv_b["token"]}
+        "/auth/register",
+        json={
+            "username": "Иван Петров",
+            "password": PASSWORD,
+            "invite_token": inv_b["token"],
+        },
     )
     dup_a = await client.post(
-        "/auth/register", json={"username": "Иван Петров", "password": PASSWORD, "invite_token": inv_a["token"]}
+        "/auth/register",
+        json={
+            "username": "Иван Петров",
+            "password": PASSWORD,
+            "invite_token": inv_a["token"],
+        },
     )
 
     assert ok_a.status_code == 201 and ok_b.status_code == 201
@@ -223,7 +268,12 @@ async def test_same_username_allowed_in_different_companies_but_not_within_one(c
 # ── Регистрация новой компании ───────────────────────────────────────────────
 async def test_company_registration_is_disabled_by_default(client):
     resp = await client.post(
-        "/auth/register", json={"username": _uniq("founder"), "password": PASSWORD, "company_name": "Ромашка"}
+        "/auth/register",
+        json={
+            "username": _uniq("founder"),
+            "password": PASSWORD,
+            "company_name": "Ромашка",
+        },
     )
     assert resp.status_code == 403
 
@@ -232,7 +282,12 @@ async def test_company_registration_creates_workspace_and_admin(client, maker):
     name = _uniq("founder")
     with patch("src.services.workspace_service.ALLOW_COMPANY_REGISTRATION", True):
         resp = await client.post(
-            "/auth/register", json={"username": name, "password": PASSWORD, "company_name": "ООО  Ромашка"}
+            "/auth/register",
+            json={
+                "username": name,
+                "password": PASSWORD,
+                "company_name": "ООО  Ромашка",
+            },
         )
     assert resp.status_code == 201
 
@@ -255,7 +310,12 @@ async def test_two_companies_with_same_name_get_distinct_slugs(client, maker):
     with patch("src.services.workspace_service.ALLOW_COMPANY_REGISTRATION", True):
         for _ in range(2):
             resp = await client.post(
-                "/auth/register", json={"username": _uniq("founder"), "password": PASSWORD, "company_name": "Ромашка"}
+                "/auth/register",
+                json={
+                    "username": _uniq("founder"),
+                    "password": PASSWORD,
+                    "company_name": "Ромашка",
+                },
             )
             assert resp.status_code == 201
     async with maker() as s:
@@ -303,6 +363,7 @@ async def test_telegram_join_creates_user_in_invites_company(maker):
     assert result.user.role == "user"
     assert result.user.telegram_id == 555000111
     assert result.user.must_change_password is True
+    assert result is not None
     assert result.user.username == "Пётр Сидоров" and result.login.startswith("petr.s")
 
 
@@ -314,6 +375,7 @@ async def test_telegram_join_same_display_name_gets_suffix(maker):
         async with maker() as s:
             service = WorkspaceService(WorkspaceRepository(s), UserRepository(s))
             res = await service.join_by_invite_telegram(invite.token, tg_id, "Анна Иванова")
+            assert res is not None
             names.append((res.user.username, res.login))
     assert names[0][0] != names[1][0] and names[0][1] != names[1][1]
 
@@ -419,7 +481,12 @@ async def test_register_returns_login_that_can_be_used_to_sign_in_again(client, 
     _, admin = await _make_company(maker, "A")
     invite = await _new_invite(client, await _headers(client, admin))
     resp = await client.post(
-        "/auth/register", json={"username": "Иван Петров", "password": PASSWORD, "invite_token": invite["token"]}
+        "/auth/register",
+        json={
+            "username": "Иван Петров",
+            "password": PASSWORD,
+            "invite_token": invite["token"],
+        },
     )
     assert resp.status_code == 201
     login = resp.json()["login"]

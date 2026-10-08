@@ -3,6 +3,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.client import ClientModel, ContactModel
+from src.models.interaction import InteractionModel
 
 
 def _like_pattern(text: str) -> str:
@@ -61,7 +62,14 @@ class ClientRepository:
         return client
 
     async def soft_delete(self, client: ClientModel) -> None:
-        """Мягко удаляет клиента и все его живые контакты (одна транзакция, всё попадает в аудит)."""
+        """Мягко удаляет клиента, его живые контакты и взаимодействия (одна транзакция, всё в аудите)."""
+        interactions = await self.session.execute(
+            select(InteractionModel).where(
+                InteractionModel.client_id == client.id, InteractionModel.not_deleted_filter()
+            )
+        )
+        for interaction in interactions.scalars().all():
+            interaction.soft_delete(self.session)
         for contact in await self.list_contacts(client.id):
             contact.soft_delete(self.session)
         client.soft_delete(self.session)

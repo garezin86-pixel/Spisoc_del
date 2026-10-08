@@ -9,6 +9,7 @@ from .checklist_router import router as checklist_router
 from .client_router import router as client_router
 from .comments_router import router as comments_router
 from .group_router import router as group_router
+from .interaction_router import router as interaction_router
 from .notifications_router import router as notifications_router
 from .pat_router import router as pat_router
 from .project_router import router as project_router
@@ -31,6 +32,7 @@ api_router.include_router(group_router)
 api_router.include_router(comments_router)
 api_router.include_router(project_router)
 api_router.include_router(client_router)
+api_router.include_router(interaction_router)
 api_router.include_router(push_router)
 api_router.include_router(templates_router)
 api_router.include_router(two_factor_router)

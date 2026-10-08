@@ -28,8 +28,12 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +48,7 @@ class WSManager:
         # событие пользователям чужих компаний.
         self._workspace_of: dict[int, int | None] = {}
         # Redis-шина: None — локальный режим (доставка в этом же процессе).
-        self._redis = None
+        self._redis: "Redis | None" = None
         self._listener: asyncio.Task | None = None  # есть только в процессе API (listen=True)
 
     async def connect(self, websocket: WebSocket, user_id: int, workspace_id: int | None = None) -> None:
@@ -61,7 +65,7 @@ class WSManager:
         logger.info("WS disconnected: user_id=%s total=%s", user_id, self.total_connections)
 
     # ── Межпроцессная шина ───────────────────────────────────────────────────
-    async def start_redis_bridge(self, redis, *, listen: bool) -> None:
+    async def start_redis_bridge(self, redis: "Redis", *, listen: bool) -> None:
         """Включает шину. listen=True — процесс API (держит соединения и слушает канал);
         listen=False — процесс без соединений (бот): только публикует.
 
@@ -92,6 +96,8 @@ class WSManager:
     async def _listen_loop(self, ready: asyncio.Event) -> None:
         delay = 1.0
         redis = self._redis
+        if redis is None:
+            return
         while True:
             pubsub = None
             try:
@@ -164,7 +170,13 @@ class WSManager:
 
     async def disconnect_workspace(self, workspace_id: int, *, reason: str = "Company disabled") -> int:
         """Закрывает соединения всех пользователей компании (компанию отключили)."""
-        if await self._via_bridge({"op": "disconnect_workspace", "workspace_id": workspace_id, "reason": reason}):
+        if await self._via_bridge(
+            {
+                "op": "disconnect_workspace",
+                "workspace_id": workspace_id,
+                "reason": reason,
+            }
+        ):
             return 0
         return await self._disconnect_workspace_local(workspace_id, reason=reason)
 
@@ -177,7 +189,11 @@ class WSManager:
             except Exception:  # noqa: BLE001 — соединение могло уже закрыться само
                 pass
         if sockets:
-            logger.info("WS force-disconnected: user_id=%s connections=%s", user_id, len(sockets))
+            logger.info(
+                "WS force-disconnected: user_id=%s connections=%s",
+                user_id,
+                len(sockets),
+            )
         return len(sockets)
 
     async def _disconnect_workspace_local(self, workspace_id: int, *, reason: str) -> int:

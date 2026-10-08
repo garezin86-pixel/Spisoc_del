@@ -22,7 +22,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     group_id: Optional[int] = Field(None)
-    client_id: Optional[int] = Field(None)
+    client_id: Optional[int] = None
 
 
 class ProjectUpdate(BaseModel):

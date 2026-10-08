@@ -18,7 +18,7 @@ from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.repositories.tag_repository import TagRepository
 from src.repositories.workspace_repository import WorkspaceRepository
-from src.services.workspace_service import WorkspaceService
+from src.services.workspace_service import TelegramJoinResult, WorkspaceService
 from src.utils.datetime_utils import to_local
 
 router = Router()
@@ -55,12 +55,14 @@ async def _join_workspace(message: Message, token: str) -> None:
             )
             return
 
-        result = None
+        result: TelegramJoinResult | None = None
         if _INVITE_TOKEN_RE.match(token):
             service = WorkspaceService(WorkspaceRepository(uow.session), uow.users)
             try:
                 result = await service.join_by_invite_telegram(
-                    token, tg.id, getattr(tg, "full_name", None) or getattr(tg, "username", None) or ""
+                    token,
+                    tg.id,
+                    getattr(tg, "full_name", None) or getattr(tg, "username", None) or "",
                 )
             except IntegrityError:
                 # Двойное нажатие: параллельный запрос уже создал пользователя с этим telegram_id.
@@ -74,7 +76,7 @@ async def _join_workspace(message: Message, token: str) -> None:
                 "❌ Приглашение недействительно или истекло.\nПопросите администратора прислать новую ссылку."
             )
             return
-
+    assert result is not None
     await message.answer(
         "✅ Вы присоединились к компании!\n\n"
         "Ваши данные для входа в веб-версию:\n"

@@ -7,6 +7,7 @@ from src.models.client import ClientModel, ContactModel
 from src.models.comment import CommentModel
 from src.models.filter_preset import FilterPresetModel
 from src.models.group import GroupModel, user_group
+from src.models.interaction import InteractionModel
 from src.models.notification_log import NotificationLogModel
 from src.models.notification_settings import NotificationSettingsModel
 from src.models.personal_access_token import PersonalAccessTokenModel
@@ -37,6 +38,7 @@ __all__ = [
     "CommentModel",
     "ClientModel",
     "ContactModel",
+    "InteractionModel",
     "NotificationSettingsModel",
     "NotificationLogModel",
     "PersonalAccessTokenModel",

@@ -11,7 +11,13 @@ from sqlalchemy.exc import IntegrityError
 
 from src.core.config import ALLOW_COMPANY_REGISTRATION
 from src.core.constants import USER_ALREADY_EXISTS
-from src.core.exceptions import current_admin, incorrect_request, no_access, not_found, user_already_exists
+from src.core.exceptions import (
+    current_admin,
+    incorrect_request,
+    no_access,
+    not_found,
+    user_already_exists,
+)
 from src.core.security import hash_password
 from src.db.tenant_scope import set_session_workspace
 from src.models.user import UserModel
@@ -42,7 +48,7 @@ def company_registration_enabled() -> bool:
 
     Читает флаг в момент вызова, а не при импорте, — как и register_company.
     """
-    return ALLOW_COMPANY_REGISTRATION
+    return bool(ALLOW_COMPANY_REGISTRATION)
 
 
 def build_company_slug_base(company_name: str) -> str:
@@ -76,7 +82,11 @@ class WorkspaceService:
             expires_at=datetime.now(timezone.utc) + INVITE_TTL,
         )
         invite = await self.repo.create_invite(invite)
-        await logger.ainfo("workspace_invite_created", invite_id=invite.id, workspace_id=invite.workspace_id)
+        await logger.ainfo(
+            "workspace_invite_created",
+            invite_id=invite.id,
+            workspace_id=invite.workspace_id,
+        )
         return invite
 
     async def list_invites(self, current_user: UserModel, *, only_active: bool = True) -> list[WorkspaceInviteModel]:
@@ -92,7 +102,11 @@ class WorkspaceService:
         if invite.revoked_at is None:
             invite.revoked_at = datetime.now(timezone.utc)
             invite = await self.repo.save_invite(invite)
-            await logger.ainfo("workspace_invite_revoked", invite_id=invite.id, workspace_id=invite.workspace_id)
+            await logger.ainfo(
+                "workspace_invite_revoked",
+                invite_id=invite.id,
+                workspace_id=invite.workspace_id,
+            )
         return invite
 
     async def preview_invite(self, token: str) -> str:
@@ -139,7 +153,11 @@ class WorkspaceService:
                 if attempt == 1:
                     user_already_exists(USER_ALREADY_EXISTS)
                 continue
-            await logger.ainfo("company_registered", workspace_id=created.workspace_id, user_id=created.id)
+            await logger.ainfo(
+                "company_registered",
+                workspace_id=created.workspace_id,
+                user_id=created.id,
+            )
             return created
         raise AssertionError("unreachable")  # pragma: no cover
 
@@ -178,7 +196,8 @@ class WorkspaceService:
         except IntegrityError:
             await self.repo.session.rollback()
             user_already_exists(USER_ALREADY_EXISTS)
-        await logger.ainfo("user_joined_by_invite", user_id=created.id, workspace_id=created.workspace_id)
+            raise AssertionError("unreachable")  # pragma: no cover
+
         return created
 
     # ── Вход по приглашению из Telegram-бота ─────────────────────────────────
@@ -216,6 +235,9 @@ class WorkspaceService:
         )
         created = await self.user_repo.create(user)
         await logger.ainfo(
-            "user_joined_by_invite", user_id=created.id, workspace_id=created.workspace_id, via="telegram"
+            "user_joined_by_invite",
+            user_id=created.id,
+            workspace_id=created.workspace_id,
+            via="telegram",
         )
         return TelegramJoinResult(created, login, temp_password)

@@ -12,10 +12,18 @@ from src.repositories.users_repository import UserRepository
 from src.repositories.workspace_repository import WorkspaceRepository
 from src.schemas.token import RefreshRequest, TokenSchema, TwoFactorLoginRequest
 from src.schemas.user import UserLogin
-from src.schemas.workspace import InvitePreview, RegisterRequest, RegistrationOptions, RegistrationResult
+from src.schemas.workspace import (
+    InvitePreview,
+    RegisterRequest,
+    RegistrationOptions,
+    RegistrationResult,
+)
 from src.services.auth_service import AuthService
 from src.services.two_factor_service import TwoFactorService
-from src.services.workspace_service import WorkspaceService, company_registration_enabled
+from src.services.workspace_service import (
+    WorkspaceService,
+    company_registration_enabled,
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -95,7 +103,10 @@ async def preview_invite(request: Request, token: str, session: SessionDep):
 async def register(request: Request, data: RegisterRequest, session: SessionDep):
     user_repo = UserRepository(session)
     service = WorkspaceService(WorkspaceRepository(session), user_repo)
-    user = await (service.register_company(data) if data.company_name else service.join_by_invite(data))
+    if data.company_name:
+        user = await service.register_company(data)
+    else:
+        user = await service.join_by_invite(data)
     tokens = await AuthService(user_repo, get_redis()).issue_tokens(user)
     return RegistrationResult(**tokens.model_dump(), login=user.login)
 

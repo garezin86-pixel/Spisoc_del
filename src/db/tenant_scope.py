@@ -47,6 +47,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 
 from src.models.mixins import TenantMixin
@@ -119,7 +120,7 @@ def _set_test_default_workspace(workspace_id: int | None) -> None:
         _test_default_workspace_id = workspace_id
 
 
-def set_session_workspace(session: Session, workspace_id: int | None) -> None:
+def set_session_workspace(session: Session | AsyncSession, workspace_id: int | None) -> None:
     """Привязывает сессию к workspace — вызывайте один раз на запрос/задачу,
     как можно раньше (см. src/core/dependencies.py:get_current_user).
 
@@ -155,7 +156,9 @@ def _scope_orm_execute(state: ORMExecuteState) -> None:
     workspace_id = _effective_workspace(state.session)
     if workspace_id is None:
         return
-    from src.models.audit import AuditLog  # здесь, а не наверху: модуль моделей тянет src.db
+    from src.models.audit import (
+        AuditLog,
+    )
 
     state.statement = state.statement.options(
         with_loader_criteria(

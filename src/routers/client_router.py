@@ -5,9 +5,11 @@ from src.core.dependencies import get_current_user
 from src.db import SessionDep
 from src.models.user import UserModel
 from src.repositories.client_repository import ClientRepository
+from src.repositories.interaction_repository import InteractionRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.client import (
     ClientCreate,
+    ClientDetailSchema,
     ClientSchema,
     ClientUpdate,
     ContactCreate,
@@ -63,7 +65,7 @@ async def get_clients(
 
 @router.get(
     "/{client_id}",
-    response_model=ClientSchema,
+    response_model=ClientDetailSchema,
     summary="Получить клиента",
     responses={404: {"description": "Клиент не найден"}},
 )
@@ -72,7 +74,10 @@ async def get_client(
     session: SessionDep,
     current_user: UserModel = Depends(get_current_user),
 ):
-    return await get_client_service(session).get_client(client_id)
+    client = await get_client_service(session).get_client(client_id)
+    detail = ClientDetailSchema.model_validate(client)
+    detail.last_interaction_at = await InteractionRepository(session).last_occurred_at(client_id)
+    return detail
 
 
 @router.patch(
