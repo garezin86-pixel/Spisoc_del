@@ -5,6 +5,7 @@ from src.models.chat_message import ChatMessageModel
 from src.models.checklist import TaskChecklistItemModel
 from src.models.client import ClientModel, ContactModel
 from src.models.comment import CommentModel
+from src.models.deal import DealModel, PipelineModel, StageModel
 from src.models.filter_preset import FilterPresetModel
 from src.models.group import GroupModel, user_group
 from src.models.interaction import InteractionModel
@@ -52,4 +53,7 @@ __all__ = [
     "ChatMessageModel",
     "WorkspaceModel",
     "WorkspaceInviteModel",
+    "DealModel",
+    "PipelineModel",
+    "StageModel",
 ]

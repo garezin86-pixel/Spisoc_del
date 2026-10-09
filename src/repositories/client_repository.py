@@ -3,6 +3,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.client import ClientModel, ContactModel
+from src.models.deal import DealModel
 from src.models.interaction import InteractionModel
 
 
@@ -65,11 +66,17 @@ class ClientRepository:
         """Мягко удаляет клиента, его живые контакты и взаимодействия (одна транзакция, всё в аудите)."""
         interactions = await self.session.execute(
             select(InteractionModel).where(
-                InteractionModel.client_id == client.id, InteractionModel.not_deleted_filter()
+                InteractionModel.client_id == client.id,
+                InteractionModel.not_deleted_filter(),
             )
+        )
+        deals = await self.session.execute(
+            select(DealModel).where(DealModel.client_id == client.id, DealModel.not_deleted_filter())
         )
         for interaction in interactions.scalars().all():
             interaction.soft_delete(self.session)
+        for deal in deals.scalars().all():
+            deal.soft_delete(self.session)
         for contact in await self.list_contacts(client.id):
             contact.soft_delete(self.session)
         client.soft_delete(self.session)

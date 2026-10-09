@@ -12,7 +12,8 @@ AuditLog модель + миксины SoftDeleteMixin и AuditMixin.
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -90,7 +91,10 @@ class AuditLog(Base):
     # изменяемая сущность свой workspace всегда знает. NULL — переходный
     # период до backfill или сущность без TenantMixin.
     workspace_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True
+        Integer,
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Имя таблицы: "spisok_del", "comments", "users", ...
@@ -241,10 +245,10 @@ class AuditMixin:
 
 def _serialize(value: Any) -> Any:
     """Приводит значение к JSON-сериализуемому виду."""
-    if isinstance(value, datetime):
+    if isinstance(value, (datetime, date)):
         return value.isoformat()
-    if isinstance(value, enum.Enum):
-        return value.value
+    if isinstance(value, Decimal):
+        return str(value)  # строкой, чтобы не терять точность денег
     return value
 
 
