@@ -120,7 +120,11 @@ class DealUpdate(BaseModel):
 
 
 class DealMove(BaseModel):
+    """PATCH /deals/{id}/stage. position — с нуля внутри целевой колонки (остальные сдвигаются);
+    не передана — в конец колонки. Тот же stage_id + position — перестановка внутри колонки."""
+
     stage_id: int
+    position: Optional[int] = Field(None, ge=0)
     lost_reason: Optional[str] = Field(None, max_length=500)  # обязательна для стадии вида lost
 
     @field_validator("lost_reason")
@@ -140,7 +144,22 @@ class DealSchema(BaseModel):
     closed_at: Optional[datetime] = None
     lost_reason: Optional[str] = None
     notes: Optional[str] = None
+    position: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DealStageChange(BaseModel):
+    """Одна смена стадии в истории сделки (из аудита)."""
+
+    id: int
+    changed_at: datetime
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    from_stage_id: Optional[int] = None
+    from_stage_name: Optional[str] = None
+    to_stage_id: Optional[int] = None
+    to_stage_name: Optional[str] = None
+    lost_reason: Optional[str] = None

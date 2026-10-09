@@ -5,7 +5,7 @@ from src.core.dependencies import get_current_user
 from src.db import SessionDep
 from src.models.user import UserModel
 from src.routers.pipeline_router import get_deal_service
-from src.schemas.deal import DealCreate, DealMove, DealSchema, DealUpdate
+from src.schemas.deal import DealCreate, DealMove, DealSchema, DealStageChange, DealUpdate
 from src.schemas.pagination import PaginatedResponse, PaginationParams
 
 router = APIRouter(tags=["Deals"])
@@ -24,7 +24,8 @@ def _page(items, total, pagination: PaginationParams):
     "/deals",
     response_model=PaginatedResponse[DealSchema],
     summary="Сделки компании",
-    description="Читать могут все. Фильтры: `stage_id`, `owner_id`, `client_id`. Новые сверху.",
+    description="Читать могут все. Фильтры: `stage_id`, `owner_id`, `client_id`. "
+    "Новые сверху; с `stage_id` — в порядке карточек колонки.",
 )
 async def list_deals(
     session: SessionDep,
@@ -103,12 +104,14 @@ async def update_deal(
     return await get_deal_service(session).update_deal(deal_id, data, current_user)
 
 
-@router.post(
-    "/deals/{deal_id}/move",
+@router.patch(
+    "/deals/{deal_id}/stage",
     response_model=DealSchema,
     summary="Перевести сделку на другую стадию",
     description="Ответственный по сделке, admin, manager. Стадия `lost` требует `lost_reason`, `won` — суммы "
-    "сделки; закрытие ставит `closed_at`. Вернуть закрытую сделку в работу могут только admin и manager.",
+    "сделки; закрытие ставит `closed_at`. Вернуть закрытую сделку в работу могут только admin и manager. "
+    "`position` — место в целевой колонке (с нуля, остальные сдвигаются; не передана — в конец); "
+    "тот же `stage_id` с `position` переставляет карточку внутри колонки.",
     responses={
         403: {"description": "Нет прав"},
         404: {"description": "Сделка или стадия не найдена"},
@@ -122,6 +125,17 @@ async def move_deal(
     current_user: UserModel = Depends(get_current_user),
 ):
     return await get_deal_service(session).move_deal(deal_id, data, current_user)
+
+
+@router.get(
+    "/deals/{deal_id}/history",
+    response_model=list[DealStageChange],
+    summary="История смены стадий сделки",
+    description="От старых к новым: кто, когда и из какой стадии в какую перевёл. Читать могут все.",
+    responses={404: {"description": "Сделка не найдена"}},
+)
+async def get_deal_history(deal_id: int, session: SessionDep, current_user: UserModel = Depends(get_current_user)):
+    return await get_deal_service(session).get_history(deal_id)
 
 
 @router.delete(

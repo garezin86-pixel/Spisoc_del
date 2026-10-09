@@ -1,7 +1,9 @@
 # src/repositories/deal_repository.py
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from src.models.audit import AuditAction, AuditLog
 from src.models.deal import DealModel, PipelineModel, StageKind, StageModel
 
 
@@ -82,6 +84,13 @@ class DealRepository:
         stage.soft_delete(self.session)
         await self.session.commit()
 
+    async def get_stage_names(self, stage_ids: set[int]) -> dict[int, str]:
+        """Названия стадий по id (включая удалённые — для истории)."""
+        if not stage_ids:
+            return {}
+        result = await self.session.execute(select(StageModel.id, StageModel.name).where(StageModel.id.in_(stage_ids)))
+        return {row[0]: row[1] for row in result.all()}
+
     async def count_deals_in_stage(self, stage_id: int) -> int:
         return (
             await self.session.scalar(
@@ -99,6 +108,26 @@ class DealRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_stage_deals(self, stage_id: int) -> list[DealModel]:
+        """Живые сделки колонки в порядке карточек."""
+        result = await self.session.execute(
+            select(DealModel)
+            .where(DealModel.stage_id == stage_id, DealModel.not_deleted_filter())
+            .order_by(DealModel.position, DealModel.id)
+        )
+        return list(result.scalars().all())
+
+    async def list_deal_updates(self, deal_id: int) -> list[AuditLog]:
+        result = await self.session.execute(
+            select(AuditLog)
+            .where(
+                AuditLog.entity_type == "deals", AuditLog.entity_id == deal_id, AuditLog.action == AuditAction.update
+            )
+            .options(selectinload(AuditLog.user))
+            .order_by(AuditLog.changed_at, AuditLog.id)
+        )
+        return list(result.scalars().all())
+
     async def list_deals(
         self,
         offset: int,
@@ -115,7 +144,9 @@ class DealRepository:
         if owner_id is not None:
             query = query.where(DealModel.owner_id == owner_id)
         total = await self.session.scalar(select(func.count()).select_from(query.subquery()))
-        result = await self.session.execute(query.order_by(DealModel.id.desc()).offset(offset).limit(limit))
+        # В колонке канбана — порядок карточек; иначе новые сверху.
+        order = (DealModel.position, DealModel.id) if stage_id is not None else (DealModel.id.desc(),)
+        result = await self.session.execute(query.order_by(*order).offset(offset).limit(limit))
         return list(result.scalars().all()), total or 0
 
     async def create_deal(self, deal: DealModel) -> DealModel:

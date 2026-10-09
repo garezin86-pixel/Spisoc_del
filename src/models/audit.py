@@ -91,10 +91,7 @@ class AuditLog(Base):
     # изменяемая сущность свой workspace всегда знает. NULL — переходный
     # период до backfill или сущность без TenantMixin.
     workspace_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("workspaces.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
+        Integer, ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     # Имя таблицы: "spisok_del", "comments", "users", ...
@@ -245,10 +242,12 @@ class AuditMixin:
 
 def _serialize(value: Any) -> Any:
     """Приводит значение к JSON-сериализуемому виду."""
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, (datetime, date)):  # datetime — подкласс date; isoformat у обоих
         return value.isoformat()
     if isinstance(value, Decimal):
-        return str(value)  # строкой, чтобы не терять точность денег
+        return str(value)  # строкой: JSON-число потеряло бы точность денег
+    if isinstance(value, enum.Enum):
+        return value.value
     return value
 
 
@@ -263,9 +262,10 @@ def _changed_fields(instance: Any) -> tuple[dict, dict]:
     except Exception:
         return old, new
 
+    skip_fields = _SKIP_FIELDS | getattr(type(instance), "__audit_skip_fields__", frozenset())
     for attr in attrs:
         key = attr.key
-        if key in _SKIP_FIELDS:
+        if key in skip_fields:
             continue
         # ВАЖНО: пропускаем relationship-атрибуты (tags, checklist_items,
         # attachments, user, group, author, project и т.п.) — раньше их

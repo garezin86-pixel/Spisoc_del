@@ -25,7 +25,7 @@ class AuditRepository:
     async def get_global_feed(
         self, offset: int = 0, limit: int = 50, user_id: int | None = None
     ) -> tuple[list[AuditLog], int]:
-        """Глобальная лента активности ("Timeline") — по задачам и комментариям.
+        """Глобальная лента активности ("Timeline") — по задачам, комментариям и сделкам.
 
         user_id — если передан (страница профиля пользователя), лента
         сужается до событий, совершённых ИМ (AuditLog.user_id), а не всей
@@ -36,7 +36,7 @@ class AuditRepository:
         все задачи всем авторизованным пользователям), поэтому лента активности
         придерживается той же логики и не требует отдельного скоупинга.
         """
-        base = select(AuditLog).where(AuditLog.entity_type.in_(("spisok_del", "comments")))
+        base = select(AuditLog).where(AuditLog.entity_type.in_(("spisok_del", "comments", "deals")))
         if user_id is not None:
             base = base.where(AuditLog.user_id == user_id)
 

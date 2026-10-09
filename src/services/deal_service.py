@@ -10,17 +10,19 @@ from src.models.user import UserModel, UserRole
 from src.repositories.client_repository import ClientRepository
 from src.repositories.deal_repository import DealRepository
 from src.repositories.users_repository import UserRepository
-from src.schemas.deal import DealCreate, DealMove, DealUpdate, StageCreate, StageUpdate
+from src.schemas.deal import DealCreate, DealMove, DealStageChange, DealUpdate, StageCreate, StageUpdate
 
 logger = structlog.get_logger()
 
 DEFAULT_PIPELINE_NAME = "Продажи"
 DEFAULT_STAGES: list[tuple[str, StageKind]] = [
     ("Новая", StageKind.open),
+    ("Связались", StageKind.open),
     ("Переговоры", StageKind.open),
     ("Предложение", StageKind.open),
-    ("Выиграна", StageKind.won),
-    ("Проиграна", StageKind.lost),
+    ("Согласование", StageKind.open),
+    ("Успех", StageKind.won),
+    ("Отказ", StageKind.lost),
 ]
 
 _PROCESS_FIELDS = ("amount", "owner_id", "expected_close_date")  # правят только admin и manager
@@ -171,7 +173,9 @@ class DealService:
             owner_id = data.owner_id
 
         self.deal_repo.set_audit_user(current_user.id)
+        column = await self.deal_repo.list_stage_deals(stage.id)
         deal = DealModel(
+            position=(column[-1].position + 1) if column else 0,
             client_id=client_id,
             stage_id=stage.id,
             title=data.title,
@@ -208,6 +212,43 @@ class DealService:
         await logger.ainfo("deal_updated", deal_id=deal_id)
         return updated
 
+    async def _place_in_stage(self, deal: DealModel, stage_id: int, position: int | None) -> None:
+        """Ставит сделку в колонку на позицию (с нуля; None — в конец); остальные сдвигаются, без дублей."""
+        others = [d for d in await self.deal_repo.list_stage_deals(stage_id) if d.id != deal.id]
+        index = len(others) if position is None else min(position, len(others))
+        others.insert(index, deal)
+        for i, item in enumerate(others):
+            if item.position != i:
+                item.position = i
+
+    async def get_history(self, deal_id: int) -> list[DealStageChange]:
+        """История смен стадии сделки (из аудита), от старых к новым."""
+        await self._deal_or_404(deal_id)
+        changes: list[tuple] = []  # (запись аудита, прежние значения, новые значения)
+        for entry in await self.deal_repo.list_deal_updates(deal_id):
+            old, new = entry.old_values or {}, entry.new_values or {}
+            if "stage_id" in new:
+                changes.append((entry, old, new))
+        ids = {int(v) for _, old, new in changes for v in (old.get("stage_id"), new.get("stage_id")) if v is not None}
+        names = await self.deal_repo.get_stage_names(ids)
+        history = []
+        for entry, old, new in changes:
+            old_id, new_id = old.get("stage_id"), new.get("stage_id")
+            history.append(
+                DealStageChange(
+                    id=entry.id,
+                    changed_at=entry.changed_at,
+                    user_id=entry.user_id,
+                    username=entry.user.username if entry.user else None,
+                    from_stage_id=old_id,
+                    from_stage_name=names.get(int(old_id)) if old_id is not None else None,
+                    to_stage_id=new_id,
+                    to_stage_name=names.get(int(new_id)) if new_id is not None else None,
+                    lost_reason=new.get("lost_reason"),
+                )
+            )
+        return history
+
     async def move_deal(self, deal_id: int, data: DealMove, current_user: UserModel) -> DealModel:
         deal = await self._deal_or_404(deal_id)
         if not (_is_manager(current_user) or self._is_deal_owner(deal, current_user)):
@@ -215,7 +256,11 @@ class DealService:
 
         target = await self._stage_or_404(data.stage_id)
         if target.id == deal.stage_id:
-            return deal
+            if data.position is None:
+                return deal
+            self.deal_repo.set_audit_user(current_user.id)  # перестановка внутри колонки
+            await self._place_in_stage(deal, target.id, data.position)
+            return await self.deal_repo.update_deal(deal)
         current = await self._stage_or_404(deal.stage_id)
         if current.kind != StageKind.open.value and not _is_manager(current_user):
             raise HTTPException(403, "Вернуть или перевести закрытую сделку может только admin или manager")
@@ -236,6 +281,7 @@ class DealService:
         deal.stage_id = target.id
         deal.lost_reason = lost_reason
         deal.closed_at = closed_at
+        await self._place_in_stage(deal, target.id, data.position)
         moved = await self.deal_repo.update_deal(deal)
         await logger.ainfo("deal_moved", deal_id=deal_id, stage_id=target.id)
         return moved

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.task_labels import PRIORITY_LABELS, STATUS_LABELS
 from src.models.audit import AuditAction, AuditLog
 from src.models.comment import CommentModel
+from src.models.deal import DealModel, StageModel
 from src.models.task import SpisokModel
 from src.repositories.audit_repository import AuditRepository
 
@@ -30,12 +31,21 @@ _FIELD_LABELS = {
     "project_id": "проект",
     "group_id": "группа",
     "recurrence_rule": "повторение",
+    # сделки
+    "stage_id": "стадия",
+    "amount": "сумма",
+    "owner_id": "ответственный",
+    "expected_close_date": "ожидаемая дата закрытия",
+    "closed_at": "дата закрытия",
+    "lost_reason": "причина отказа",
 }
 
 
-def _humanize_value(field: str, value) -> str:
+def _humanize_value(field: str, value, stage_names: dict[int, str] | None = None) -> str:
     if value is None:
         return "—"
+    if field == "stage_id" and stage_names:
+        return stage_names.get(int(value), str(value))
     if field == "status":
         return STATUS_LABELS.get(value, str(value))
     if field == "priority":
@@ -55,11 +65,18 @@ class ActivityService:
 
         task_ids: set[int] = set()
         comment_ids: set[int] = set()
+        deal_ids: set[int] = set()
+        stage_ids: set[int] = set()
         for entry in entries:
             if entry.entity_type == "spisok_del":
                 task_ids.add(entry.entity_id)
             elif entry.entity_type == "comments":
                 comment_ids.add(entry.entity_id)
+            elif entry.entity_type == "deals":
+                deal_ids.add(entry.entity_id)
+                for values in (entry.old_values, entry.new_values):
+                    if values and values.get("stage_id") is not None:
+                        stage_ids.add(int(values["stage_id"]))
 
         comments_by_id: dict[int, CommentModel] = {}
         if comment_ids:
@@ -74,7 +91,20 @@ class ActivityService:
             )
             titles_by_task_id = {row[0]: row[1] for row in result.all()}
 
-        feed = [self._build_item(entry, comments_by_id, titles_by_task_id) for entry in entries]
+        deal_titles: dict[int, str] = {}
+        if deal_ids:
+            result = await self.session.execute(select(DealModel.id, DealModel.title).where(DealModel.id.in_(deal_ids)))
+            deal_titles = {row[0]: row[1] for row in result.all()}
+        stage_names: dict[int, str] = {}
+        if stage_ids:
+            result = await self.session.execute(
+                select(StageModel.id, StageModel.name).where(StageModel.id.in_(stage_ids))
+            )
+            stage_names = {row[0]: row[1] for row in result.all()}
+
+        feed = [
+            self._build_item(entry, comments_by_id, titles_by_task_id, deal_titles, stage_names) for entry in entries
+        ]
         return feed, total
 
     def _build_item(
@@ -82,8 +112,12 @@ class ActivityService:
         entry: AuditLog,
         comments_by_id: dict[int, CommentModel],
         titles_by_task_id: dict[int, str],
+        deal_titles: dict[int, str] | None = None,
+        stage_names: dict[int, str] | None = None,
     ) -> dict:
         task_id: int | None = None
+        deal_id: int | None = None
+        deal_title: str | None = None
         task_title: str | None = None
         comment_preview: str | None = None
 
@@ -96,6 +130,9 @@ class ActivityService:
                 task_id = comment.task_id
                 task_title = titles_by_task_id.get(task_id, "(задача удалена)")
                 comment_preview = comment.content[:140]
+        elif entry.entity_type == "deals":
+            deal_id = entry.entity_id
+            deal_title = (deal_titles or {}).get(deal_id, "(сделка удалена)")
 
         return {
             "id": entry.id,
@@ -107,11 +144,13 @@ class ActivityService:
             "task_id": task_id,
             "task_title": task_title,
             "comment_preview": comment_preview,
-            "changes": self._describe_changes(entry),
+            "deal_id": deal_id,
+            "deal_title": deal_title,
+            "changes": self._describe_changes(entry, stage_names),
         }
 
     @staticmethod
-    def _describe_changes(entry: AuditLog) -> list[dict]:
+    def _describe_changes(entry: AuditLog, stage_names: dict[int, str] | None = None) -> list[dict]:
         """[{field, label, old, new}] изменившихся полей — только для action=update."""
         if entry.action != AuditAction.update or not entry.new_values:
             return []
@@ -122,8 +161,8 @@ class ActivityService:
                 {
                     "field": field,
                     "label": _FIELD_LABELS.get(field, field),
-                    "old": _humanize_value(field, old_value),
-                    "new": _humanize_value(field, new_value),
+                    "old": _humanize_value(field, old_value, stage_names),
+                    "new": _humanize_value(field, new_value, stage_names),
                 }
             )
         return changes

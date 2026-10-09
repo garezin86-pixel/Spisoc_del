@@ -32,10 +32,12 @@ async def test_default_pipeline_created_on_first_access(client, world):
     first = (await client.get("/api/pipeline", headers=h)).json()
     assert [(s["name"], s["kind"]) for s in first["stages"]] == [
         ("Новая", "open"),
+        ("Связались", "open"),
         ("Переговоры", "open"),
         ("Предложение", "open"),
-        ("Выиграна", "won"),
-        ("Проиграна", "lost"),
+        ("Согласование", "open"),
+        ("Успех", "won"),
+        ("Отказ", "lost"),
     ]
     again = (await client.get("/api/pipeline", headers=h)).json()
     assert again["id"] == first["id"]  # повторно не создаётся
@@ -60,15 +62,24 @@ async def test_only_admin_manages_stages(client, world):
 
     ha = await _headers(client, logins, "a_admin")
     created = await client.post("/api/pipeline/stages", json={"name": "Договор", "kind": "open"}, headers=ha)
-    assert created.status_code == 201 and created.json()["position"] == 5  # в конец
+    assert created.status_code == 201 and created.json()["position"] == 7  # в конец
     renamed = await client.patch(
         f"/api/pipeline/stages/{created.json()['id']}", json={"name": "Договор подписан", "position": 1}, headers=ha
     )
     assert renamed.status_code == 200 and renamed.json()["position"] == 1
     names = [s["name"] for s in (await client.get("/api/pipeline", headers=ha)).json()["stages"]]
-    assert names == ["Новая", "Договор подписан", "Переговоры", "Предложение", "Выиграна", "Проиграна"]
+    assert names == [
+        "Новая",
+        "Договор подписан",
+        "Связались",
+        "Переговоры",
+        "Предложение",
+        "Согласование",
+        "Успех",
+        "Отказ",
+    ]
     positions = [s["position"] for s in (await client.get("/api/pipeline", headers=ha)).json()["stages"]]
-    assert positions == list(range(6))  # без дублей и пропусков
+    assert positions == list(range(8))  # без дублей и пропусков
     # вставка сразу на позицию при создании
     first = await client.post("/api/pipeline/stages", json={"name": "Лид", "position": 0}, headers=ha)
     assert first.status_code == 201 and first.json()["position"] == 0
@@ -82,7 +93,7 @@ async def test_stage_delete_guards(client, world):
     ha = await _headers(client, logins, "a_admin")
     stages = await _stages(client, ha)
     # последняя стадия вида won / lost не удаляется
-    assert (await client.delete(f"/api/pipeline/stages/{stages['Выиграна']['id']}", headers=ha)).status_code == 409
+    assert (await client.delete(f"/api/pipeline/stages/{stages['Успех']['id']}", headers=ha)).status_code == 409
     # в стадии есть сделка
     await _deal(client, ha, ids["ca"])
     assert (await client.delete(f"/api/pipeline/stages/{stages['Новая']['id']}", headers=ha)).status_code == 409
@@ -115,7 +126,7 @@ async def test_create_permissions_and_validation(client, world):
     # ответственный за клиента не назначает другого ответственного
     assert (await _deal(client, ho, ids["ca"], owner_id=ids["other"])).status_code == 403
     # создать сразу в закрытой стадии нельзя
-    assert (await _deal(client, ho, ids["ca"], stage_id=stages["Выиграна"]["id"])).status_code == 422
+    assert (await _deal(client, ho, ids["ca"], stage_id=stages["Успех"]["id"])).status_code == 422
     assert (await _deal(client, ho, ids["ca"], amount=-5)).status_code == 422
     assert (await _deal(client, ho, ids["ca"], title="  ")).status_code == 422
 
@@ -138,13 +149,17 @@ async def test_foreign_company_gets_404_everywhere(client, world):
     assert (await client.get(f"/api/clients/{ids['ca']}/deals", headers=hb)).status_code == 404
     assert (await client.get(f"/api/deals/{deal_id}", headers=hb)).status_code == 404
     assert (await client.patch(f"/api/deals/{deal_id}", json={"title": "взлом"}, headers=hb)).status_code == 404
-    assert (await client.post(f"/api/deals/{deal_id}/move", json={"stage_id": stage_a}, headers=hb)).status_code == 404
+    assert (
+        await client.patch(f"/api/deals/{deal_id}/stage", json={"stage_id": stage_a}, headers=hb)
+    ).status_code == 404
     assert (await client.delete(f"/api/deals/{deal_id}", headers=hb)).status_code == 404
     assert (await client.get("/api/deals", headers=hb)).json()["total"] == 0
 
     # и свою сделку нельзя перевести на стадию чужой компании
     own_deal = (await _deal(client, hb, ids["cb"])).json()["id"]
-    assert (await client.post(f"/api/deals/{own_deal}/move", json={"stage_id": stage_a}, headers=hb)).status_code == 404
+    assert (
+        await client.patch(f"/api/deals/{own_deal}/stage", json={"stage_id": stage_a}, headers=hb)
+    ).status_code == 404
     assert (await client.get(f"/api/deals/{deal_id}", headers=ha)).json()["title"] == "Сделка"
 
 
@@ -181,7 +196,9 @@ async def test_unrelated_user_cannot_edit_or_move(client, world):
     h = await _headers(client, logins, "other")
     stage = (await _stages(client, h))["Переговоры"]["id"]
     assert (await client.patch(f"/api/deals/{deal['id']}", json={"title": "x"}, headers=h)).status_code == 403
-    assert (await client.post(f"/api/deals/{deal['id']}/move", json={"stage_id": stage}, headers=h)).status_code == 403
+    assert (
+        await client.patch(f"/api/deals/{deal['id']}/stage", json={"stage_id": stage}, headers=h)
+    ).status_code == 403
     assert (await client.get(f"/api/deals/{deal['id']}", headers=h)).status_code == 200  # читать можно
 
 
@@ -191,11 +208,11 @@ async def test_move_between_open_stages_and_noop(client, world):
     ho = await _headers(client, logins, "owner")
     stages = await _stages(client, ho)
     deal = (await _deal(client, ho, ids["ca"])).json()
-    url = f"/api/deals/{deal['id']}/move"
-    resp = await client.post(url, json={"stage_id": stages["Предложение"]["id"]}, headers=ho)
+    url = f"/api/deals/{deal['id']}/stage"
+    resp = await client.patch(url, json={"stage_id": stages["Предложение"]["id"]}, headers=ho)
     assert resp.status_code == 200 and resp.json()["stage_id"] == stages["Предложение"]["id"]
     assert resp.json()["closed_at"] is None
-    same = await client.post(url, json={"stage_id": stages["Предложение"]["id"]}, headers=ho)
+    same = await client.patch(url, json={"stage_id": stages["Предложение"]["id"]}, headers=ho)
     assert same.status_code == 200 and same.json()["stage_id"] == stages["Предложение"]["id"]
 
 
@@ -204,15 +221,15 @@ async def test_lost_needs_reason_and_won_needs_amount(client, world):
     ho = await _headers(client, logins, "owner")
     stages = await _stages(client, ho)
     deal = (await _deal(client, ho, ids["ca"])).json()  # без суммы
-    url = f"/api/deals/{deal['id']}/move"
+    url = f"/api/deals/{deal['id']}/stage"
 
-    assert (await client.post(url, json={"stage_id": stages["Проиграна"]["id"]}, headers=ho)).status_code == 422
+    assert (await client.patch(url, json={"stage_id": stages["Отказ"]["id"]}, headers=ho)).status_code == 422
     assert (
-        await client.post(url, json={"stage_id": stages["Проиграна"]["id"], "lost_reason": "  "}, headers=ho)
+        await client.patch(url, json={"stage_id": stages["Отказ"]["id"], "lost_reason": "  "}, headers=ho)
     ).status_code == 422
-    assert (await client.post(url, json={"stage_id": stages["Выиграна"]["id"]}, headers=ho)).status_code == 422
+    assert (await client.patch(url, json={"stage_id": stages["Успех"]["id"]}, headers=ho)).status_code == 422
 
-    lost = await client.post(url, json={"stage_id": stages["Проиграна"]["id"], "lost_reason": "Дорого"}, headers=ho)
+    lost = await client.patch(url, json={"stage_id": stages["Отказ"]["id"], "lost_reason": "Дорого"}, headers=ho)
     assert lost.status_code == 200
     assert lost.json()["lost_reason"] == "Дорого" and lost.json()["closed_at"] is not None
 
@@ -223,19 +240,19 @@ async def test_won_sets_closed_at_and_reopen_only_by_manager(client, world):
     hm = await _headers(client, logins, "a_manager")
     stages = await _stages(client, ho)
     deal = (await _deal(client, hm, ids["ca"], amount=1000, owner_id=ids["owner"])).json()
-    url = f"/api/deals/{deal['id']}/move"
+    url = f"/api/deals/{deal['id']}/stage"
 
-    won = await client.post(url, json={"stage_id": stages["Выиграна"]["id"]}, headers=ho)
+    won = await client.patch(url, json={"stage_id": stages["Успех"]["id"]}, headers=ho)
     assert won.status_code == 200 and won.json()["closed_at"] is not None
     # ответственный закрытую сделку не возвращает и не переводит
-    assert (await client.post(url, json={"stage_id": stages["Новая"]["id"]}, headers=ho)).status_code == 403
+    assert (await client.patch(url, json={"stage_id": stages["Новая"]["id"]}, headers=ho)).status_code == 403
     assert (
-        await client.post(url, json={"stage_id": stages["Проиграна"]["id"], "lost_reason": "x"}, headers=ho)
+        await client.patch(url, json={"stage_id": stages["Отказ"]["id"], "lost_reason": "x"}, headers=ho)
     ).status_code == 403
     # у выигранной сделки сумму очистить нельзя
     assert (await client.patch(f"/api/deals/{deal['id']}", json={"amount": None}, headers=hm)).status_code == 422
 
-    reopened = await client.post(url, json={"stage_id": stages["Переговоры"]["id"]}, headers=hm)
+    reopened = await client.patch(url, json={"stage_id": stages["Переговоры"]["id"]}, headers=hm)
     assert reopened.status_code == 200
     assert reopened.json()["closed_at"] is None and reopened.json()["lost_reason"] is None
 
@@ -245,9 +262,9 @@ async def test_reopen_clears_lost_reason(client, world):
     hm = await _headers(client, logins, "a_manager")
     stages = await _stages(client, hm)
     deal = (await _deal(client, hm, ids["ca"])).json()
-    url = f"/api/deals/{deal['id']}/move"
-    await client.post(url, json={"stage_id": stages["Проиграна"]["id"], "lost_reason": "Ушли к конкуренту"}, headers=hm)
-    back = (await client.post(url, json={"stage_id": stages["Новая"]["id"]}, headers=hm)).json()
+    url = f"/api/deals/{deal['id']}/stage"
+    await client.patch(url, json={"stage_id": stages["Отказ"]["id"], "lost_reason": "Ушли к конкуренту"}, headers=hm)
+    back = (await client.patch(url, json={"stage_id": stages["Новая"]["id"]}, headers=hm)).json()
     assert back["lost_reason"] is None and back["closed_at"] is None
 
 
@@ -256,7 +273,7 @@ async def test_move_is_audited_with_workspace_and_user(client, world):
     ho = await _headers(client, logins, "owner")
     stages = await _stages(client, ho)
     deal = (await _deal(client, ho, ids["ca"])).json()
-    await client.post(f"/api/deals/{deal['id']}/move", json={"stage_id": stages["Переговоры"]["id"]}, headers=ho)
+    await client.patch(f"/api/deals/{deal['id']}/stage", json={"stage_id": stages["Переговоры"]["id"]}, headers=ho)
 
     async with maker() as s:
         rows = (
@@ -324,3 +341,127 @@ async def test_deleting_client_soft_deletes_deals(client, world):
     async with maker() as s:
         rows = (await s.execute(select(DealModel).where(DealModel.client_id == ids["ca"]))).scalars().all()
         assert len(rows) == 2 and all(r.deleted_at is not None for r in rows)
+
+
+# ── position: порядок карточек в колонке ─────────────────────────────────────
+async def _column(client, headers, stage_id) -> list[str]:
+    resp = await client.get("/api/deals", params={"stage_id": stage_id}, headers=headers)
+    return [d["title"] for d in resp.json()["items"]]
+
+
+async def test_new_deals_go_to_end_of_column(client, world):
+    _, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    stage = (await _stages(client, hm))["Новая"]["id"]
+    created = [(await _deal(client, hm, ids["ca"], title=t)).json() for t in ("A", "B", "C")]
+    assert [d["position"] for d in created] == [0, 1, 2]
+    assert await _column(client, hm, stage) == ["A", "B", "C"]
+
+
+async def test_move_inserts_at_position_and_shifts_others(client, world):
+    _, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    stages = await _stages(client, hm)
+    a = (await _deal(client, hm, ids["ca"], title="A")).json()
+    b = (await _deal(client, hm, ids["ca"], title="B")).json()
+    c = (await _deal(client, hm, ids["ca"], title="C")).json()
+    target = stages["Переговоры"]["id"]
+
+    # в пустую колонку; без position — в конец
+    await client.patch(f"/api/deals/{a['id']}/stage", json={"stage_id": target}, headers=hm)
+    await client.patch(f"/api/deals/{b['id']}/stage", json={"stage_id": target}, headers=hm)
+    assert await _column(client, hm, target) == ["A", "B"]
+    # на позицию 0 — остальные сдвигаются
+    resp = await client.patch(f"/api/deals/{c['id']}/stage", json={"stage_id": target, "position": 0}, headers=hm)
+    assert resp.json()["position"] == 0
+    assert await _column(client, hm, target) == ["C", "A", "B"]
+    listed = (await client.get("/api/deals", params={"stage_id": target}, headers=hm)).json()["items"]
+    assert [d["position"] for d in listed] == [0, 1, 2]  # без дублей
+    # position больше размера колонки — в конец
+    await client.patch(f"/api/deals/{c['id']}/stage", json={"stage_id": target, "position": 99}, headers=hm)
+    assert await _column(client, hm, target) == ["A", "B", "C"]
+
+
+async def test_reorder_within_same_stage_without_history_noise(client, world):
+    _, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    stage = (await _stages(client, hm))["Новая"]["id"]
+    a = (await _deal(client, hm, ids["ca"], title="A")).json()
+    await _deal(client, hm, ids["ca"], title="B")
+    c = (await _deal(client, hm, ids["ca"], title="C")).json()
+    resp = await client.patch(f"/api/deals/{c['id']}/stage", json={"stage_id": stage, "position": 0}, headers=hm)
+    assert resp.status_code == 200
+    assert await _column(client, hm, stage) == ["C", "A", "B"]
+    # перестановка — не смена стадии: в истории пусто
+    assert (await client.get(f"/api/deals/{a['id']}/history", headers=hm)).json() == []
+    assert (await client.get(f"/api/deals/{c['id']}/history", headers=hm)).json() == []
+
+
+async def test_owner_can_reorder_own_deal_but_stranger_cannot(client, world):
+    _, ids, logins = world
+    ho = await _headers(client, logins, "owner")
+    stage = (await _stages(client, ho))["Новая"]["id"]
+    d1 = (await _deal(client, ho, ids["ca"], title="A")).json()
+    await _deal(client, ho, ids["ca"], title="B")
+    assert (
+        await client.patch(f"/api/deals/{d1['id']}/stage", json={"stage_id": stage, "position": 1}, headers=ho)
+    ).status_code == 200
+    h = await _headers(client, logins, "other")
+    assert (
+        await client.patch(f"/api/deals/{d1['id']}/stage", json={"stage_id": stage, "position": 0}, headers=h)
+    ).status_code == 403
+
+
+# ── история смены стадий и лента активности ──────────────────────────────────
+async def test_deal_history_lists_stage_changes(client, world):
+    _, ids, logins = world
+    ho = await _headers(client, logins, "owner")
+    hm = await _headers(client, logins, "a_manager")
+    stages = await _stages(client, ho)
+    deal = (await _deal(client, ho, ids["ca"], amount=500)).json()
+    url = f"/api/deals/{deal['id']}"
+    await client.patch(f"{url}/stage", json={"stage_id": stages["Связались"]["id"]}, headers=ho)
+    await client.patch(f"{url}/stage", json={"stage_id": stages["Отказ"]["id"], "lost_reason": "Дорого"}, headers=ho)
+    await client.patch(f"{url}/stage", json={"stage_id": stages["Новая"]["id"]}, headers=hm)
+    await client.patch(url, json={"title": "Переименована"}, headers=ho)  # не смена стадии
+
+    history = (await client.get(f"{url}/history", headers=ho)).json()
+    assert [(h["from_stage_name"], h["to_stage_name"]) for h in history] == [
+        ("Новая", "Связались"),
+        ("Связались", "Отказ"),
+        ("Отказ", "Новая"),
+    ]
+    assert history[1]["lost_reason"] == "Дорого"
+    assert [h["user_id"] for h in history] == [ids["owner"], ids["owner"], ids["a_manager"]]
+    assert history[2]["username"] == "a_manager"
+
+
+async def test_deal_history_isolation_and_404(client, world):
+    _, ids, logins = world
+    ha = await _headers(client, logins, "a_admin")
+    deal = (await _deal(client, ha, ids["ca"])).json()
+    hb = await _headers(client, logins, "b_admin")
+    assert (await client.get(f"/api/deals/{deal['id']}/history", headers=hb)).status_code == 404
+    assert (await client.get("/api/deals/999999/history", headers=ha)).status_code == 404
+
+
+async def test_stage_change_appears_in_activity_feed(client, world):
+    _, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    stages = await _stages(client, hm)
+    deal = (await _deal(client, hm, ids["ca"], title="Крупная поставка")).json()
+    await client.patch(f"/api/deals/{deal['id']}/stage", json={"stage_id": stages["Переговоры"]["id"]}, headers=hm)
+
+    feed = (await client.get("/api/analytics/activity", headers=hm)).json()["items"]
+    deal_items = [i for i in feed if i["entity_type"] == "deals"]
+    assert {i["action"] for i in deal_items} == {"create", "update"}
+    update = next(i for i in deal_items if i["action"] == "update")
+    assert update["deal_id"] == deal["id"] and update["deal_title"] == "Крупная поставка"
+    assert update["task_id"] is None and update["username"] == "a_manager"
+    assert update["changes"] == [{"field": "stage_id", "label": "стадия", "old": "Новая", "new": "Переговоры"}]
+
+    # лента другой компании пуста
+    hb = await _headers(client, logins, "b_admin")
+    assert all(
+        i["entity_type"] != "deals" for i in (await client.get("/api/analytics/activity", headers=hb)).json()["items"]
+    )

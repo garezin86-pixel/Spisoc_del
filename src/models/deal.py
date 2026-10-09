@@ -61,6 +61,7 @@ class StageModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
 
 class DealModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     __tablename__ = "deals"
+    __audit_skip_fields__ = frozenset({"position"})
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
@@ -72,6 +73,8 @@ class DealModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     lost_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Порядок карточки внутри колонки канбана (0 — сверху). Перестановки не пишутся в аудит.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -82,6 +85,7 @@ class DealModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
         Index("ix_deals_client_id", "client_id"),
         Index("ix_deals_stage_id", "stage_id"),
         Index("ix_deals_owner_id", "owner_id"),
+        Index("ix_deals_stage_position", "stage_id", "position"),
     )
 
     def __str__(self):
