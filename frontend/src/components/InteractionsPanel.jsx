@@ -102,7 +102,7 @@ export function InteractionsPanel({ token, clientId, canEdit, canManage, current
     const processLocked = editing !== "new" && !canManage; // тип и дату при правке менять нельзя
 
     const renderForm = () => (
-        <form onSubmit={submit} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 10 }}>
+        <form className="form" onSubmit={submit} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 10 }}>
             {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
             <div className="form-two-col">
                 <div className="form-group">

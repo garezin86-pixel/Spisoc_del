@@ -87,7 +87,7 @@ export function DealModal({ deal, stages, users, usersById, token, canManage, cu
                 {deal.lost_reason && <> · причина отказа: {deal.lost_reason}</>}
             </div>
 
-            <form onSubmit={save}>
+            <form className="form" onSubmit={save}>
                 <div className="form-group">
                     <label className="form-label">Название</label>
                     <input className="form-input" value={form.title} onChange={set("title")} disabled={!canEditRef} maxLength={200} />

@@ -8,6 +8,16 @@ export const INTERACTION_TYPES = [
     { key: "note", label: "Заметка", icon: "📝" },
 ];
 
+// plural(1, "клиент", "клиента", "клиентов") → "клиент"; 2 → "клиента"; 5 → "клиентов"; 21 → "клиент"
+export function plural(n, one, few, many) {
+    const abs = Math.abs(n) % 100;
+    const last = abs % 10;
+    if (abs > 10 && abs < 20) return many;
+    if (last === 1) return one;
+    if (last >= 2 && last <= 4) return few;
+    return many;
+}
+
 export const INTERACTION_LABELS = Object.fromEntries(INTERACTION_TYPES.map(t => [t.key, t]));
 
 // Цвет колонки воронки по виду стадии (open / won / lost)
@@ -80,6 +90,14 @@ export function isoToLocalInput(value) {
     const d = new Date(value);
     const pad = n => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// «2026-07-31T12:00:00+00:00» → «31.07.2026, 15:00» (в часовом поясе пользователя); не метка времени — как есть
+export function localizeIsoDateTime(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return value;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 // Пустую строку формы → null (очистить поле на сервере), иначе строка без пробелов по краям

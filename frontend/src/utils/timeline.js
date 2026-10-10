@@ -6,6 +6,15 @@ export function describeTimelineEvent(e) {
         if (e.action === "delete") return `${who} удалил(а) комментарий к «${e.task_title}»`;
         return `${who} · комментарий к «${e.task_title}»`;
     }
+    if (e.entity_type === "deals") {
+        const title = e.deal_title ?? "";
+        if (e.action === "create") return `${who} создал(а) сделку «${title}»`;
+        if (e.action === "delete") return `${who} удалил(а) сделку «${title}»`;
+        const stage = (e.changes ?? []).find(c => c.field === "stage_id");
+        if (e.action === "update" && stage) return `${who} перевёл(а) сделку «${title}»: ${stage.old} → ${stage.new}`;
+        if (e.action === "update") return `${who} изменил(а) сделку «${title}»`;
+        return `${who} · сделка «${title}»`;
+    }
     if (e.action === "create") return `${who} создал(а) задачу «${e.task_title}»`;
     if (e.action === "delete") return `${who} удалил(а) задачу «${e.task_title}»`;
     if (e.action === "restore") return `${who} восстановил(а) задачу «${e.task_title}»`;

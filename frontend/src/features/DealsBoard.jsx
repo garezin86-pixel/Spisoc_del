@@ -4,8 +4,9 @@ import { DealModal } from "../components/DealModal";
 import { Icon } from "../components/Icon";
 import { KanbanBoard } from "../components/KanbanBoard";
 import { Modal } from "../components/Modal";
+import { PipelineSettings } from "../components/PipelineSettings";
 import { ICONS } from "../constants/icons";
-import { CURRENCIES, DEFAULT_CURRENCY, STAGE_KIND_COLORS, formatDate, formatMoney, formatTotals, sumByCurrency } from "../constants/crm";
+import { CURRENCIES, DEFAULT_CURRENCY, STAGE_KIND_COLORS, formatDate, formatMoney, formatTotals, plural, sumByCurrency } from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 
 const byPosition = (a, b) => a.position - b.position || a.id - b.id;
@@ -31,7 +32,7 @@ async function fetchAllDeals(token, clientId) {
  * и возможность создать сделку; без clientId — все сделки компании.
  * Перетаскивание: между колонками и внутри колонки (порядок карточек сохраняется на сервере).
  */
-export function DealsBoard({ token, clientId = null, canManage, currentUserId, height }) {
+export function DealsBoard({ token, clientId = null, canManage, currentUserId, isAdmin = false }) {
     const { users, usersById } = useUsersMap(token);
     const [stages, setStages] = useState([]);
     const [deals, setDeals] = useState([]);
@@ -43,6 +44,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
     const [lostAsk, setLostAsk] = useState(null); // { dealId, toStageId, index }
     const [lostReason, setLostReason] = useState("");
     const [showCreate, setShowCreate] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
     const [newDeal, setNewDeal] = useState({ title: "", amount: "", currency: DEFAULT_CURRENCY, expected_close_date: "" });
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
@@ -177,13 +179,22 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
                 <button className="btn btn-ghost btn-sm" onClick={() => load()}>
                     <Icon d={ICONS.refresh} /> Обновить
                 </button>
+                {isAdmin && !clientId && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(v => !v)}>
+                        ⚙ Стадии
+                    </button>
+                )}
                 <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 13 }}>
-                    {deals.length} сделок{openTotals && <> · в работе на {openTotals}</>}
+                    {deals.length} {plural(deals.length, "сделка", "сделки", "сделок")}{openTotals && <> · в работе на {openTotals}</>}
                 </span>
             </div>
 
+            {showSettings && isAdmin && (
+                <PipelineSettings token={token} stages={stages} onChanged={() => load(true)} onClose={() => setShowSettings(false)} />
+            )}
+
             {showCreate && (
-                <form onSubmit={createDeal} className="card" style={{ marginBottom: 14 }}>
+                <form onSubmit={createDeal} className="card form" style={{ marginBottom: 14 }}>
                     {createError && <div className="alert" style={{ marginBottom: 10 }}>{createError}</div>}
                     <div className="form-group">
                         <label className="form-label">Название</label>
@@ -222,7 +233,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
                 columns={columns}
                 items={items}
                 reorder
-                height={height ?? (clientId ? "60vh" : "calc(100vh - 230px)")}
+                height="auto"
                 onMove={onMove}
                 renderColumnExtra={(col, list) => {
                     const totals = formatTotals(sumByCurrency(list)); // по валютам: «15 000 ₴ · 2 500 $»

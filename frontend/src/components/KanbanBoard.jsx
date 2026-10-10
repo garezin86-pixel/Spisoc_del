@@ -11,6 +11,7 @@ import { useState } from "react";
  *           считая без самой карточки) или null, если порядок не важен / отпустили на пустое место.
  * reorder:  true — порядок карточек в колонке сохраняется (сделки): показывается линия вставки, разрешена
  *           перестановка внутри колонки. false — только перенос между колонками (задачи).
+ * height:   число/CSS — фиксированная высота доски; "auto" — по высоте самой высокой колонки (не выше 75% экрана).
  * renderColumnExtra(col, list) — дополнительный элемент в шапке колонки (например, сумма по колонке).
  */
 export function KanbanBoard({
@@ -23,6 +24,8 @@ export function KanbanBoard({
     height = "calc(100vh - 220px)",
     emptyText = "Пусто",
 }) {
+    const fit = height === "auto";
+    const maxBoardHeight = "calc(100vh - 220px)";
     const [dragging, setDragging] = useState(null); // { id, fromCol }
     const [dragOver, setDragOver] = useState(null); // { col, index }
 
@@ -74,7 +77,7 @@ export function KanbanBoard({
     return (
         <div style={{
             display: "flex", gap: 12, overflowX: "auto", overflowY: "hidden",
-            height, paddingBottom: 8, paddingRight: 16, alignItems: "flex-start",
+            ...(fit ? { maxHeight: maxBoardHeight, minHeight: 200 } : { height }), paddingBottom: 8, paddingRight: 16, alignItems: "flex-start",
         }}>
             {columns.map(col => {
                 const list = items?.[col.key] ?? [];
@@ -94,7 +97,7 @@ export function KanbanBoard({
                             border: `1.5px solid ${isOver ? "var(--accent)" : "var(--border)"}`,
                             borderRadius: "var(--radius)",
                             transition: "border-color 0.15s, background 0.15s",
-                            overflowY: "auto", maxHeight: "100%",
+                            overflowY: "auto", maxHeight: fit ? maxBoardHeight : "100%",
                         }}
                     >
                         {/* Шапка колонки */}

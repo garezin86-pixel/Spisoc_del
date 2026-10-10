@@ -1432,7 +1432,7 @@ function App() {
                     {/* ── DEALS TAB: воронка всех сделок компании ── */}
                     {tab === "deals" && (
                         <div>
-                            <DealsBoard token={token} canManage={canManage} currentUserId={currentUserId} />
+                            <DealsBoard token={token} canManage={canManage} currentUserId={currentUserId} isAdmin={currentRole === "admin"} />
                         </div>
                     )}
                     {/* ── KANBAN TAB ── */}

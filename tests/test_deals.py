@@ -7,6 +7,8 @@ admin/manager; ответственный по сделке двигает её 
 lost требует причину, won — сумму; вернуть закрытую сделку может только admin/manager; изоляция компаний.
 """
 
+from unittest.mock import AsyncMock, patch
+
 from sqlalchemy import and_, select
 
 from src.models.audit import AuditAction, AuditLog
@@ -532,3 +534,57 @@ async def test_currency_survives_moves_and_filters(client, world):
     assert won.status_code == 200 and won.json()["currency"] == "USD" and won.json()["amount"] == 2500
     listed = (await client.get("/api/deals", params={"stage_id": stages["Успех"]["id"]}, headers=hm)).json()["items"]
     assert [d["currency"] for d in listed] == ["USD"]
+
+
+async def test_feed_hides_closed_at_and_formats_dates(client, world):
+    _, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    stages = await _stages(client, hm)
+    deal = (await _deal(client, hm, ids["ca"], amount=100)).json()
+    await client.patch(f"/api/deals/{deal['id']}", json={"expected_close_date": "2026-12-01"}, headers=hm)
+    await client.patch(f"/api/deals/{deal['id']}/stage", json={"stage_id": stages["Успех"]["id"]}, headers=hm)
+
+    feed = (await client.get("/api/analytics/activity", headers=hm)).json()["items"]
+    updates = [i for i in feed if i["entity_type"] == "deals" and i["action"] == "update"]
+    fields = {c["field"] for i in updates for c in i["changes"]}
+    assert "closed_at" not in fields  # дата закрытия — шум, смена стадии уже показана
+    assert "stage_id" in fields
+    date_change = next(c for i in updates for c in i["changes"] if c["field"] == "expected_close_date")
+    assert date_change["new"] == "01.12.2026" and date_change["old"] == "—"
+
+
+async def test_feed_shows_user_names_and_hides_completed_at(client, world):
+    _, ids, logins = world
+    # уведомление об исполнителе уходит фоновой задачей со своей сессией БД — в тесте оно не нужно
+    with (
+        patch("src.services.task_service.notify_task_assigned", new_callable=AsyncMock),
+        patch("src.routers.tasks_router.notify_task_assigned", new_callable=AsyncMock),
+    ):
+        await _feed_names_scenario(client, ids, logins)
+
+
+async def _feed_names_scenario(client, ids, logins):
+    hm = await _headers(client, logins, "a_manager")
+
+    # сделка: смена ответственного — имена, а не номера
+    deal = (await _deal(client, hm, ids["ca"])).json()
+    await client.patch(f"/api/deals/{deal['id']}", json={"owner_id": ids["other"]}, headers=hm)
+
+    # задача: смена исполнителя и закрытие — имена, и без служебной даты completed_at
+    task = await client.post("/api/tasks", json={"title": "Позвонить", "user_id": ids["a_manager"]}, headers=hm)
+    assert task.status_code in (200, 201), task.text
+    task_id = task.json()["id"]
+    resp = await client.patch(f"/api/tasks/{task_id}/reassign", params={"user_id": ids["other"]}, headers=hm)
+    assert resp.status_code == 200, resp.text
+    resp = await client.patch(f"/api/tasks/{task_id}/status", json={"status": "done"}, headers=hm)
+    assert resp.status_code == 200, resp.text
+
+    feed = (await client.get("/api/analytics/activity", headers=hm)).json()["items"]
+    changes = [c for i in feed for c in i["changes"]]
+    owner = next(c for c in changes if c["field"] == "owner_id")
+    assert (owner["old"], owner["new"]) == ("a_manager", "other")
+    assignee = [c for c in changes if c["field"] == "user_id"]
+    assert assignee and all(not c["new"].isdigit() for c in assignee)
+    assert any(c["new"] == "other" for c in assignee)
+    assert "completed_at" not in {c["field"] for c in changes}
+    assert any(c["field"] == "status" for c in changes)  # смена статуса при этом видна

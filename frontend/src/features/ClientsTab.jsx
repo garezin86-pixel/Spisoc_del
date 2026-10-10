@@ -3,7 +3,7 @@ import { apiRequest } from "../api";
 import { Icon } from "../components/Icon";
 import { Pagination } from "../components/Pagination";
 import { ICONS } from "../constants/icons";
-import { emptyToNull } from "../constants/crm";
+import { emptyToNull, plural } from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 import { ClientCard } from "./ClientCard";
 
@@ -88,7 +88,7 @@ export function ClientsTab({ token, canManage, currentUserId }) {
             <div className="section-header">
                 <div>
                     <div className="section-title"><Icon d={ICONS.user} size={15} /> Клиенты</div>
-                    <div className="section-sub">{data.total > 0 ? `${data.total} клиентов` : "Нет клиентов"}</div>
+                    <div className="section-sub">{data.total > 0 ? `${data.total} ${plural(data.total, "клиент", "клиента", "клиентов")}` : "Нет клиентов"}</div>
                 </div>
                 {canManage && (
                     <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(v => !v); setFormError(null); }}>
@@ -98,7 +98,7 @@ export function ClientsTab({ token, canManage, currentUserId }) {
             </div>
 
             {showCreate && (
-                <form onSubmit={create} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 14 }}>
+                <form className="form" onSubmit={create} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 14 }}>
                     {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
                     <div className="form-group">
                         <label className="form-label">Название</label>

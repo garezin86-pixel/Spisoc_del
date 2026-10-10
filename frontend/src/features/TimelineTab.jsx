@@ -3,6 +3,7 @@ import { apiRequest } from "../api";
 import { Icon } from "../components/Icon";
 import { Pagination } from "../components/Pagination";
 import { AUDIT_ACTION_ICONS } from "../constants/audit";
+import { localizeIsoDateTime } from "../constants/crm";
 import { ICONS } from "../constants/icons";
 import { describeTimelineEvent } from "../utils/timeline";
 
@@ -38,7 +39,7 @@ export function TimelineTab({ token }) {
             <div className="section-header">
                 <div>
                     <div className="section-title">🕒 Лента активности</div>
-                    <div className="section-sub">Последние изменения задач и комментариев — все пользователи</div>
+                    <div className="section-sub">Последние изменения задач, комментариев и сделок — все пользователи</div>
                 </div>
                 <button className="btn btn-ghost btn-sm" onClick={() => load(page)} disabled={loading}>
                     <Icon d={ICONS.refresh} /> Обновить
@@ -73,9 +74,9 @@ export function TimelineTab({ token }) {
                                             <div key={c.field} style={{ fontSize: 12, color: "var(--text-muted)" }}>
                                                 <span style={{ color: "var(--text-dim)" }}>{c.label}:</span>{" "}
                                                 <span style={{ textDecoration: "line-through", marginRight: 4 }}>
-                                                    {c.old}
+                                                    {localizeIsoDateTime(c.old)}
                                                 </span>
-                                                <span style={{ color: "var(--accent-light)" }}>{c.new}</span>
+                                                <span style={{ color: "var(--accent-light)" }}>{localizeIsoDateTime(c.new)}</span>
                                             </div>
                                         ))}
                                     </div>

@@ -118,7 +118,7 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
             </div>
 
             {sub === "overview" && (editing ? (
-                <form onSubmit={save}>
+                <form className="form" onSubmit={save}>
                     {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
                     <div className="form-group">
                         <label className="form-label">Название</label>

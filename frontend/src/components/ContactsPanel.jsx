@@ -11,6 +11,7 @@ function ContactForm({ initial, onSubmit, onCancel, saving, error }) {
     const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }));
     return (
         <form
+            className="form"
             onSubmit={e => { e.preventDefault(); onSubmit(form); }}
             style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 10 }}
         >
