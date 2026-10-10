@@ -5,7 +5,7 @@ import structlog
 from fastapi import HTTPException
 
 from src.models.client import ClientModel
-from src.models.deal import DealModel, PipelineModel, StageKind, StageModel
+from src.models.deal import DEFAULT_CURRENCY, DealModel, PipelineModel, StageKind, StageModel
 from src.models.user import UserModel, UserRole
 from src.repositories.client_repository import ClientRepository
 from src.repositories.deal_repository import DealRepository
@@ -25,7 +25,7 @@ DEFAULT_STAGES: list[tuple[str, StageKind]] = [
     ("Отказ", StageKind.lost),
 ]
 
-_PROCESS_FIELDS = ("amount", "owner_id", "expected_close_date")  # правят только admin и manager
+_PROCESS_FIELDS = ("amount", "currency", "owner_id", "expected_close_date")  # правят только admin и manager
 
 
 def _is_manager(user: UserModel) -> bool:
@@ -38,7 +38,7 @@ class DealService:
     - Читать: все. Стадии воронки меняет только admin (создание, имя, порядок, удаление).
     - Создать сделку: admin, manager и ответственный за клиента. Другого ответственного назначает admin/manager.
     - Справочные поля (title, notes): ответственный по сделке, admin, manager.
-    - Процессные (amount, owner_id, expected_close_date) и удаление: только admin и manager.
+    - Процессные (amount, currency, owner_id, expected_close_date) и удаление: только admin и manager.
     - Перевод по стадиям (move): ответственный по сделке, admin, manager. Из закрытой стадии
       (won/lost) вернуть сделку может только admin или manager.
     - lost требует причину, won — сумму; closed_at ставится при закрытии.
@@ -180,6 +180,7 @@ class DealService:
             stage_id=stage.id,
             title=data.title,
             amount=data.amount,
+            currency=data.currency or DEFAULT_CURRENCY,
             owner_id=owner_id,
             expected_close_date=data.expected_close_date,
             notes=data.notes,
@@ -197,7 +198,7 @@ class DealService:
         if not _is_manager(current_user):
             changed = [f for f in _PROCESS_FIELDS if f in changes and getattr(deal, f) != changes[f]]
             if changed:
-                raise HTTPException(403, "Менять сумму, ответственного и срок могут только admin и manager")
+                raise HTTPException(403, "Менять сумму, валюту, ответственного и срок могут только admin и manager")
         if changes.get("owner_id") is not None:
             await self._require_user_exists(changes["owner_id"])
         if "amount" in changes and changes["amount"] is None:

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../api";
 import { Modal } from "./Modal";
-import { emptyToNull, formatDate, formatDateTime, formatMoney } from "../constants/crm";
+import { CURRENCIES, DEFAULT_CURRENCY, emptyToNull, formatDate, formatDateTime, formatMoney } from "../constants/crm";
 import { userName } from "../hooks/useUsersMap";
 
 /**
@@ -14,6 +14,7 @@ export function DealModal({ deal, stages, users, usersById, token, canManage, cu
         title: deal.title,
         notes: deal.notes ?? "",
         amount: deal.amount ?? "",
+        currency: deal.currency ?? DEFAULT_CURRENCY,
         expected_close_date: deal.expected_close_date ?? "",
         owner_id: deal.owner_id ?? "",
     });
@@ -44,6 +45,7 @@ export function DealModal({ deal, stages, users, usersById, token, canManage, cu
         if (canManage) {
             const amount = form.amount === "" ? null : Number(form.amount);
             if (amount !== (deal.amount ?? null)) body.amount = amount;
+            if (form.currency !== (deal.currency ?? DEFAULT_CURRENCY)) body.currency = form.currency;
             const date = form.expected_close_date || null;
             if (date !== (deal.expected_close_date ?? null)) body.expected_close_date = date;
             if (form.owner_id !== "" && Number(form.owner_id) !== deal.owner_id) body.owner_id = Number(form.owner_id);
@@ -97,10 +99,17 @@ export function DealModal({ deal, stages, users, usersById, token, canManage, cu
                             onChange={set("amount")} disabled={!canManage} title={canManage ? "" : "Сумму меняют admin и manager"} />
                     </div>
                     <div className="form-group">
-                        <label className="form-label">Ожидаемая дата закрытия</label>
-                        <input className="form-input" type="date" value={form.expected_close_date}
-                            onChange={set("expected_close_date")} disabled={!canManage} />
+                        <label className="form-label">Валюта</label>
+                        <select className="form-input" value={form.currency} onChange={set("currency")} disabled={!canManage}
+                            title={canManage ? "" : "Валюту меняют admin и manager"}>
+                            {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>)}
+                        </select>
                     </div>
+                </div>
+                <div className="form-group">
+                    <label className="form-label">Ожидаемая дата закрытия</label>
+                    <input className="form-input" type="date" value={form.expected_close_date}
+                        onChange={set("expected_close_date")} disabled={!canManage} />
                 </div>
                 <div className="form-group">
                     <label className="form-label">Ответственный</label>
@@ -141,7 +150,7 @@ export function DealModal({ deal, stages, users, usersById, token, canManage, cu
                 ))}
             </div>
             <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
-                Создана {formatDateTime(deal.created_at)}{deal.amount != null && <> · сумма {formatMoney(deal.amount)}</>}
+                Создана {formatDateTime(deal.created_at)}{deal.amount != null && <> · сумма {formatMoney(deal.amount, deal.currency)}</>}
                 {deal.expected_close_date && <> · срок {formatDate(deal.expected_close_date)}</>}
             </div>
         </Modal>

@@ -465,3 +465,70 @@ async def test_stage_change_appears_in_activity_feed(client, world):
     assert all(
         i["entity_type"] != "deals" for i in (await client.get("/api/analytics/activity", headers=hb)).json()["items"]
     )
+
+
+# ── валюты ───────────────────────────────────────────────────────────────────
+async def test_currency_defaults_to_uah_and_can_be_set_on_create(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    default = (await _deal(client, h, ids["ca"], amount=15000)).json()
+    assert default["currency"] == "UAH"
+    usd = (await _deal(client, h, ids["ca"], amount=2500, currency="usd")).json()  # регистр не важен
+    eur = (await _deal(client, h, ids["ca"], amount=1800, currency="EUR")).json()
+    assert (usd["currency"], eur["currency"]) == ("USD", "EUR")
+    assert usd["amount"] == 2500 and isinstance(usd["amount"], float)
+
+
+async def test_unsupported_currency_rejected(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    assert (await _deal(client, h, ids["ca"], currency="XXX")).status_code == 422
+    assert (await _deal(client, h, ids["ca"], currency="")).status_code == 422
+    deal = (await _deal(client, h, ids["ca"])).json()
+    url = f"/api/deals/{deal['id']}"
+    assert (await client.patch(url, json={"currency": "GBP"}, headers=h)).status_code == 422
+    assert (await client.patch(url, json={"currency": None}, headers=h)).status_code == 422
+
+
+async def test_currency_is_process_field_only_managers_change(client, world):
+    maker, ids, logins = world
+    ho = await _headers(client, logins, "owner")
+    deal = (await _deal(client, ho, ids["ca"], amount=100, currency="USD")).json()  # при создании — можно
+    url = f"/api/deals/{deal['id']}"
+    assert (await client.patch(url, json={"currency": "EUR"}, headers=ho)).status_code == 403
+    assert (await client.patch(url, json={"currency": "USD", "title": "то же значение"}, headers=ho)).status_code == 200
+
+    hm = await _headers(client, logins, "a_manager")
+    resp = await client.patch(url, json={"currency": "EUR"}, headers=hm)
+    assert resp.status_code == 200 and resp.json()["currency"] == "EUR"
+
+    async with maker() as s:  # смена валюты попала в аудит
+        row = (
+            (
+                await s.execute(
+                    select(AuditLog).where(
+                        and_(
+                            AuditLog.entity_type == "deals",
+                            AuditLog.entity_id == deal["id"],
+                            AuditLog.action == AuditAction.update,
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert any(
+        (r.new_values or {}).get("currency") == "EUR" and (r.old_values or {}).get("currency") == "USD" for r in row
+    )
+
+
+async def test_currency_survives_moves_and_filters(client, world):
+    _, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    stages = await _stages(client, hm)
+    deal = (await _deal(client, hm, ids["ca"], amount=2500, currency="USD")).json()
+    won = await client.patch(f"/api/deals/{deal['id']}/stage", json={"stage_id": stages["Успех"]["id"]}, headers=hm)
+    assert won.status_code == 200 and won.json()["currency"] == "USD" and won.json()["amount"] == 2500
+    listed = (await client.get("/api/deals", params={"stage_id": stages["Успех"]["id"]}, headers=hm)).json()["items"]
+    assert [d["currency"] for d in listed] == ["USD"]

@@ -5,7 +5,7 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
 
-from src.models.deal import StageKind
+from src.models.deal import DEFAULT_CURRENCY, SUPPORTED_CURRENCIES, StageKind
 
 # Сумма: в БД Decimal (точные деньги), в JSON — обычное число.
 Money = Annotated[
@@ -13,6 +13,15 @@ Money = Annotated[
     Field(ge=0, max_digits=14, decimal_places=2),
     PlainSerializer(lambda v: float(v), return_type=float, when_used="json"),
 ]
+
+
+def _currency(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        raise ValueError("Валюту нельзя очистить")
+    v = v.strip().upper()
+    if v not in SUPPORTED_CURRENCIES:
+        raise ValueError(f"Валюта должна быть одной из: {', '.join(SUPPORTED_CURRENCIES)}")
+    return v
 
 
 def _clean(value: Optional[str]) -> Optional[str]:
@@ -79,6 +88,7 @@ class StageUpdate(BaseModel):
 class DealCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     amount: Optional[Money] = None
+    currency: Optional[str] = None  # не передана — UAH
     owner_id: Optional[int] = None  # не передан — создатель; назначать другого может admin/manager
     expected_close_date: Optional[date] = None
     notes: Optional[str] = Field(None, max_length=5000)
@@ -94,17 +104,28 @@ class DealCreate(BaseModel):
     def _n(cls, v):
         return _clean(v)
 
+    @field_validator("currency")
+    @classmethod
+    def _c(cls, v):
+        return _currency(v)
+
 
 class DealUpdate(BaseModel):
     """PATCH. Справочные поля (title, notes): ответственный, admin, manager.
-    Процессные (amount, owner_id, expected_close_date): только admin и manager.
+    Процессные (amount, currency, owner_id, expected_close_date): только admin и manager.
     Стадия меняется отдельно: POST /deals/{id}/move."""
 
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     notes: Optional[str] = Field(None, max_length=5000)
     amount: Optional[Money] = None
+    currency: Optional[str] = None
     owner_id: Optional[int] = None
     expected_close_date: Optional[date] = None
+
+    @field_validator("currency")
+    @classmethod
+    def _c(cls, v):
+        return _currency(v)
 
     @field_validator("title")
     @classmethod
@@ -139,6 +160,7 @@ class DealSchema(BaseModel):
     stage_id: int
     title: str
     amount: Optional[Money] = None
+    currency: str = DEFAULT_CURRENCY
     owner_id: Optional[int] = None
     expected_close_date: Optional[date] = None
     closed_at: Optional[datetime] = None

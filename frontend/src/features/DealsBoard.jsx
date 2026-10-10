@@ -5,7 +5,7 @@ import { Icon } from "../components/Icon";
 import { KanbanBoard } from "../components/KanbanBoard";
 import { Modal } from "../components/Modal";
 import { ICONS } from "../constants/icons";
-import { STAGE_KIND_COLORS, formatDate, formatMoney } from "../constants/crm";
+import { CURRENCIES, DEFAULT_CURRENCY, STAGE_KIND_COLORS, formatDate, formatMoney, formatTotals, sumByCurrency } from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 
 const byPosition = (a, b) => a.position - b.position || a.id - b.id;
@@ -43,7 +43,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
     const [lostAsk, setLostAsk] = useState(null); // { dealId, toStageId, index }
     const [lostReason, setLostReason] = useState("");
     const [showCreate, setShowCreate] = useState(false);
-    const [newDeal, setNewDeal] = useState({ title: "", amount: "", expected_close_date: "" });
+    const [newDeal, setNewDeal] = useState({ title: "", amount: "", currency: DEFAULT_CURRENCY, expected_close_date: "" });
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
 
@@ -85,7 +85,8 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
     const kindOf = useMemo(() => Object.fromEntries(stages.map(s => [s.id, s.kind])), [stages]);
     const openDeal = deals.find(d => d.id === openDealId) ?? null;
 
-    const openSum = deals.reduce((s, d) => s + (kindOf[d.stage_id] === "open" && d.amount ? Number(d.amount) : 0), 0);
+    // Итог «в работе» — отдельно по каждой валюте (разные валюты не складываются)
+    const openTotals = formatTotals(sumByCurrency(deals.filter(d => kindOf[d.stage_id] === "open")));
 
     const doMove = async (dealId, toStageId, index, reason) => {
         // Оптимистично: карточка сразу встаёт на место; при ошибке доска перечитывается.
@@ -142,9 +143,10 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
         try {
             const body = { title: newDeal.title.trim() };
             if (newDeal.amount !== "") body.amount = Number(newDeal.amount);
+            body.currency = newDeal.currency;
             if (newDeal.expected_close_date) body.expected_close_date = newDeal.expected_close_date;
             await apiRequest({ path: `/clients/${clientId}/deals`, method: "POST", token, body });
-            setNewDeal({ title: "", amount: "", expected_close_date: "" });
+            setNewDeal({ title: "", amount: "", currency: DEFAULT_CURRENCY, expected_close_date: "" });
             setShowCreate(false);
             await load(true);
         } catch (err) {
@@ -176,7 +178,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
                     <Icon d={ICONS.refresh} /> Обновить
                 </button>
                 <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 13 }}>
-                    {deals.length} сделок · в работе на {formatMoney(openSum)}
+                    {deals.length} сделок{openTotals && <> · в работе на {openTotals}</>}
                 </span>
             </div>
 
@@ -194,6 +196,15 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
                             <input className="form-input" type="number" min="0" step="0.01" value={newDeal.amount}
                                 onChange={e => setNewDeal(f => ({ ...f, amount: e.target.value }))} />
                         </div>
+                        <div className="form-group">
+                            <label className="form-label">Валюта</label>
+                            <select className="form-input" value={newDeal.currency}
+                                onChange={e => setNewDeal(f => ({ ...f, currency: e.target.value }))}>
+                                {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="form-two-col">
                         <div className="form-group">
                             <label className="form-label">Ожидаемая дата закрытия</label>
                             <input className="form-input" type="date" value={newDeal.expected_close_date}
@@ -214,8 +225,8 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, h
                 height={height ?? (clientId ? "60vh" : "calc(100vh - 230px)")}
                 onMove={onMove}
                 renderColumnExtra={(col, list) => {
-                    const sum = list.reduce((s, d) => s + (d.amount ? Number(d.amount) : 0), 0);
-                    return sum > 0 ? <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 600 }}>{formatMoney(sum)}</span> : null;
+                    const totals = formatTotals(sumByCurrency(list)); // по валютам: «15 000 ₴ · 2 500 $»
+                    return totals ? <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 600, textAlign: "right" }}>{totals}</span> : null;
                 }}
                 renderCard={({ item, col, onDragStart, onDragEnd, isDragging }) => (
                     <DealCard
@@ -281,7 +292,7 @@ function DealCard({ deal, col, kind, ownerName, onOpen, onDragStart, onDragEnd, 
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>#{deal.id}</span>
                 {deal.amount != null && (
-                    <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{formatMoney(deal.amount)}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{formatMoney(deal.amount, deal.currency)}</span>
                 )}
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, wordBreak: "break-word", marginBottom: 6 }}>{deal.title}</div>

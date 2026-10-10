@@ -3,10 +3,10 @@
 
 Воронка одна на компанию (создаётся при первом обращении, см. DealService), стадии — строки
 таблицы stages с видом open / won / lost. Поля сделки делятся по влиянию на процесс:
-  * процессные — stage_id (меняется только через move), amount, owner_id, expected_close_date,
+  * процессные — stage_id (меняется только через move), amount, currency, owner_id, expected_close_date,
     удаление: правят admin и manager (стадию двигает ещё ответственный по сделке);
   * справочные — title, notes: правят ещё и ответственный по сделке.
-Валюты нет: сумма — в единой валюте компании. Тип стадии хранится строкой, как InteractionType.
+Валюта — у каждой сделки своя (currency). Тип стадии хранится строкой, как InteractionType.
 """
 
 from datetime import date, datetime, timezone
@@ -20,6 +20,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.db import Base
 from src.models.audit import AuditMixin, SoftDeleteMixin
 from src.models.mixins import TenantMixin
+
+# Валюты сделок (ISO 4217). Чтобы добавить валюту — дописать код сюда и в frontend/src/constants/crm.js.
+SUPPORTED_CURRENCIES = ("UAH", "USD", "EUR")
+DEFAULT_CURRENCY = "UAH"
 
 
 class StageKind(str, Enum):
@@ -68,6 +72,10 @@ class DealModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     stage_id: Mapped[int] = mapped_column(ForeignKey("stages.id", ondelete="RESTRICT"), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    # Валюта суммы у каждой сделки своя; суммы разных валют не складываются
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default=DEFAULT_CURRENCY, server_default=DEFAULT_CURRENCY
+    )
     owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     expected_close_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

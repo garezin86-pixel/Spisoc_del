@@ -13,11 +13,48 @@ export const INTERACTION_LABELS = Object.fromEntries(INTERACTION_TYPES.map(t => 
 // Цвет колонки воронки по виду стадии (open / won / lost)
 export const STAGE_KIND_COLORS = { open: "#7c6af0", won: "#22c55e", lost: "#ef4444" };
 
+// Валюты сделок. Список должен совпадать с SUPPORTED_CURRENCIES в src/models/deal.py (бэкенд отклонит остальные).
+export const CURRENCIES = [
+    { code: "UAH", symbol: "₴", label: "Гривна" },
+    { code: "USD", symbol: "$", label: "Доллар США" },
+    { code: "EUR", symbol: "€", label: "Евро" },
+];
+export const DEFAULT_CURRENCY = "UAH";
+
 const moneyFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
-export function formatMoney(value) {
+// 15000 + "UAH" → «15 000 ₴»; 2500 + "USD" → «2 500 $». Дробная часть показывается, только если она есть.
+export function formatMoney(value, currency = DEFAULT_CURRENCY) {
     if (value === null || value === undefined) return "—";
-    return moneyFormat.format(Number(value));
+    const n = Number(value);
+    try {
+        return new Intl.NumberFormat("ru-RU", {
+            style: "currency", currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: 0, maximumFractionDigits: 2,
+        }).format(n);
+    } catch {
+        return `${moneyFormat.format(n)} ${currency}`; // неизвестный код валюты
+    }
+}
+
+// Суммы разных валют не складываются: считаем отдельно по каждой. → { UAH: 15000, USD: 2500 }
+export function sumByCurrency(deals) {
+    const totals = {};
+    for (const d of deals) {
+        if (d.amount === null || d.amount === undefined) continue;
+        const code = d.currency || DEFAULT_CURRENCY;
+        totals[code] = (totals[code] ?? 0) + Number(d.amount);
+    }
+    return totals;
+}
+
+// { UAH: 15000, USD: 2500 } → «15 000 ₴ · 2 500 $» (порядок валют как в CURRENCIES, неизвестные в конце); пусто → ""
+export function formatTotals(totals) {
+    const order = code => { const i = CURRENCIES.findIndex(c => c.code === code); return i === -1 ? CURRENCIES.length : i; };
+    return Object.keys(totals)
+        .filter(code => totals[code] > 0)
+        .sort((a, b) => order(a) - order(b))
+        .map(code => formatMoney(totals[code], code))
+        .join(" · ");
 }
 
 export function formatDateTime(value) {

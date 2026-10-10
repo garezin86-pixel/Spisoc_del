@@ -34,6 +34,7 @@ _FIELD_LABELS = {
     # сделки
     "stage_id": "стадия",
     "amount": "сумма",
+    "currency": "валюта",
     "owner_id": "ответственный",
     "expected_close_date": "ожидаемая дата закрытия",
     "closed_at": "дата закрытия",

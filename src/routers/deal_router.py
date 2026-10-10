@@ -91,7 +91,7 @@ async def get_deal(deal_id: int, session: SessionDep, current_user: UserModel = 
     response_model=DealSchema,
     summary="Обновить сделку",
     description="Справочные поля (`title`, `notes`): ответственный, admin, manager. "
-    "Процессные (`amount`, `owner_id`, `expected_close_date`): только admin и manager. "
+    "Процессные (`amount`, `currency`, `owner_id`, `expected_close_date`): только admin и manager. "
     "Стадию меняет `POST /deals/{id}/move`.",
     responses={403: {"description": "Нет прав"}, 404: {"description": "Не найдено"}},
 )
