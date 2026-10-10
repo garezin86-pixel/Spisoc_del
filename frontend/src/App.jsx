@@ -15,24 +15,26 @@ import { ROLE_COLORS, ROLE_LABELS } from "./constants/roles";
 import { STATUS_LIST } from "./constants/status";
 import { CalendarTab } from "./features/CalendarTab";
 import { ChangePasswordCard } from "./features/ChangePasswordCard";
+import { ClientsTab } from "./features/ClientsTab";
 import { DashboardTab } from "./features/DashboardTab";
 import { DeadlineCalendarTab } from "./features/DeadlineCalendarTab";
+import { DealsBoard } from "./features/DealsBoard";
 import { ForceChangePasswordScreen } from "./features/ForceChangePasswordScreen";
 import { GroupsTab } from "./features/GroupsTab";
+import { InvitesPanel } from "./features/InvitesPanel";
 import { KanbanTab } from "./features/KanbanTab";
 import { ProjectsTab } from "./features/ProjectsTab";
+import { RegisterScreen } from "./features/RegisterScreen";
 import { TeamTab } from "./features/TeamTab";
 import { TemplatesTab } from "./features/TemplatesTab";
 import { TimelineTab } from "./features/TimelineTab";
 import { TokensTab } from "./features/TokensTab";
-import { InvitesPanel } from "./features/InvitesPanel";
-import { RegisterScreen } from "./features/RegisterScreen";
 import { TwoFactorTab } from "./features/TwoFactorTab";
 import { UserProfilePage } from "./features/UserProfilePage";
 import { WebhooksTab } from "./features/WebhooksTab";
 import { useWebSocket } from "./hooks/useWebSocket";
-import { extractItems } from "./utils/extractItems";
 import { loginError } from "./utils/authErrors";
+import { extractItems } from "./utils/extractItems";
 import { decodeToken } from "./utils/token";
 
 function App() {
@@ -907,6 +909,12 @@ function App() {
                             <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
                                 <Icon d={ICONS.folder} /> Проекты
                             </button>
+                            <button className={`tab-btn${tab === "clients" ? " active" : ""}`} onClick={() => setTab("clients")}>
+                                <Icon d={ICONS.user} /> Клиенты
+                            </button>
+                            <button className={`tab-btn${tab === "deals" ? " active" : ""}`} onClick={() => setTab("deals")}>
+                                <Icon d={ICONS.kanban} /> Воронка
+                            </button>
                             <button className={`tab-btn${tab === "templates" ? " active" : ""}`} onClick={() => setTab("templates")}>
                                 <Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z" /> Шаблоны
                             </button>
@@ -1413,6 +1421,18 @@ function App() {
                         <div>
                             <ProjectsTab token={token} canManage={canManage}
                                 currentUserId={currentUserId} currentRole={currentRole} />
+                        </div>
+                    )}
+                    {/* ── CLIENTS TAB (lite CRM) ── */}
+                    {tab === "clients" && (
+                        <div>
+                            <ClientsTab token={token} canManage={canManage} currentUserId={currentUserId} />
+                        </div>
+                    )}
+                    {/* ── DEALS TAB: воронка всех сделок компании ── */}
+                    {tab === "deals" && (
+                        <div>
+                            <DealsBoard token={token} canManage={canManage} currentUserId={currentUserId} />
                         </div>
                     )}
                     {/* ── KANBAN TAB ── */}

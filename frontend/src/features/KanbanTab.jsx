@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiRequest } from "../api";
 import { Icon } from "../components/Icon";
+import { KanbanBoard } from "../components/KanbanBoard";
 import { KanbanCard } from "../components/KanbanCard";
 import { ICONS } from "../constants/icons";
 import { KANBAN_COLUMNS } from "../constants/kanban";
@@ -13,8 +14,6 @@ export function KanbanTab({ token }) {
     const [onlyMine, setOnlyMine] = useState(false);
     const [onlyAuthor, setOnlyAuthor] = useState(false);
     const [projects, setProjects] = useState([]);
-    const [dragging, setDragging] = useState(null); // { taskId, fromCol }
-    const [dragOver, setDragOver] = useState(null);
     const [movingId, setMovingId] = useState(null);
     const [moveError, setMoveError] = useState(null);
 
@@ -56,19 +55,6 @@ export function KanbanTab({ token }) {
         return () => clearTimeout(timer);
     }, [moveError]);
 
-    // ── Drag & Drop ──────────────────────────────────────────
-    const onDragStart = (e, taskId, fromCol) => {
-        setDragging({ taskId, fromCol });
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("taskId", taskId);
-    };
-
-    const onDragOver = (e, col) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setDragOver(col);
-    };
-
     // Перемещение задачи в другую колонку (используется и при drag&drop, и при выборе из списка статусов)
     const moveTask = async (taskId, fromCol, toCol) => {
         if (!fromCol || fromCol === toCol) return;
@@ -104,17 +90,6 @@ export function KanbanTab({ token }) {
             setMovingId(null);
         }
     };
-
-    const onDrop = (e, toCol) => {
-        e.preventDefault();
-        setDragOver(null);
-        if (!dragging) return;
-        const { taskId, fromCol } = dragging;
-        setDragging(null);
-        moveTask(taskId, fromCol, toCol);
-    };
-
-    const onDragEnd = () => { setDragging(null); setDragOver(null); };
 
     // ── Render ───────────────────────────────────────────────
     if (loading) return (
@@ -171,7 +146,7 @@ export function KanbanTab({ token }) {
                 </label>
                 <button
                     className="btn btn-ghost btn-sm"
-                    onClick={() => loadBoard(projectId, onlyMine)}
+                    onClick={() => loadBoard(projectId, onlyMine, onlyAuthor)}
                     style={{ marginLeft: "auto" }}
                 >
                     <Icon d={ICONS.refresh} /> Обновить
@@ -182,100 +157,22 @@ export function KanbanTab({ token }) {
             </div>
 
             {/* Доска */}
-            <div style={{
-                display: "flex",
-                gap: 12,
-                overflowX: "auto",
-                overflowY: "hidden",
-                height: "calc(100vh - 220px)",
-                paddingBottom: 8,
-                paddingRight: 16,
-                alignItems: "flex-start",
-            }}>
-                {KANBAN_COLUMNS.map(col => {
-                    const tasks = board?.[col.key] ?? [];
-                    const isOver = dragOver === col.key;
-                    return (
-                        <div
-                            key={col.key}
-                            onDragOver={e => onDragOver(e, col.key)}
-                            onDrop={e => onDrop(e, col.key)}
-                            onDragLeave={() => setDragOver(null)}
-                            style={{
-                                minWidth: 260,
-                                maxWidth: 300,
-                                flexShrink: 0,
-                                background: isOver
-                                    ? "rgba(124,106,240,0.08)"
-                                    : "var(--surface)",
-                                border: `1.5px solid ${isOver ? "var(--accent)" : "var(--border)"}`,
-                                borderRadius: "var(--radius)",
-                                transition: "border-color 0.15s, background 0.15s",
-                                // overflow: "hidden",
-                                overflowY: "auto",
-                                maxHeight: "100%",
-                            }}
-                        >
-                            {/* Шапка колонки */}
-                            <div style={{
-                                padding: "12px 14px 10px",
-                                borderBottom: "1px solid var(--border)",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                            }}>
-                                <span style={{
-                                    display: "inline-block",
-                                    width: 10, height: 10,
-                                    borderRadius: "50%",
-                                    background: col.color,
-                                    flexShrink: 0,
-                                }} />
-                                <span style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 13 }}>
-                                    {col.label}
-                                </span>
-                                <span style={{
-                                    marginLeft: "auto",
-                                    background: "var(--surface2)",
-                                    color: "var(--text-muted)",
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    borderRadius: 20,
-                                    padding: "1px 8px",
-                                }}>
-                                    {tasks.length}
-                                </span>
-                            </div>
-
-                            {/* Карточки */}
-                            <div style={{ padding: "8px 8px", display: "flex", flexDirection: "column", gap: 7, minHeight: 60 }}>
-                                {tasks.length === 0 ? (
-                                    <div style={{
-                                        textAlign: "center",
-                                        color: "var(--text-muted)",
-                                        fontSize: 12,
-                                        padding: "24px 0",
-                                        opacity: isOver ? 0.3 : 0.6,
-                                    }}>
-                                        {isOver ? "Отпустите сюда" : "Пусто"}
-                                    </div>
-                                ) : tasks.map(task => (
-                                    <KanbanCard
-                                        key={task.id}
-                                        task={task}
-                                        col={col.key}
-                                        onDragStart={onDragStart}
-                                        onDragEnd={onDragEnd}
-                                        onChangeStatus={(newStatus) => moveTask(task.id, col.key, newStatus)}
-                                        isMoving={movingId === task.id}
-                                        isDragging={dragging?.taskId === task.id}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+            <KanbanBoard
+                columns={KANBAN_COLUMNS}
+                items={board ?? {}}
+                onMove={(taskId, fromCol, toCol) => moveTask(taskId, fromCol, toCol)}
+                renderCard={({ item, col, onDragStart, onDragEnd, isDragging }) => (
+                    <KanbanCard
+                        task={item}
+                        col={col}
+                        onDragStart={onDragStart}
+                        onDragEnd={onDragEnd}
+                        onChangeStatus={(newStatus) => moveTask(item.id, col, newStatus)}
+                        isMoving={movingId === item.id}
+                        isDragging={isDragging}
+                    />
+                )}
+            />
         </div>
     );
 }

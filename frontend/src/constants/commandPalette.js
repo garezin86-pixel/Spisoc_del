@@ -15,6 +15,8 @@ export const COMMAND_LIST = [
     { id: "new-task", label: "Создать задачу", icon: "➕", tab: "tasks" },
     { id: "toggle-theme", label: "Переключить тему", icon: "🌓" },
     { id: "logout", label: "Выйти из аккаунта", icon: "🚪" },
+    { id: "nav-clients", label: "Перейти: Клиенты", icon: "🏢", tab: "clients" },
+    { id: "nav-deals", label: "Перейти: Воронка сделок", icon: "💼", tab: "deals" },
 ];
 
 
