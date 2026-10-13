@@ -44,6 +44,12 @@ class ClientService:
             return
         raise HTTPException(403, "Править клиента могут admin, manager и ответственный за клиента")
 
+    @staticmethod
+    def _check_person_fields(client_type: str, birth_date, gender) -> None:
+        """Дата рождения и пол есть только у частного лица (B2C)."""
+        if client_type != "person" and (birth_date is not None or gender is not None):
+            raise HTTPException(422, "Дата рождения и пол указываются только для частного лица (B2C)")
+
     async def _require_owner_exists(self, owner_id: int) -> None:
         # get_by_id идёт через scoped-сессию: пользователь другой компании → None.
         if await self.user_repo.get_by_id(owner_id) is None:
@@ -60,24 +66,37 @@ class ClientService:
         self._require_manager(current_user, "Создавать клиентов могут admin и manager")
         self.client_repo.set_audit_user(current_user.id)
 
+        self._check_person_fields(data.client_type, data.birth_date, data.gender)
         owner_id = data.owner_id if data.owner_id is not None else current_user.id
         if data.owner_id is not None:
             await self._require_owner_exists(owner_id)
 
         client = ClientModel(
             name=data.name,
+            client_type=data.client_type,
+            birth_date=data.birth_date,
+            gender=data.gender,
             phone=data.phone,
             email=data.email,
             address=data.address,
             notes=data.notes,
             owner_id=owner_id,
+            next_contact_at=data.next_contact_at,
         )
         created = await self.client_repo.create(client)
         await logger.ainfo("client_created", client_id=created.id, user_id=current_user.id)
         return created
 
-    async def get_clients(self, search: str | None, offset: int, limit: int) -> tuple[list[ClientModel], int]:
-        return await self.client_repo.list_clients(search, offset, limit)
+    async def get_clients(
+        self,
+        search: str | None,
+        offset: int,
+        limit: int,
+        contact_due: bool = False,
+        owner_id: int | None = None,
+        client_type: str | None = None,
+    ) -> tuple[list[ClientModel], int]:
+        return await self.client_repo.list_clients(search, offset, limit, contact_due, owner_id, client_type)
 
     async def get_client(self, client_id: int) -> ClientModel:
         return await self._get_client_or_404(client_id)
@@ -94,6 +113,13 @@ class ClientService:
             if changes["owner_id"] is not None:
                 await self._require_owner_exists(changes["owner_id"])
 
+        new_type = changes.get("client_type", client.client_type)
+        self._check_person_fields(new_type, changes.get("birth_date"), changes.get("gender"))
+        if new_type != "person":  # переход в компанию стирает данные частного лица — у компании их быть не должно
+            changes["birth_date"] = None
+            changes["gender"] = None
+        if "next_contact_at" in changes and changes["next_contact_at"] != client.next_contact_at:
+            client.next_contact_notified_at = None  # новая дата — новое напоминание
         for field, value in changes.items():
             setattr(client, field, value)
 

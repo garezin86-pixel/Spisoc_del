@@ -1,8 +1,25 @@
 # src/schemas/client.py
-from datetime import datetime
-from typing import Optional
+from datetime import date, datetime, timedelta
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+ClientType = Literal["company", "person"]  # B2B / B2C
+Gender = Literal["male", "female"]
+
+
+def _check_birth_date(value: Optional[date]) -> Optional[date]:
+    """Дата рождения — не в будущем и не раньше 1900 года."""
+    if value is not None and (value > date.today() or value < date(1900, 1, 1)):
+        raise ValueError("Некорректная дата рождения")
+    return value
+
+
+def _check_next_contact(value: Optional[date]) -> Optional[date]:
+    """Дата следующего контакта — сегодня или позже (день допуска на разницу часовых поясов)."""
+    if value is not None and value < date.today() - timedelta(days=1):
+        raise ValueError("Дата следующего контакта не может быть в прошлом")
+    return value
 
 
 def _clean(value: Optional[str]) -> Optional[str]:
@@ -21,13 +38,17 @@ def _check_email(value: Optional[str]) -> Optional[str]:
 
 
 class ClientCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=200)
+    name: str = Field(..., min_length=1, max_length=200)  # название компании или ФИО частного лица
+    client_type: ClientType = "company"
     phone: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, max_length=255)
     address: Optional[str] = Field(None, max_length=500)
     notes: Optional[str] = Field(None, max_length=5000)
     # Ответственный. Не передан — станет создатель. Назначать другого может admin/manager.
     owner_id: Optional[int] = None
+    birth_date: Optional[date] = None  # только для частного лица (person); в PATCH null — очистить
+    gender: Optional[Gender] = None  # только для частного лица; в PATCH null — очистить
+    next_contact_at: Optional[date] = None  # «связаться снова»; в PATCH null — очистить
 
     @field_validator("name")
     @classmethod
@@ -47,16 +68,30 @@ class ClientCreate(BaseModel):
     def _email(cls, v):
         return _check_email(v)
 
+    @field_validator("next_contact_at")
+    @classmethod
+    def _next_contact(cls, v):
+        return _check_next_contact(v)
+
+    @field_validator("birth_date")
+    @classmethod
+    def _birth(cls, v):
+        return _check_birth_date(v)
+
 
 class ClientUpdate(BaseModel):
     """PATCH: меняются только переданные поля; null очищает необязательное поле."""
 
     name: Optional[str] = Field(None, min_length=1, max_length=200)
+    client_type: Optional[ClientType] = None
     phone: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, max_length=255)
     address: Optional[str] = Field(None, max_length=500)
     notes: Optional[str] = Field(None, max_length=5000)
     owner_id: Optional[int] = None
+    birth_date: Optional[date] = None  # только для частного лица (person); в PATCH null — очистить
+    gender: Optional[Gender] = None  # только для частного лица; в PATCH null — очистить
+    next_contact_at: Optional[date] = None  # «связаться снова»; в PATCH null — очистить
 
     @field_validator("name")
     @classmethod
@@ -78,15 +113,36 @@ class ClientUpdate(BaseModel):
     def _email(cls, v):
         return _check_email(v)
 
+    @field_validator("next_contact_at")
+    @classmethod
+    def _next_contact(cls, v):
+        return _check_next_contact(v)
+
+    @field_validator("client_type")
+    @classmethod
+    def _type(cls, v):
+        if v is None:
+            raise ValueError("Тип клиента нельзя очистить")
+        return v
+
+    @field_validator("birth_date")
+    @classmethod
+    def _birth(cls, v):
+        return _check_birth_date(v)
+
 
 class ClientSchema(BaseModel):
     id: int
     name: str
+    client_type: str = "company"
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None
     owner_id: Optional[int] = None
+    birth_date: Optional[date] = None
+    gender: Optional[str] = None
+    next_contact_at: Optional[date] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

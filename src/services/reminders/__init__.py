@@ -1,6 +1,7 @@
 from src.services.reminders.service import (
     notify_group_assigned,
     notify_overdue,
+    remind_contact_due,
     remind_deadline_1h,
     remind_deadline_24h,
     send_weekly_report,
@@ -9,6 +10,7 @@ from src.services.reminders.service import (
 __all__ = [
     "notify_group_assigned",
     "notify_overdue",
+    "remind_contact_due",
     "remind_deadline_1h",
     "remind_deadline_24h",
     "send_weekly_report",

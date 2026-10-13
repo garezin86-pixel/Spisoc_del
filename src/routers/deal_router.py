@@ -5,6 +5,7 @@ from src.core.dependencies import get_current_user
 from src.db import SessionDep
 from src.models.user import UserModel
 from src.routers.pipeline_router import get_deal_service
+from src.schemas.client import ClientType
 from src.schemas.deal import DealCreate, DealMove, DealSchema, DealStageChange, DealUpdate
 from src.schemas.pagination import PaginatedResponse, PaginationParams
 
@@ -24,7 +25,7 @@ def _page(items, total, pagination: PaginationParams):
     "/deals",
     response_model=PaginatedResponse[DealSchema],
     summary="Сделки компании",
-    description="Читать могут все. Фильтры: `stage_id`, `owner_id`, `client_id`. "
+    description="Читать могут все. Фильтры: `stage_id`, `owner_id`, `client_id`, `client_type` (B2B / B2C). "
     "Новые сверху; с `stage_id` — в порядке карточек колонки.",
 )
 async def list_deals(
@@ -32,11 +33,17 @@ async def list_deals(
     stage_id: int | None = Query(None),
     owner_id: int | None = Query(None),
     client_id: int | None = Query(None),
+    client_type: ClientType | None = Query(None, description="company — B2B, person — B2C"),
     pagination: PaginationParams = Depends(),
     current_user: UserModel = Depends(get_current_user),
 ):
     items, total = await get_deal_service(session).list_deals(
-        pagination.offset, pagination.size, client_id=client_id, stage_id=stage_id, owner_id=owner_id
+        pagination.offset,
+        pagination.size,
+        client_id=client_id,
+        stage_id=stage_id,
+        owner_id=owner_id,
+        client_type=client_type,
     )
     return _page(items, total, pagination)
 

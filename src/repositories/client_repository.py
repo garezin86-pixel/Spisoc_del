@@ -1,10 +1,13 @@
 # src/repositories/client_repository.py
+from datetime import date, datetime, timezone
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.client import ClientModel, ContactModel
 from src.models.deal import DealModel
 from src.models.interaction import InteractionModel
+from src.models.user import UserModel
 
 
 def _like_pattern(text: str) -> str:
@@ -34,8 +37,23 @@ class ClientRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_clients(self, search: str | None, offset: int, limit: int) -> tuple[list[ClientModel], int]:
+    async def list_clients(
+        self,
+        search: str | None,
+        offset: int,
+        limit: int,
+        contact_due: bool = False,
+        owner_id: int | None = None,
+        client_type: str | None = None,
+    ) -> tuple[list[ClientModel], int]:
         query = select(ClientModel).where(ClientModel.not_deleted_filter())
+        if client_type is not None:
+            query = query.where(ClientModel.client_type == client_type)
+        if owner_id is not None:
+            query = query.where(ClientModel.owner_id == owner_id)
+        if contact_due:  # пора связаться: дата наступила (или прошла)
+            today = datetime.now(timezone.utc).date()
+            query = query.where(ClientModel.next_contact_at.is_not(None), ClientModel.next_contact_at <= today)
         if search and search.strip():
             pattern = _like_pattern(search.strip())
             query = query.where(
@@ -46,10 +64,29 @@ class ClientRepository:
                 )
             )
         total = await self.session.scalar(select(func.count()).select_from(query.subquery()))
-        result = await self.session.execute(
-            query.order_by(func.lower(ClientModel.name), ClientModel.id).offset(offset).limit(limit)
+        order = (
+            (ClientModel.next_contact_at, func.lower(ClientModel.name), ClientModel.id)
+            if contact_due
+            else (func.lower(ClientModel.name), ClientModel.id)
         )
+        result = await self.session.execute(query.order_by(*order).offset(offset).limit(limit))
         return list(result.scalars().all()), total or 0
+
+    async def get_due_for_reminder(self, today: date) -> list[tuple[ClientModel, UserModel]]:
+        """Клиенты, о которых пора напомнить: дата наступила, ещё не напоминали, есть ответственный.
+        Вызывается из планировщика без привязки к компании — видит все компании."""
+        result = await self.session.execute(
+            select(ClientModel, UserModel)
+            .join(UserModel, UserModel.id == ClientModel.owner_id)
+            .where(
+                ClientModel.not_deleted_filter(),
+                ClientModel.next_contact_at.is_not(None),
+                ClientModel.next_contact_at <= today,
+                ClientModel.next_contact_notified_at.is_(None),
+            )
+            .order_by(ClientModel.next_contact_at, ClientModel.id)
+        )
+        return [(row[0], row[1]) for row in result.all()]
 
     async def create(self, client: ClientModel) -> ClientModel:
         self.session.add(client)
@@ -66,15 +103,14 @@ class ClientRepository:
         """Мягко удаляет клиента, его живые контакты и взаимодействия (одна транзакция, всё в аудите)."""
         interactions = await self.session.execute(
             select(InteractionModel).where(
-                InteractionModel.client_id == client.id,
-                InteractionModel.not_deleted_filter(),
+                InteractionModel.client_id == client.id, InteractionModel.not_deleted_filter()
             )
-        )
-        deals = await self.session.execute(
-            select(DealModel).where(DealModel.client_id == client.id, DealModel.not_deleted_filter())
         )
         for interaction in interactions.scalars().all():
             interaction.soft_delete(self.session)
+        deals = await self.session.execute(
+            select(DealModel).where(DealModel.client_id == client.id, DealModel.not_deleted_filter())
+        )
         for deal in deals.scalars().all():
             deal.soft_delete(self.session)
         for contact in await self.list_contacts(client.id):

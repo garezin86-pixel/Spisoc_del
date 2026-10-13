@@ -12,6 +12,7 @@ import { useState } from "react";
  * reorder:  true — порядок карточек в колонке сохраняется (сделки): показывается линия вставки, разрешена
  *           перестановка внутри колонки. false — только перенос между колонками (задачи).
  * height:   число/CSS — фиксированная высота доски; "auto" — по высоте самой высокой колонки (не выше 75% экрана).
+ * colorBar: true — сверху колонки цветная полоса цвета col.color (воронка сделок); у канбана задач выключено.
  * renderColumnExtra(col, list) — дополнительный элемент в шапке колонки (например, сумма по колонке).
  */
 export function KanbanBoard({
@@ -21,6 +22,7 @@ export function KanbanBoard({
     onMove,
     reorder = false,
     renderColumnExtra = null,
+    colorBar = false,
     height = "calc(100vh - 220px)",
     emptyText = "Пусто",
 }) {
@@ -96,6 +98,7 @@ export function KanbanBoard({
                             background: isOver ? "rgba(124,106,240,0.08)" : "var(--surface)",
                             border: `1.5px solid ${isOver ? "var(--accent)" : "var(--border)"}`,
                             borderRadius: "var(--radius)",
+                            ...(colorBar ? { borderTop: `3px solid ${col.color}` } : {}),
                             transition: "border-color 0.15s, background 0.15s",
                             overflowY: "auto", maxHeight: fit ? maxBoardHeight : "100%",
                         }}

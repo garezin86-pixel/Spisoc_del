@@ -142,7 +142,10 @@ class NotificationRepository(AbstractNotificationRepository):
             CursorResult,
             await self.session.execute(
                 update(NotificationLogModel)
-                .where(NotificationLogModel.id == notification_id, NotificationLogModel.user_id == user_id)
+                .where(
+                    NotificationLogModel.id == notification_id,
+                    NotificationLogModel.user_id == user_id,
+                )
                 .values(is_read=True)
             ),
         )
@@ -154,7 +157,10 @@ class NotificationRepository(AbstractNotificationRepository):
             CursorResult,
             await self.session.execute(
                 update(NotificationLogModel)
-                .where(NotificationLogModel.user_id == user_id, NotificationLogModel.is_read.is_(False))
+                .where(
+                    NotificationLogModel.user_id == user_id,
+                    NotificationLogModel.is_read.is_(False),
+                )
                 .values(is_read=True)
             ),
         )
@@ -439,6 +445,7 @@ class NotificationSettingsRepository:
             notify_task_updated=True,
             notify_comment=True,
             notify_mentioned=True,
+            notify_contact_due=True,
         )
 
     async def disable_all_notifications(self, user_id: int) -> NotificationSettingsModel:
@@ -460,6 +467,7 @@ class NotificationSettingsRepository:
             # "включить всё"), но ВКЛЮЧЁН здесь: "выключить всё" обязано
             # реально выключать всё, без исключений по соображениям безопасности.
             voice_notifications_enabled=False,
+            notify_contact_due=False,
         )
 
     async def get_users_with_enabled_notification(self, notification_type: str):

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../api";
 import { Modal } from "./Modal";
-import { CURRENCIES, DEFAULT_CURRENCY, emptyToNull, formatDate, formatDateTime, formatMoney } from "../constants/crm";
+import { CURRENCIES, DEFAULT_CURRENCY, clientTypeInfo, emptyToNull, formatDate, formatDateTime, formatMoney } from "../constants/crm";
 import { userName } from "../hooks/useUsersMap";
 
 /**
@@ -82,6 +82,9 @@ export function DealModal({ deal, stages, users, usersById, token, canManage, cu
         <Modal title={`Сделка #${deal.id}`} onClose={onClose} width={620}>
             {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+                {deal.client_name && (
+                    <>Клиент: <b style={{ color: "var(--text)" }}>{clientTypeInfo(deal.client_type).icon} {deal.client_name}</b> ({clientTypeInfo(deal.client_type).short}){" · "}</>
+                )}
                 Стадия: <b style={{ color: "var(--text)" }}>{stageName(deal.stage_id)}</b>
                 {deal.closed_at && <> · закрыта {formatDateTime(deal.closed_at)}</>}
                 {deal.lost_reason && <> · причина отказа: {deal.lost_reason}</>}

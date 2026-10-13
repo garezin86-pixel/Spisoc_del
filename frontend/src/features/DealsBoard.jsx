@@ -5,11 +5,15 @@ import { Icon } from "../components/Icon";
 import { KanbanBoard } from "../components/KanbanBoard";
 import { Modal } from "../components/Modal";
 import { PipelineSettings } from "../components/PipelineSettings";
+import { PipelineSummary } from "../components/PipelineSummary";
 import { ICONS } from "../constants/icons";
-import { CURRENCIES, DEFAULT_CURRENCY, STAGE_KIND_COLORS, formatDate, formatMoney, formatTotals, plural, sumByCurrency } from "../constants/crm";
+import { CLIENT_TYPES, CURRENCIES, DEFAULT_CURRENCY, clientTypeInfo, formatDate, formatMoney, formatTotals, plural, stageColor, sumByCurrency } from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 
 const byPosition = (a, b) => a.position - b.position || a.id - b.id;
+
+// Какая воронка выбрана на общей доске, помним между заходами (в карточке клиента выбор свой)
+const PIPELINE_KEY = "spisoc_deals_pipeline";
 
 // Все сделки (постранично, по 100) — доска показывает колонки целиком.
 async function fetchAllDeals(token, clientId) {
@@ -34,7 +38,8 @@ async function fetchAllDeals(token, clientId) {
  */
 export function DealsBoard({ token, clientId = null, canManage, currentUserId, isAdmin = false }) {
     const { users, usersById } = useUsersMap(token);
-    const [stages, setStages] = useState([]);
+    const [pipelines, setPipelines] = useState([]);
+    const [selectedId, setSelectedId] = useState(null);
     const [deals, setDeals] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -45,6 +50,8 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
     const [lostReason, setLostReason] = useState("");
     const [showCreate, setShowCreate] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [showSummary, setShowSummary] = useState(false);
+    const [typeFilter, setTypeFilter] = useState(""); // только общая доска: "" — все, "company" — B2B, "person" — B2C
     const [newDeal, setNewDeal] = useState({ title: "", amount: "", currency: DEFAULT_CURRENCY, expected_close_date: "" });
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
@@ -53,12 +60,22 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
         if (!silent) setLoading(true);
         setError(null);
         try {
-            const [pipeline, list] = await Promise.all([
-                apiRequest({ path: "/pipeline", token }),
+            const [pipelineList, list] = await Promise.all([
+                apiRequest({ path: "/pipelines", token }),
                 fetchAllDeals(token, clientId),
             ]);
-            setStages(pipeline?.stages ?? []);
+            setPipelines(pipelineList ?? []);
             setDeals(list);
+            // Выбранная воронка остаётся, пока существует. Иначе: на общей доске — запомненная или первая;
+            // в карточке клиента — воронка, где у клиента есть сделки, или первая.
+            setSelectedId(prev => {
+                const exists = id => (pipelineList ?? []).some(p => p.id === id);
+                if (prev !== null && exists(prev)) return prev;
+                const remembered = clientId ? null : Number(localStorage.getItem(PIPELINE_KEY));
+                if (remembered && exists(remembered)) return remembered;
+                const withDeals = (pipelineList ?? []).find(p => list.some(d => p.stages.some(s => s.id === d.stage_id)));
+                return (clientId ? withDeals : null)?.id ?? pipelineList?.[0]?.id ?? null;
+            });
         } catch (e) {
             setError(e.message);
         } finally {
@@ -74,21 +91,37 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
         return () => clearTimeout(timer);
     }, [moveError]);
 
+    const pipeline = pipelines.find(p => p.id === selectedId) ?? null;
+    const stages = useMemo(() => pipeline?.stages ?? [], [pipeline]);
+    // сделки выбранной воронки (стадии разных воронок не пересекаются)
+    const pipelineDeals = useMemo(() => {
+        const ids = new Set(stages.map(s => s.id));
+        return deals.filter(d => ids.has(d.stage_id) && (!typeFilter || d.client_type === typeFilter));
+    }, [deals, stages, typeFilter]);
+    const dealsCountOf = p => deals.filter(d => p.stages.some(s => s.id === d.stage_id)).length;
+
+    const selectPipeline = id => {
+        setSelectedId(id);
+        if (!clientId) localStorage.setItem(PIPELINE_KEY, String(id));
+    };
+
     const columns = useMemo(
-        () => stages.map(s => ({ key: s.id, label: s.name, color: STAGE_KIND_COLORS[s.kind] ?? "#6b7280", kind: s.kind })),
+        () => stages.map(s => ({ key: s.id, label: s.name, color: stageColor(s), kind: s.kind })),
         [stages],
     );
     const items = useMemo(() => {
         const map = {};
         stages.forEach(s => { map[s.id] = []; });
-        [...deals].sort(byPosition).forEach(d => { (map[d.stage_id] ??= []).push(d); });
+        [...pipelineDeals].sort(byPosition).forEach(d => { (map[d.stage_id] ??= []).push(d); });
         return map;
-    }, [stages, deals]);
+    }, [stages, pipelineDeals]);
     const kindOf = useMemo(() => Object.fromEntries(stages.map(s => [s.id, s.kind])), [stages]);
-    const openDeal = deals.find(d => d.id === openDealId) ?? null;
+    const openDeal = pipelineDeals.find(d => d.id === openDealId) ?? null;
+    // сводка перечитывается, когда изменились сделки на доске (перенос, сумма, валюта, удаление)
+    const dealsSignature = deals.map(d => `${d.id}:${d.stage_id}:${d.amount}:${d.currency}:${d.owner_id}`).join("|");
 
     // Итог «в работе» — отдельно по каждой валюте (разные валюты не складываются)
-    const openTotals = formatTotals(sumByCurrency(deals.filter(d => kindOf[d.stage_id] === "open")));
+    const openTotals = formatTotals(sumByCurrency(pipelineDeals.filter(d => kindOf[d.stage_id] === "open")));
 
     const doMove = async (dealId, toStageId, index, reason) => {
         // Оптимистично: карточка сразу встаёт на место; при ошибке доска перечитывается.
@@ -144,6 +177,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
         setCreateError(null);
         try {
             const body = { title: newDeal.title.trim() };
+            if (selectedId) body.pipeline_id = selectedId; // сделка создаётся в выбранной воронке
             if (newDeal.amount !== "") body.amount = Number(newDeal.amount);
             body.currency = newDeal.currency;
             if (newDeal.expected_close_date) body.expected_close_date = newDeal.expected_close_date;
@@ -179,18 +213,49 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                 <button className="btn btn-ghost btn-sm" onClick={() => load()}>
                     <Icon d={ICONS.refresh} /> Обновить
                 </button>
+                {pipelines.length > 1 && (
+                    <select
+                        value={selectedId ?? ""} onChange={e => selectPipeline(Number(e.target.value))}
+                        title="Воронка" style={{ width: "auto", padding: "6px 10px", minWidth: 160 }}
+                    >
+                        {pipelines.map(p => <option key={p.id} value={p.id}>{p.name} ({dealsCountOf(p)})</option>)}
+                    </select>
+                )}
+                {!clientId && (
+                    <span style={{ display: "inline-flex", gap: 4 }}>
+                        {[{ key: "", label: "Все" }, ...CLIENT_TYPES.map(t => ({ key: t.key, label: `${t.icon} ${t.short}` }))].map(opt => (
+                            <button
+                                key={opt.key} type="button" title={opt.key ? clientTypeInfo(opt.key).label : "Клиенты любого типа"}
+                                className={`btn btn-sm ${typeFilter === opt.key ? "btn-primary" : "btn-ghost"}`}
+                                onClick={() => setTypeFilter(opt.key)}
+                            >{opt.label}</button>
+                        ))}
+                    </span>
+                )}
+                {!clientId && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowSummary(v => !v)}>
+                        📊 Сводка
+                    </button>
+                )}
                 {isAdmin && !clientId && (
                     <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(v => !v)}>
-                        ⚙ Стадии
+                        ⚙ Воронки
                     </button>
                 )}
                 <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 13 }}>
-                    {deals.length} {plural(deals.length, "сделка", "сделки", "сделок")}{openTotals && <> · в работе на {openTotals}</>}
+                    {pipelineDeals.length} {plural(pipelineDeals.length, "сделка", "сделки", "сделок")}{openTotals && <> · в работе на {openTotals}</>}
                 </span>
             </div>
 
+            {showSummary && !clientId && (
+                <PipelineSummary token={token} users={users} pipelineId={selectedId} refreshKey={dealsSignature} onClose={() => setShowSummary(false)} />
+            )}
+
             {showSettings && isAdmin && (
-                <PipelineSettings token={token} stages={stages} onChanged={() => load(true)} onClose={() => setShowSettings(false)} />
+                <PipelineSettings
+                    token={token} pipelines={pipelines} selectedId={selectedId} onSelect={selectPipeline}
+                    dealsCountOf={dealsCountOf} onChanged={() => load(true)} onClose={() => setShowSettings(false)}
+                />
             )}
 
             {showCreate && (
@@ -234,6 +299,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                 items={items}
                 reorder
                 height="auto"
+                colorBar
                 onMove={onMove}
                 renderColumnExtra={(col, list) => {
                     const totals = formatTotals(sumByCurrency(list)); // по валютам: «15 000 ₴ · 2 500 $»
@@ -245,6 +311,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                         col={col}
                         kind={kindOf[item.stage_id]}
                         ownerName={userName(usersById, item.owner_id)}
+                        showClient={!clientId}
                         onOpen={() => setOpenDealId(item.id)}
                         onDragStart={onDragStart}
                         onDragEnd={onDragEnd}
@@ -285,7 +352,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
     );
 }
 
-function DealCard({ deal, col, kind, ownerName, onOpen, onDragStart, onDragEnd, isDragging, isMoving }) {
+function DealCard({ deal, col, kind, ownerName, showClient, onOpen, onDragStart, onDragEnd, isDragging, isMoving }) {
     const overdue = kind === "open" && deal.expected_close_date && new Date(`${deal.expected_close_date}T23:59:59`) < new Date();
     return (
         <div
@@ -307,6 +374,11 @@ function DealCard({ deal, col, kind, ownerName, onOpen, onDragStart, onDragEnd, 
                 )}
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, wordBreak: "break-word", marginBottom: 6 }}>{deal.title}</div>
+            {showClient && deal.client_name && (
+                <div title={clientTypeInfo(deal.client_type).label} style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6, wordBreak: "break-word" }}>
+                    {clientTypeInfo(deal.client_type).icon} {deal.client_name}
+                </div>
+            )}
             {deal.lost_reason && (
                 <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 6 }}>Отказ: {deal.lost_reason}</div>
             )}

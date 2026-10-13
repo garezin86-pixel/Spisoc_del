@@ -6,7 +6,9 @@ import structlog
 from src.bot.setup import get_bot
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
+from src.repositories.client_repository import ClientRepository
 from src.services.reminders.messages import (
+    contact_due_text,
     deadline_1h_text,
     deadline_24h_text,
     group_assigned_text,
@@ -129,6 +131,36 @@ async def _send_deadline_reminders(
         await uow.commit()
 
     return sent
+
+
+async def remind_contact_due() -> None:
+    """«Связаться снова»: ответственному за клиента — напоминание, когда наступила дата следующего контакта.
+
+    Раз в клиента: после успешной отправки ставится next_contact_notified_at (сбрасывается при смене даты).
+    Не отправилось (нет Telegram, ошибка) — следующий прогон попробует снова; отключённая компания, заблокированный
+    пользователь и выключенная настройка notify_contact_due напоминаний не получают.
+    """
+    await event_logger.ainfo("reminder_job_started", type="contact_due")
+    session_maker = get_session_maker()
+    sender = NotificationSender(get_bot())
+    sent = 0
+
+    async with UnitOfWork(session_maker) as uow:
+        now = datetime.now(timezone.utc)
+        today = now.date()
+        for client, owner in await ClientRepository(uow.session).get_due_for_reminder(today):
+            if not owner.telegram_id or not owner.is_active or not owner.workspace_is_active:
+                continue
+            settings = await uow.notification_settings.get_by_user(owner.id)
+            if settings and not settings.notify_contact_due:
+                continue
+            if await _send_plain_and_log(uow, sender, owner, "contact_due", contact_due_text(client, today)):
+                client.next_contact_notified_at = now
+                sent += 1
+        await uow.commit()
+
+    logger.info("contact_due: отправлено %d", sent)
+    await event_logger.ainfo("reminder_job_finished", type="contact_due", count=sent)
 
 
 async def remind_deadline_24h() -> None:

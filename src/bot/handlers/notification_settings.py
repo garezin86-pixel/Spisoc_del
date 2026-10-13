@@ -76,6 +76,12 @@ def get_notification_keyboard(settings: dict) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                text=f"{'✅' if settings['notify_contact_due'] else '❌'} Напоминания о клиентах",
+                callback_data="toggle_contact_due",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=f"{'🔊' if settings['voice_notifications_enabled'] else '🔇'} Голосовые уведомления (просрочка)",
                 callback_data="toggle_voice_notifications",
             )
@@ -109,6 +115,7 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
             "notify_comment": settings_obj.notify_comment,
             "notify_mentioned": settings_obj.notify_mentioned,
             "notify_group_assigned": settings_obj.notify_group_assigned,
+            "notify_contact_due": settings_obj.notify_contact_due,
             "voice_notifications_enabled": settings_obj.voice_notifications_enabled,
         }
     return {
@@ -121,6 +128,7 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
         "notify_comment": True,
         "notify_mentioned": True,
         "notify_group_assigned": True,
+        "notify_contact_due": True,
         # ВАЖНО: голосовые — opt-in, дефолт False (в отличие от остальных
         # текстовых уведомлений выше, которые по умолчанию включены).
         # Синтез речи стоит денег за каждый вызов Groq API — не должен
@@ -224,6 +232,10 @@ async def notification_toggle_callback(callback: CallbackQuery):
         "toggle_group_assigned": (
             "notify_group_assigned",
             "уведомление о назначении в группу",
+        ),
+        "toggle_contact_due": (
+            "notify_contact_due",
+            "напоминания о клиентах (пора связаться)",
         ),
         "toggle_voice_notifications": (
             "voice_notifications_enabled",

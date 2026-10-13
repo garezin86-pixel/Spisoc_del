@@ -4,7 +4,10 @@ import { ContactsPanel } from "../components/ContactsPanel";
 import { Icon } from "../components/Icon";
 import { InteractionsPanel } from "../components/InteractionsPanel";
 import { ICONS } from "../constants/icons";
-import { emptyToNull, formatDateTime } from "../constants/crm";
+import { PersonFields } from "../components/PersonFields";
+import {
+    CLIENT_TYPES, ageFromDate, clientTypeInfo, emptyToNull, formatDate, formatDateTime, genderLabel, isContactDue, plural, todayInput,
+} from "../constants/crm";
 import { userName } from "../hooks/useUsersMap";
 import { DealsBoard } from "./DealsBoard";
 
@@ -54,8 +57,8 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
 
     const startEdit = () => {
         setForm({
-            name: client.name, phone: client.phone ?? "", email: client.email ?? "", address: client.address ?? "",
-            notes: client.notes ?? "", owner_id: client.owner_id ?? "",
+            name: client.name, client_type: client.client_type ?? "company", birth_date: client.birth_date ?? "", gender: client.gender ?? "", phone: client.phone ?? "", email: client.email ?? "", address: client.address ?? "",
+            notes: client.notes ?? "", owner_id: client.owner_id ?? "", next_contact_at: client.next_contact_at ?? "",
         });
         setFormError(null);
         setEditing(true);
@@ -68,10 +71,13 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
         try {
             const body = {
                 name: form.name.trim(),
+                client_type: form.client_type,
+                ...(form.client_type === "person" ? { birth_date: form.birth_date || null, gender: form.gender || null } : {}),
                 phone: emptyToNull(form.phone),
                 email: emptyToNull(form.email),
                 address: emptyToNull(form.address),
                 notes: emptyToNull(form.notes),
+                next_contact_at: form.next_contact_at || null,
             };
             if (canManage && form.owner_id !== "" && Number(form.owner_id) !== client.owner_id) body.owner_id = Number(form.owner_id);
             await apiRequest({ path: `/clients/${clientId}`, method: "PATCH", token, body });
@@ -81,6 +87,17 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
             setFormError(err.message);
         } finally {
             setSaving(false);
+        }
+    };
+
+    // «Связались»: напоминание больше не нужно — дату очищаем (новую можно поставить в «Изменить»)
+    const markContacted = async () => {
+        setFormError(null);
+        try {
+            await apiRequest({ path: `/clients/${clientId}`, method: "PATCH", token, body: { next_contact_at: null } });
+            await load();
+        } catch (err) {
+            setFormError(err.message);
         }
     };
 
@@ -106,7 +123,7 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
             <div className="section-header">
                 <div>
                     <button className="btn btn-ghost btn-sm" onClick={onBack} style={{ marginBottom: 6 }}>← К списку</button>
-                    <div className="section-title" style={{ fontSize: 18 }}>{client.name}</div>
+                    <div className="section-title" style={{ fontSize: 18 }}>{clientTypeInfo(client.client_type).icon} {client.name}</div>
                     <div className="section-sub">Ответственный: {userName(usersById, client.owner_id)}</div>
                 </div>
             </div>
@@ -121,9 +138,21 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
                 <form className="form" onSubmit={save}>
                     {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
                     <div className="form-group">
-                        <label className="form-label">Название</label>
+                        <label className="form-label">Тип клиента</label>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {CLIENT_TYPES.map(t => (
+                                <button
+                                    key={t.key} type="button" onClick={() => setForm(f => ({ ...f, client_type: t.key }))}
+                                    className={`btn btn-sm ${form.client_type === t.key ? "btn-primary" : "btn-ghost"}`}
+                                >{t.icon} {t.label}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">{clientTypeInfo(form.client_type).nameLabel}</label>
                         <input className="form-input" value={form.name} onChange={set("name")} maxLength={200} required />
                     </div>
+                    {form.client_type === "person" && <PersonFields form={form} set={set} />}
                     <div className="form-two-col">
                         <div className="form-group">
                             <label className="form-label">Телефон</label>
@@ -133,6 +162,10 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
                             <label className="form-label">Email</label>
                             <input className="form-input" type="email" value={form.email} onChange={set("email")} maxLength={255} />
                         </div>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Связаться снова (напомним ответственному в этот день)</label>
+                        <input type="date" min={todayInput()} value={form.next_contact_at} onChange={set("next_contact_at")} />
                     </div>
                     <div className="form-group">
                         <label className="form-label">Адрес</label>
@@ -159,10 +192,26 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
             ) : (
                 <div>
                     {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
+                    {row("Тип клиента", clientTypeInfo(client.client_type).label)}
+                    {client.client_type === "person" && row("Дата рождения", client.birth_date ? (() => {
+                        const age = ageFromDate(client.birth_date);
+                        return `${formatDate(client.birth_date)}${age !== null ? ` · ${age} ${plural(age, "год", "года", "лет")}` : ""}`;
+                    })() : null)}
+                    {client.client_type === "person" && row("Пол", genderLabel(client.gender))}
                     {row("Телефон", client.phone)}
                     {row("Email", client.email)}
                     {row("Адрес", client.address)}
                     {row("Последний контакт", client.last_interaction_at ? formatDateTime(client.last_interaction_at) : "ещё не было")}
+                    {row("Связаться снова", client.next_contact_at ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            <span style={{ color: isContactDue(client.next_contact_at) ? "var(--red)" : "inherit", fontWeight: isContactDue(client.next_contact_at) ? 600 : 400 }}>
+                                {formatDate(client.next_contact_at)}{isContactDue(client.next_contact_at) && " — пора связаться"}
+                            </span>
+                            {canEdit && (
+                                <button className="btn btn-ghost btn-sm" onClick={markContacted} title="Убрать напоминание">Связались</button>
+                            )}
+                        </span>
+                    ) : null)}
                     {row("Заметки", client.notes)}
                     <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                         {canEdit && <button className="btn btn-primary btn-sm" onClick={startEdit}><Icon d={ICONS.edit} /> Изменить</button>}

@@ -588,3 +588,173 @@ async def _feed_names_scenario(client, ids, logins):
     assert any(c["new"] == "other" for c in assignee)
     assert "completed_at" not in {c["field"] for c in changes}
     assert any(c["field"] == "status" for c in changes)  # смена статуса при этом видна
+
+
+# ── сводка по воронке ────────────────────────────────────────────────────────
+async def _summary(client, headers, **params):
+    resp = await client.get("/api/pipeline/summary", params=params, headers=headers)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def _stage(summary, name):
+    return next(s for s in summary["stages"] if s["name"] == name)
+
+
+def _totals(item):
+    return {t["currency"]: (t["count"], t["amount"]) for t in item["totals"]}
+
+
+async def test_summary_empty_pipeline(client, world):
+    _, _, logins = world
+    h = await _headers(client, logins, "a_manager")
+    summary = await _summary(client, h)
+    assert [s["name"] for s in summary["stages"]][:2] == ["Новая", "Связались"]  # порядок воронки
+    assert all(s["count"] == 0 and s["totals"] == [] for s in summary["stages"])
+    assert summary["conversion"] == {"open": 0, "won": 0, "lost": 0, "closed": 0, "win_rate": None}
+
+
+async def test_summary_counts_and_sums_per_stage_and_currency(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    stages = await _stages(client, h)
+    await _deal(client, h, ids["ca"], amount=15000)  # UAH, Новая
+    await _deal(client, h, ids["ca"], amount=1000)  # UAH, Новая
+    await _deal(client, h, ids["ca"], amount=2500, currency="USD")  # USD, Новая
+    await _deal(client, h, ids["ca"], title="Без суммы")  # UAH без суммы: в count, не в amount
+    negotiating = (await _deal(client, h, ids["ca"], amount=1800, currency="EUR")).json()
+    await client.patch(
+        f"/api/deals/{negotiating['id']}/stage", json={"stage_id": stages["Переговоры"]["id"]}, headers=h
+    )
+
+    summary = await _summary(client, h)
+    new = _stage(summary, "Новая")
+    assert new["count"] == 5 - 1
+    assert _totals(new) == {"UAH": (3, 16000.0), "USD": (1, 2500.0)}  # суммы разных валют отдельно
+    talks = _stage(summary, "Переговоры")
+    assert talks["count"] == 1 and _totals(talks) == {"EUR": (1, 1800.0)}
+    assert _stage(summary, "Предложение")["totals"] == []
+    assert summary["by_kind"]["open"]["count"] == 5
+    assert _totals(summary["by_kind"]["open"]) == {"UAH": (3, 16000.0), "USD": (1, 2500.0), "EUR": (1, 1800.0)}
+
+
+async def test_summary_conversion(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    stages = await _stages(client, h)
+
+    async def close(deal, stage, **body):
+        resp = await client.patch(
+            f"/api/deals/{deal['id']}/stage", json={"stage_id": stages[stage]["id"], **body}, headers=h
+        )
+        assert resp.status_code == 200, resp.text
+
+    for _ in range(3):  # 3 выиграны
+        await close((await _deal(client, h, ids["ca"], amount=100)).json(), "Успех")
+    await close((await _deal(client, h, ids["ca"], amount=500, currency="USD")).json(), "Отказ", lost_reason="Дорого")
+    await _deal(client, h, ids["ca"])  # одна в работе
+
+    summary = await _summary(client, h)
+    assert summary["conversion"] == {"open": 1, "won": 3, "lost": 1, "closed": 4, "win_rate": 0.75}
+    assert _totals(summary["by_kind"]["won"]) == {"UAH": (3, 300.0)}
+    assert _totals(summary["by_kind"]["lost"]) == {"USD": (1, 500.0)}
+
+
+async def test_summary_owner_filter_and_deleted_deals(client, world):
+    _, ids, logins = world
+    hm = await _headers(client, logins, "a_manager")
+    await _deal(client, hm, ids["ca"], amount=100, owner_id=ids["other"])
+    mine = (await _deal(client, hm, ids["ca"], amount=200)).json()
+    gone = (await _deal(client, hm, ids["ca"], amount=400)).json()
+    await client.delete(f"/api/deals/{gone['id']}", headers=hm)  # удалённая в сводку не входит
+
+    assert _stage(await _summary(client, hm), "Новая")["count"] == 2
+    only_other = await _summary(client, hm, owner_id=ids["other"])
+    assert _totals(_stage(only_other, "Новая")) == {"UAH": (1, 100.0)}
+    only_me = await _summary(client, hm, owner_id=ids["a_manager"])
+    assert _totals(_stage(only_me, "Новая")) == {"UAH": (1, 200.0)} and mine["id"]
+
+
+async def test_summary_is_per_company_and_readable_by_everyone(client, world):
+    _, ids, logins = world
+    ha = await _headers(client, logins, "a_admin")
+    await _deal(client, ha, ids["ca"], amount=999)
+    hb = await _headers(client, logins, "b_admin")
+    summary_b = await _summary(client, hb)
+    assert all(s["count"] == 0 for s in summary_b["stages"])  # чужих сделок не видно
+    h = await _headers(client, logins, "other")  # обычный пользователь читает сводку
+    assert _stage(await _summary(client, h), "Новая")["count"] == 1
+
+
+# ── тип клиента в сделках и в сводке ─────────────────────────────────────────
+async def _person(client, headers, name="Иванов Иван"):
+    resp = await client.post("/api/clients", json={"name": name, "client_type": "person"}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def test_deal_shows_client_name_and_type(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    person = await _person(client, h)
+    company_deal = await _deal(client, h, ids["ca"], title="B2B сделка")
+    person_deal = await _deal(client, h, person["id"], title="B2C сделка")
+    assert company_deal.status_code == person_deal.status_code == 201
+    assert (company_deal.json()["client_name"], company_deal.json()["client_type"]) == ("Ромашка", "company")
+    assert (person_deal.json()["client_name"], person_deal.json()["client_type"]) == ("Иванов Иван", "person")
+
+    # то же в получении, списке, правке и переводе по стадии
+    did = person_deal.json()["id"]
+    assert (await client.get(f"/api/deals/{did}", headers=h)).json()["client_type"] == "person"
+    patched = await client.patch(f"/api/deals/{did}", json={"title": "Новое имя"}, headers=h)
+    assert patched.json()["client_name"] == "Иванов Иван"
+    stages = await _stages(client, h)
+    moved = await client.patch(f"/api/deals/{did}/stage", json={"stage_id": stages["Переговоры"]["id"]}, headers=h)
+    assert moved.status_code == 200 and moved.json()["client_type"] == "person"
+    listed = (await client.get("/api/deals", headers=h)).json()["items"]
+    assert {d["title"]: d["client_type"] for d in listed} == {"B2B сделка": "company", "Новое имя": "person"}
+
+
+async def test_deals_filter_by_client_type(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    person = await _person(client, h)
+    await _deal(client, h, ids["ca"], title="B2B")
+    await _deal(client, h, person["id"], title="B2C-1")
+    await _deal(client, h, person["id"], title="B2C-2")
+
+    def titles(resp):
+        return sorted(d["title"] for d in resp.json()["items"])
+
+    assert titles(await client.get("/api/deals", params={"client_type": "person"}, headers=h)) == ["B2C-1", "B2C-2"]
+    assert titles(await client.get("/api/deals", params={"client_type": "company"}, headers=h)) == ["B2B"]
+    assert (await client.get("/api/deals", params={"client_type": "person"}, headers=h)).json()["total"] == 2
+    assert (await client.get("/api/deals", params={"client_type": "bogus"}, headers=h)).status_code == 422
+
+
+async def test_summary_filter_by_client_type(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    person = await _person(client, h)
+    stages = await _stages(client, h)
+    await _deal(client, h, ids["ca"], amount=1000)  # B2B, UAH
+    won = (await _deal(client, h, person["id"], amount=200, currency="USD")).json()  # B2C, USD
+    await _deal(client, h, person["id"], amount=50, currency="USD")
+    await client.patch(f"/api/deals/{won['id']}/stage", json={"stage_id": stages["Успех"]["id"]}, headers=h)
+
+    async def summary(**params):
+        resp = await client.get("/api/pipeline/summary", params=params, headers=h)
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    everything = await summary()
+    assert everything["by_kind"]["open"]["count"] == 2 and everything["by_kind"]["won"]["count"] == 1
+    b2c = await summary(client_type="person")
+    assert b2c["by_kind"]["open"]["count"] == 1 and b2c["by_kind"]["won"]["count"] == 1
+    assert [(t["currency"], t["amount"]) for t in b2c["by_kind"]["open"]["totals"]] == [("USD", 50.0)]
+    assert b2c["conversion"]["win_rate"] == 1.0
+    b2b = await summary(client_type="company")
+    assert b2b["by_kind"]["open"]["count"] == 1 and b2b["by_kind"]["won"]["count"] == 0
+    assert [(t["currency"], t["amount"]) for t in b2b["by_kind"]["open"]["totals"]] == [("UAH", 1000.0)]
+    assert b2b["conversion"]["win_rate"] is None  # у B2B ещё нет закрытых сделок
+    assert (await client.get("/api/pipeline/summary", params={"client_type": "x"}, headers=h)).status_code == 422

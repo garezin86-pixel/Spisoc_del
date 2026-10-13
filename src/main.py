@@ -39,6 +39,7 @@ from src.routers.health_router import router as health_router
 from src.utils.cache_manager import cache_manager
 from src.utils.reminders import (
     notify_overdue,
+    remind_contact_due,
     remind_deadline_1h,
     remind_deadline_24h,
     send_weekly_report,
@@ -117,6 +118,12 @@ async def lifespan(app: FastAPI):
     # scheduler.add_job(
     #     notify_overdue, IntervalTrigger(minutes=2), id="overdue", replace_existing=True
     # )
+    scheduler.add_job(
+        remind_contact_due,
+        CronTrigger(hour="6-18", minute=0, timezone="UTC"),
+        id="contact_due",
+        replace_existing=True,
+    )
     scheduler.add_job(
         send_weekly_report,
         CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="UTC"),

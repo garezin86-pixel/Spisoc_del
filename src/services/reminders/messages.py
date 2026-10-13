@@ -17,6 +17,18 @@ def overdue_text(task) -> str:
     return f"❗ Задача «{task.title}» просрочена!\nДедлайн был: {format_deadline(task)}"
 
 
+def contact_due_text(client, today) -> str:
+    """Напоминание ответственному: пора связаться с клиентом (дата следующего контакта наступила)."""
+    lines = [f"📞 Пора связаться с клиентом «{client.name}»"]
+    late = (today - client.next_contact_at).days
+    lines.append(
+        f"Срок: {client.next_contact_at.strftime('%d.%m.%Y')}" + (f" (просрочено на {late} дн.)" if late > 0 else "")
+    )
+    if client.phone:
+        lines.append(f"Телефон: {client.phone}")
+    return "\n".join(lines)
+
+
 def weekly_report_text(upcoming, overdue) -> str:
     lines = ["📋 Ваш еженедельный отчёт:\n"]
 

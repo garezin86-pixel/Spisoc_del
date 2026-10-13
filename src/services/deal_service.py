@@ -1,5 +1,6 @@
 # src/services/deal_service.py
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import structlog
 from fastapi import HTTPException
@@ -10,7 +11,23 @@ from src.models.user import UserModel, UserRole
 from src.repositories.client_repository import ClientRepository
 from src.repositories.deal_repository import DealRepository
 from src.repositories.users_repository import UserRepository
-from src.schemas.deal import DealCreate, DealMove, DealStageChange, DealUpdate, StageCreate, StageUpdate
+from src.schemas.deal import (
+    ConversionSummary,
+    CurrencyTotal,
+    DealCreate,
+    DealMove,
+    DealStageChange,
+    DealUpdate,
+    KindSummary,
+    PipelineCreate,
+    PipelineListItem,
+    PipelineSummary,
+    PipelineUpdate,
+    StageCreate,
+    StageSchema,
+    StageSummary,
+    StageUpdate,
+)
 
 logger = structlog.get_logger()
 
@@ -21,6 +38,13 @@ DEFAULT_STAGES: list[tuple[str, StageKind]] = [
     ("Переговоры", StageKind.open),
     ("Предложение", StageKind.open),
     ("Согласование", StageKind.open),
+    ("Успех", StageKind.won),
+    ("Отказ", StageKind.lost),
+]
+
+# Минимальная воронка для новой: есть где вести сделку и чем её закрыть (успех / отказ)
+MINIMAL_STAGES: list[tuple[str, StageKind]] = [
+    ("Новая", StageKind.open),
     ("Успех", StageKind.won),
     ("Отказ", StageKind.lost),
 ]
@@ -51,14 +75,145 @@ class DealService:
         self.user_repo = user_repo
 
     # ── воронка ──────────────────────────────────────────────────────────────
-    async def get_pipeline(self, current_user: UserModel) -> tuple[PipelineModel, list[StageModel]]:
-        """Воронка компании; при первом обращении создаётся воронка по умолчанию."""
-        pipeline = await self.deal_repo.get_default_pipeline()
+    async def _pipeline_or_404(self, pipeline_id: int) -> PipelineModel:
+        pipeline = await self.deal_repo.get_pipeline(pipeline_id)
         if pipeline is None:
-            self.deal_repo.set_audit_user(current_user.id)
-            pipeline = await self.deal_repo.create_pipeline_with_stages(DEFAULT_PIPELINE_NAME, DEFAULT_STAGES)
-            await logger.ainfo("pipeline_created", pipeline_id=pipeline.id)
+            raise HTTPException(404, "Воронка не найдена")
+        return pipeline
+
+    async def get_pipeline(
+        self, current_user: UserModel, pipeline_id: int | None = None
+    ) -> tuple[PipelineModel, list[StageModel]]:
+        """Воронка со стадиями: указанная или (без pipeline_id) воронка по умолчанию — первая в компании.
+        Если воронок ещё нет, при первом обращении создаётся стандартная."""
+        if pipeline_id is not None:
+            pipeline = await self._pipeline_or_404(pipeline_id)
+        else:
+            pipeline = await self.deal_repo.get_default_pipeline()
+            if pipeline is None:
+                self.deal_repo.set_audit_user(current_user.id)
+                spec: list[tuple[str, StageKind, str | None]] = [(name, kind, None) for name, kind in DEFAULT_STAGES]
+                pipeline = await self.deal_repo.create_pipeline_with_stages(DEFAULT_PIPELINE_NAME, spec)
+                await logger.ainfo("pipeline_created", pipeline_id=pipeline.id)
         return pipeline, await self.deal_repo.list_stages(pipeline.id)
+
+    async def _pipeline_item(self, pipeline: PipelineModel, stages: list[StageModel], deals_count: int):
+        return PipelineListItem(
+            id=pipeline.id,
+            name=pipeline.name,
+            stages=[StageSchema.model_validate(s) for s in stages],
+            deals_count=deals_count,
+        )
+
+    async def list_pipelines(self, current_user: UserModel) -> list[PipelineListItem]:
+        """Все воронки компании со стадиями и числом сделок (читать могут все; первая — по умолчанию)."""
+        await self.get_pipeline(current_user)  # гарантирует, что хотя бы одна воронка есть
+        pipelines = await self.deal_repo.list_pipelines()
+        stages = await self.deal_repo.list_stages_of([p.id for p in pipelines])
+        counts = await self.deal_repo.deals_count_by_pipeline()
+        return [
+            await self._pipeline_item(p, [s for s in stages if s.pipeline_id == p.id], counts.get(p.id, 0))
+            for p in pipelines
+        ]
+
+    async def create_pipeline(self, data: PipelineCreate, current_user: UserModel) -> PipelineListItem:
+        self._require_admin(current_user)
+        await self.get_pipeline(current_user)  # первая воронка (по умолчанию) должна существовать до новой
+        spec: list[tuple[str, StageKind, str | None]]
+        if data.copy_from_id is not None:
+            source = await self._pipeline_or_404(data.copy_from_id)
+            spec = [(s.name, StageKind(s.kind), s.color) for s in await self.deal_repo.list_stages(source.id)]
+        else:
+            spec = [(name, kind, None) for name, kind in MINIMAL_STAGES]
+        self.deal_repo.set_audit_user(current_user.id)
+        pipeline = await self.deal_repo.create_pipeline_with_stages(data.name, spec)
+        await logger.ainfo("pipeline_created", pipeline_id=pipeline.id, copy_from=data.copy_from_id)
+        return await self._pipeline_item(pipeline, await self.deal_repo.list_stages(pipeline.id), 0)
+
+    async def rename_pipeline(
+        self, pipeline_id: int, data: PipelineUpdate, current_user: UserModel
+    ) -> PipelineListItem:
+        self._require_admin(current_user)
+        pipeline = await self._pipeline_or_404(pipeline_id)
+        self.deal_repo.set_audit_user(current_user.id)
+        pipeline.name = data.name
+        pipeline = await self.deal_repo.update_pipeline(pipeline)
+        counts = await self.deal_repo.deals_count_by_pipeline()
+        return await self._pipeline_item(
+            pipeline, await self.deal_repo.list_stages(pipeline.id), counts.get(pipeline.id, 0)
+        )
+
+    async def delete_pipeline(self, pipeline_id: int, current_user: UserModel) -> dict:
+        self._require_admin(current_user)
+        pipeline = await self._pipeline_or_404(pipeline_id)
+        if len(await self.deal_repo.list_pipelines()) <= 1:
+            raise HTTPException(409, "Нельзя удалить единственную воронку")
+        if (await self.deal_repo.deals_count_by_pipeline()).get(pipeline_id, 0) > 0:
+            raise HTTPException(409, "В воронке есть сделки: сначала удалите их или завершите работу с ними")
+        self.deal_repo.set_audit_user(current_user.id)
+        await self.deal_repo.soft_delete_pipeline(pipeline)
+        await logger.ainfo("pipeline_deleted", pipeline_id=pipeline_id)
+        return {"message": f"Pipeline {pipeline_id} deleted"}
+
+    async def get_summary(
+        self,
+        current_user: UserModel,
+        owner_id: int | None = None,
+        pipeline_id: int | None = None,
+        client_type: str | None = None,
+    ) -> PipelineSummary:
+        """Сводка по воронке: сделки и суммы по стадиям (с разбивкой по валютам), итоги по видам и конверсия."""
+        pipeline, stages = await self.get_pipeline(current_user, pipeline_id)
+        rows = await self.deal_repo.summary_rows(owner_id, client_type)
+
+        def totals_of(items: list[tuple[str, int, Decimal]]) -> list[CurrencyTotal]:
+            merged: dict[str, tuple[int, Decimal]] = {}
+            for currency, count, amount in items:
+                prev_count, prev_amount = merged.get(currency, (0, Decimal(0)))
+                merged[currency] = (prev_count + count, prev_amount + amount)
+            return [CurrencyTotal(currency=c, count=n, amount=a) for c, (n, a) in sorted(merged.items())]
+
+        by_stage: dict[int, list[tuple[str, int, Decimal]]] = {}
+        for stage_id, currency, count, amount in rows:
+            by_stage.setdefault(stage_id, []).append((currency, count, amount))
+
+        stage_summaries = []
+        by_kind_items: dict[str, list[tuple[str, int, Decimal]]] = {k.value: [] for k in StageKind}
+        for stage in stages:
+            items = by_stage.get(stage.id, [])
+            by_kind_items[stage.kind].extend(items)
+            stage_summaries.append(
+                StageSummary(
+                    stage_id=stage.id,
+                    name=stage.name,
+                    kind=StageKind(stage.kind),
+                    color=stage.color,
+                    position=stage.position,
+                    count=sum(count for _, count, _ in items),
+                    totals=totals_of(items),
+                )
+            )
+
+        by_kind = {
+            StageKind(kind): KindSummary(count=sum(c for _, c, _ in items), totals=totals_of(items))
+            for kind, items in by_kind_items.items()
+        }
+        won, lost = by_kind[StageKind.won].count, by_kind[StageKind.lost].count
+        closed = won + lost
+        conversion = ConversionSummary(
+            open=by_kind[StageKind.open].count,
+            won=won,
+            lost=lost,
+            closed=closed,
+            win_rate=round(won / closed, 4) if closed else None,
+        )
+        return PipelineSummary(
+            pipeline_id=pipeline.id,
+            pipeline_name=pipeline.name,
+            stages=stage_summaries,
+            by_kind=by_kind,
+            conversion=conversion,
+        )
 
     @staticmethod
     def _require_admin(user: UserModel) -> None:
@@ -81,10 +236,12 @@ class DealService:
 
     async def create_stage(self, data: StageCreate, current_user: UserModel) -> StageModel:
         self._require_admin(current_user)
-        pipeline, _ = await self.get_pipeline(current_user)
+        pipeline, _ = await self.get_pipeline(current_user, data.pipeline_id)
         self.deal_repo.set_audit_user(current_user.id)
         position = await self.deal_repo.max_stage_position(pipeline.id) + 1
-        stage = StageModel(pipeline_id=pipeline.id, name=data.name, position=position, kind=data.kind.value)
+        stage = StageModel(
+            pipeline_id=pipeline.id, name=data.name, position=position, kind=data.kind.value, color=data.color
+        )
         stage = await self.deal_repo.create_stage(stage)
         if data.position is not None and data.position < position:
             await self._move_stage_to(stage, data.position)
@@ -98,6 +255,8 @@ class DealService:
         changes = data.model_dump(exclude_unset=True)
         if "name" in changes:
             stage.name = changes["name"]
+        if "color" in changes:
+            stage.color = changes["color"]  # None — сброс на цвет по виду стадии
         if "position" in changes:
             await self._move_stage_to(stage, changes["position"])
         return await self.deal_repo.update_stage(stage)
@@ -141,10 +300,11 @@ class DealService:
         client_id: int | None = None,
         stage_id: int | None = None,
         owner_id: int | None = None,
+        client_type: str | None = None,
     ):
         if client_id is not None:
             await self._client_or_404(client_id)
-        return await self.deal_repo.list_deals(offset, limit, client_id, stage_id, owner_id)
+        return await self.deal_repo.list_deals(offset, limit, client_id, stage_id, owner_id, client_type)
 
     async def get_deal(self, deal_id: int) -> DealModel:
         return await self._deal_or_404(deal_id)
@@ -154,9 +314,11 @@ class DealService:
         if not (_is_manager(current_user) or client.owner_id == current_user.id):
             raise HTTPException(403, "Создавать сделки могут admin, manager и ответственный за клиента")
 
-        pipeline, stages = await self.get_pipeline(current_user)
+        pipeline, stages = await self.get_pipeline(current_user, data.pipeline_id)
         if data.stage_id is not None:
             stage = await self._stage_or_404(data.stage_id)
+            if data.pipeline_id is not None and stage.pipeline_id != pipeline.id:
+                raise HTTPException(422, "Стадия относится к другой воронке")
             if stage.kind != StageKind.open.value:
                 raise HTTPException(422, "Сделку можно создать только в открытой стадии")
         else:
@@ -263,6 +425,8 @@ class DealService:
             await self._place_in_stage(deal, target.id, data.position)
             return await self.deal_repo.update_deal(deal)
         current = await self._stage_or_404(deal.stage_id)
+        if target.pipeline_id != current.pipeline_id:
+            raise HTTPException(422, "Сделку нельзя перевести в стадию другой воронки")
         if current.kind != StageKind.open.value and not _is_manager(current_user):
             raise HTTPException(403, "Вернуть или перевести закрытую сделку может только admin или manager")
 

@@ -3,11 +3,12 @@ import { apiRequest } from "../api";
 import { Icon } from "../components/Icon";
 import { Pagination } from "../components/Pagination";
 import { ICONS } from "../constants/icons";
-import { emptyToNull, plural } from "../constants/crm";
+import { PersonFields } from "../components/PersonFields";
+import { CLIENT_TYPES, clientTypeInfo, emptyToNull, formatDate, isContactDue, plural } from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 import { ClientCard } from "./ClientCard";
 
-const EMPTY_FORM = { name: "", phone: "", email: "", address: "", notes: "", owner_id: "" };
+const EMPTY_FORM = { name: "", client_type: "company", birth_date: "", gender: "", phone: "", email: "", address: "", notes: "", owner_id: "" };
 
 // Клиенты: список с поиском и пагинацией + карточка клиента. Создавать клиентов могут admin и manager.
 export function ClientsTab({ token, canManage, currentUserId }) {
@@ -17,6 +18,9 @@ export function ClientsTab({ token, canManage, currentUserId }) {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
     const [query, setQuery] = useState("");
+    const [onlyDue, setOnlyDue] = useState(false);
+    const [onlyMine, setOnlyMine] = useState(false);
+    const [typeFilter, setTypeFilter] = useState(""); // "" — все, "company" — B2B, "person" — B2C
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showCreate, setShowCreate] = useState(false);
@@ -35,6 +39,9 @@ export function ClientsTab({ token, canManage, currentUserId }) {
         try {
             const qs = new URLSearchParams({ page, size: 20 });
             if (query) qs.set("search", query);
+            if (onlyDue) qs.set("contact_due", "true");
+            if (onlyMine && currentUserId) qs.set("owner_id", currentUserId);
+            if (typeFilter) qs.set("client_type", typeFilter);
             const res = await apiRequest({ path: `/clients?${qs}`, token });
             setData({ items: res?.items ?? [], total: res?.total ?? 0, pages: res?.pages ?? 1 });
             setError(null);
@@ -43,7 +50,7 @@ export function ClientsTab({ token, canManage, currentUserId }) {
         } finally {
             setLoading(false);
         }
-    }, [token, page, query]);
+    }, [token, page, query, onlyDue, onlyMine, typeFilter, currentUserId]);
 
     useEffect(() => { if (token) load(); }, [token, load]);
 
@@ -56,12 +63,17 @@ export function ClientsTab({ token, canManage, currentUserId }) {
         try {
             const body = {
                 name: form.name.trim(),
+                client_type: form.client_type,
                 phone: emptyToNull(form.phone),
                 email: emptyToNull(form.email),
                 address: emptyToNull(form.address),
                 notes: emptyToNull(form.notes),
             };
             if (form.owner_id !== "") body.owner_id = Number(form.owner_id);
+            if (form.client_type === "person") {
+                if (form.birth_date) body.birth_date = form.birth_date;
+                if (form.gender) body.gender = form.gender;
+            }
             const created = await apiRequest({ path: "/clients", method: "POST", token, body });
             setForm(EMPTY_FORM);
             setShowCreate(false);
@@ -101,9 +113,24 @@ export function ClientsTab({ token, canManage, currentUserId }) {
                 <form className="form" onSubmit={create} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 14 }}>
                     {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
                     <div className="form-group">
-                        <label className="form-label">Название</label>
-                        <input className="form-input" value={form.name} onChange={set("name")} maxLength={200} required autoFocus />
+                        <label className="form-label">Тип клиента</label>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {CLIENT_TYPES.map(t => (
+                                <button
+                                    key={t.key} type="button" onClick={() => setForm(f => ({ ...f, client_type: t.key }))}
+                                    className={`btn btn-sm ${form.client_type === t.key ? "btn-primary" : "btn-ghost"}`}
+                                >{t.icon} {t.label}</button>
+                            ))}
+                        </div>
                     </div>
+                    <div className="form-group">
+                        <label className="form-label">{clientTypeInfo(form.client_type).nameLabel}</label>
+                        <input
+                            className="form-input" value={form.name} onChange={set("name")} maxLength={200} required autoFocus
+                            placeholder={clientTypeInfo(form.client_type).namePlaceholder}
+                        />
+                    </div>
+                    {form.client_type === "person" && <PersonFields form={form} set={set} />}
                     <div className="form-two-col">
                         <div className="form-group">
                             <label className="form-label">Телефон</label>
@@ -138,8 +165,26 @@ export function ClientsTab({ token, canManage, currentUserId }) {
 
             <input
                 className="form-input" placeholder="Поиск по названию, телефону, email…" value={search}
-                onChange={e => setSearch(e.target.value)} style={{ marginBottom: 12 }}
+                onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }}
             />
+            <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                {[{ key: "", label: "Все" }, ...CLIENT_TYPES.map(t => ({ key: t.key, label: `${t.icon} ${t.short === "B2B" ? "Компании" : "Люди"} (${t.short})` }))].map(opt => (
+                    <button
+                        key={opt.key} type="button" onClick={() => { setTypeFilter(opt.key); setPage(1); }}
+                        className={`btn btn-sm ${typeFilter === opt.key ? "btn-primary" : "btn-ghost"}`}
+                    >{opt.label}</button>
+                ))}
+            </div>
+            <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 13 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", width: "auto" }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={onlyDue} onChange={e => { setOnlyDue(e.target.checked); setPage(1); }} />
+                    Пора связаться
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", width: "auto" }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={onlyMine} onChange={e => { setOnlyMine(e.target.checked); setPage(1); }} />
+                    Мои клиенты
+                </label>
+            </div>
 
             {error ? (
                 <div className="alert">{error}</div>
@@ -155,9 +200,18 @@ export function ClientsTab({ token, canManage, currentUserId }) {
                             style={{ display: "flex", gap: 12, padding: "10px 4px", borderBottom: "1px solid var(--border)", cursor: "pointer", alignItems: "center" }}
                         >
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontWeight: 600 }}>{c.name}</div>
+                                <div style={{ fontWeight: 600 }}><span title={clientTypeInfo(c.client_type).label}>{clientTypeInfo(c.client_type).icon}</span> {c.name}</div>
                                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{[c.phone, c.email].filter(Boolean).join(" · ") || "—"}</div>
                             </div>
+                            {c.next_contact_at && (
+                                <span title="Связаться снова" style={{
+                                    fontSize: 11, padding: "2px 8px", borderRadius: 10,
+                                    color: isContactDue(c.next_contact_at) ? "var(--red)" : "var(--text-dim)",
+                                    background: isContactDue(c.next_contact_at) ? "var(--red-dim)" : "var(--surface2)",
+                                }}>
+                                    📞 {formatDate(c.next_contact_at)}
+                                </span>
+                            )}
                             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{userName(usersById, c.owner_id)}</div>
                         </div>
                     ))}

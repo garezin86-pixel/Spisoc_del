@@ -13,6 +13,7 @@ from .group_router import router as group_router
 from .interaction_router import router as interaction_router
 from .notifications_router import router as notifications_router
 from .pat_router import router as pat_router
+from .pipeline_router import pipelines_router
 from .pipeline_router import router as pipeline_router
 from .project_router import router as project_router
 from .push_router import router as push_router
@@ -36,6 +37,7 @@ api_router.include_router(project_router)
 api_router.include_router(client_router)
 api_router.include_router(interaction_router)
 api_router.include_router(pipeline_router)
+api_router.include_router(pipelines_router)
 api_router.include_router(deal_router)
 api_router.include_router(push_router)
 api_router.include_router(templates_router)

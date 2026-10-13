@@ -15,7 +15,7 @@ from enum import Enum
 from typing import Optional
 
 from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
 from src.models.audit import AuditMixin, SoftDeleteMixin
@@ -55,6 +55,8 @@ class StageModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     kind: Mapped[str] = mapped_column(String(10), nullable=False, default=StageKind.open.value)
+    # Свой цвет стадии "#rrggbb"; не задан — цвет по виду стадии (open / won / lost) выбирает интерфейс
+    color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     __table_args__ = (Index("ix_stages_pipeline_id", "pipeline_id"),)
@@ -88,6 +90,17 @@ class DealModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
+
+    # Клиент сделки (только чтение): имя и тип показываются на карточке сделки и в доске
+    client = relationship("ClientModel", lazy="selectin", viewonly=True)
+
+    @property
+    def client_name(self) -> Optional[str]:
+        return self.client.name if self.client is not None else None
+
+    @property
+    def client_type(self) -> Optional[str]:
+        return self.client.client_type if self.client is not None else None
 
     __table_args__ = (
         Index("ix_deals_client_id", "client_id"),

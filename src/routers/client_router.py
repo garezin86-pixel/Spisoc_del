@@ -11,6 +11,7 @@ from src.schemas.client import (
     ClientCreate,
     ClientDetailSchema,
     ClientSchema,
+    ClientType,
     ClientUpdate,
     ContactCreate,
     ContactSchema,
@@ -47,17 +48,27 @@ async def create_client(
     "",
     response_model=PaginatedResponse[ClientSchema],
     summary="Список клиентов",
-    description="Клиенты компании. Читать могут все. "
+    description="Клиенты компании (юрлица B2B и частные лица B2C). Читать могут все. "
     "Поиск `search` — по названию, телефону и email (без учёта регистра).",
 )
 async def get_clients(
     session: SessionDep,
     search: str | None = Query(None, max_length=100, description="Поиск по названию, телефону, email"),
+    contact_due: bool = Query(
+        False, description="Только те, с кем пора связаться (дата следующего контакта наступила)"
+    ),
+    owner_id: int | None = Query(None, description="Только клиенты этого ответственного"),
+    client_type: ClientType | None = Query(None, description="company — компании (B2B), person — частные лица (B2C)"),
     pagination: PaginationParams = Depends(),
     current_user: UserModel = Depends(get_current_user),
 ):
     clients, total = await get_client_service(session).get_clients(
-        search, offset=pagination.offset, limit=pagination.size
+        search,
+        offset=pagination.offset,
+        limit=pagination.size,
+        contact_due=contact_due,
+        owner_id=owner_id,
+        client_type=client_type,
     )
     items = [ClientSchema.model_validate(c) for c in clients]
     return PaginatedResponse.create(items=items, total=total, page=pagination.page, size=pagination.size)

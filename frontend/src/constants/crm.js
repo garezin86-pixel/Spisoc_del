@@ -18,10 +18,42 @@ export function plural(n, one, few, many) {
     return many;
 }
 
+// Тип клиента: компания (B2B) или частное лицо (B2C; в названии — ФИО). Ключи совпадают с бэкендом.
+export const CLIENT_TYPES = [
+    { key: "company", label: "Компания (B2B)", short: "B2B", icon: "🏢", nameLabel: "Название компании", namePlaceholder: "Например, ООО «Ромашка»" },
+    { key: "person", label: "Человек (B2C)", short: "B2C", icon: "👤", nameLabel: "ФИО", namePlaceholder: "Например, Иванов Иван Иванович" },
+];
+export const clientTypeInfo = key => CLIENT_TYPES.find(t => t.key === key) ?? CLIENT_TYPES[0];
+
+export const GENDERS = [
+    { key: "male", label: "Мужской" },
+    { key: "female", label: "Женский" },
+];
+export const genderLabel = key => GENDERS.find(g => g.key === key)?.label ?? null;
+
+// Полных лет по дате рождения «YYYY-MM-DD» (null, если даты нет)
+export function ageFromDate(dateStr, now = new Date()) {
+    if (!dateStr) return null;
+    const [y, m, d] = dateStr.split("-").map(Number);
+    let age = now.getFullYear() - y;
+    if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age -= 1;
+    return age >= 0 ? age : null;
+}
+
 export const INTERACTION_LABELS = Object.fromEntries(INTERACTION_TYPES.map(t => [t.key, t]));
 
-// Цвет колонки воронки по виду стадии (open / won / lost)
+// Цвет колонки воронки по виду стадии (open / won / lost) — используется, пока у стадии нет своего цвета
 export const STAGE_KIND_COLORS = { open: "#7c6af0", won: "#22c55e", lost: "#ef4444" };
+
+// Свой цвет стадии, если задан, иначе цвет по виду стадии
+export function stageColor(stage) {
+    return stage?.color || STAGE_KIND_COLORS[stage?.kind] || "#6b7280";
+}
+
+// Готовые цвета для быстрого выбора (любой другой — через палитру)
+export const STAGE_COLOR_PRESETS = [
+    "#7c6af0", "#3b82f6", "#06b6d4", "#22c55e", "#eab308", "#f97316", "#ef4444", "#ec4899", "#a855f7", "#6b7280",
+];
 
 // Валюты сделок. Список должен совпадать с SUPPORTED_CURRENCIES в src/models/deal.py (бэкенд отклонит остальные).
 export const CURRENCIES = [
@@ -98,6 +130,22 @@ export function localizeIsoDateTime(value) {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return value;
     return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// «Связаться снова»: просрочено ли (дата наступила или прошла) — сравнение дат без времени, в локальной зоне
+export function isContactDue(dateStr) {
+    if (!dateStr) return false;
+    const d = new Date(`${dateStr}T00:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d <= today;
+}
+
+// Сегодняшняя дата в формате YYYY-MM-DD (для min у <input type="date">)
+export function todayInput() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // Пустую строку формы → null (очистить поле на сервере), иначе строка без пробелов по краям
