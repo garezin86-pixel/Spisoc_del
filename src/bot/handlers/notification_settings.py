@@ -122,7 +122,10 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
         "notify_deadline_24h": True,
         "notify_deadline_1h": True,
         "notify_overdue": True,
-        "weekly_report_enabled": True,
+        # Еженедельная сводка — opt-in: у модели default=False, и рассылка шлёт её только тем, у кого есть запись
+        # с True. Поэтому до первого нажатия экран показывает «выключено» (как и действует), иначе первое
+        # нажатие любой кнопки молча сохраняло бы False при показанном «включено».
+        "weekly_report_enabled": False,
         "notify_task_assigned": True,
         "notify_task_updated": True,
         "notify_comment": True,
@@ -255,8 +258,10 @@ async def notification_toggle_callback(callback: CallbackQuery):
             await callback.message.answer("❌ Пользователь не найден")
             return
 
-        settings_obj = await uow.notification_settings.get_by_user(user.id)
-        current_value = getattr(settings_obj, field) if settings_obj else True
+        # Текущее значение берём оттуда же, откуда его рисует экран (_get_settings_dict): без записи настроек это
+        # дефолты каждой настройки, а не «включено» для всех — иначе у opt-in настроек (еженедельная сводка,
+        # голосовые) первое нажатие ничего не включало.
+        current_value = (await _get_settings_dict(uow, user.id))[field]
         new_value = not current_value
 
         await uow.notification_settings.create_or_update(user.id, **{field: new_value})

@@ -118,8 +118,8 @@ async def test_toggle_does_not_touch_other_settings(user_ctx):
     maker, _, user = user_ctx
     await handlers.notification_toggle_callback(_callback(user, "toggle_contact_due"))
     row = await _stored(maker, user.id)
-    # (weekly_report_enabled не проверяем: у модели свой дефолт False, а экран до первого нажатия показывает True)
     assert row.notify_deadline_24h is True and row.notify_comment is True and row.notify_overdue is True
+    assert row.weekly_report_enabled is False  # opt-in: нажатие другой кнопки его не включает и не меняет
 
 
 async def test_disable_all_and_enable_all_cover_contact_due(user_ctx):
@@ -156,3 +156,79 @@ async def test_disable_all_stops_client_reminders(user_ctx, mock_reminder_bot):
     await handlers.disable_all_callback(_callback(user, "disable_all"))
     await remind_contact_due()
     assert mock_reminder_bot.send_message.await_count == 0
+
+
+# ── что показывает экран до первого нажатия, должно совпадать с тем, что реально действует ──
+async def test_screen_defaults_match_stored_defaults(user_ctx):
+    """Любое расхождение дефолтов экрана и модели (как было с еженедельной сводкой) ловится этим тестом."""
+    from src.db.unit_of_work import UnitOfWork
+
+    maker, _, user = user_ctx
+    async with UnitOfWork(maker) as uow:
+        before = await handlers._get_settings_dict(uow, user.id)  # записи ещё нет — дефолты экрана
+        await uow.notification_settings.create_or_update(user.id)  # запись с дефолтами модели
+        await uow.commit()
+    async with UnitOfWork(maker) as uow:
+        after = await handlers._get_settings_dict(uow, user.id)
+    assert before == after
+
+
+async def test_weekly_report_shown_off_and_first_press_turns_it_on(user_ctx):
+    maker, _, user = user_ctx
+    from src.db.unit_of_work import UnitOfWork
+
+    async with UnitOfWork(maker) as uow:
+        shown = await handlers._get_settings_dict(uow, user.id)
+    assert shown["weekly_report_enabled"] is False
+    assert _callbacks(handlers.get_notification_keyboard(shown))["toggle_weekly"].startswith("❌")
+
+    cb = _callback(user, "toggle_weekly")
+    await handlers.notification_toggle_callback(cb)
+    assert (
+        await _stored(maker, user.id)
+    ).weekly_report_enabled is True  # раньше сохранялось False при «включено» на экране
+    assert "Включено" in cb.message.edit_text.await_args.args[0]
+    assert _callbacks(cb.message.edit_text.await_args.kwargs["reply_markup"])["toggle_weekly"].startswith("✅")
+
+
+async def test_voice_notifications_first_press_turns_them_on(user_ctx):
+    """Голосовые — тоже opt-in (дефолт выключено): первое нажатие должно включить, а не «выключить ещё раз»."""
+    maker, _, user = user_ctx
+    cb = _callback(user, "toggle_voice_notifications")
+    await handlers.notification_toggle_callback(cb)
+    assert (await _stored(maker, user.id)).voice_notifications_enabled is True
+    assert "Включено" in cb.message.edit_text.await_args.args[0]
+
+
+async def test_every_toggle_flips_the_shown_state_on_first_press(user_ctx):
+    """Для каждой кнопки: что показывал экран до нажатия, то и меняется на противоположное."""
+    from src.db.unit_of_work import UnitOfWork
+
+    maker, _, user = user_ctx
+    toggles = {
+        "toggle_deadline_24h": "notify_deadline_24h",
+        "toggle_deadline_1h": "notify_deadline_1h",
+        "toggle_overdue": "notify_overdue",
+        "toggle_weekly": "weekly_report_enabled",
+        "toggle_task_assigned": "notify_task_assigned",
+        "toggle_task_updated": "notify_task_updated",
+        "toggle_comment": "notify_comment",
+        "toggle_mentioned": "notify_mentioned",
+        "toggle_group_assigned": "notify_group_assigned",
+        "toggle_contact_due": "notify_contact_due",
+        "toggle_voice_notifications": "voice_notifications_enabled",
+    }
+    # список кнопок в тесте совпадает с клавиатурой: новая кнопка без проверки не пройдёт незамеченной
+    in_keyboard = {
+        c
+        for c in _callbacks(handlers.get_notification_keyboard({**DEFAULTS, "notify_contact_due": True}))
+        if c.startswith("toggle_")
+    }
+    assert in_keyboard == set(toggles)
+    for data, field in toggles.items():
+        async with UnitOfWork(maker) as uow:
+            before = (await handlers._get_settings_dict(uow, user.id))[field]
+        await handlers.notification_toggle_callback(_callback(user, data))
+        async with UnitOfWork(maker) as uow:
+            after = (await handlers._get_settings_dict(uow, user.id))[field]
+        assert after is (not before), f"{data}: было {before}, стало {after}"
