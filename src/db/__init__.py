@@ -28,9 +28,11 @@ def _ensure_tenant_autofill() -> None:
     global _tenant_autofill_installed
     if _tenant_autofill_installed:
         return
+    from src.db.dashboard_invalidation import install_dashboard_invalidation
     from src.db.tenant_scope import install_tenant_autofill
 
     install_tenant_autofill()
+    install_dashboard_invalidation()
     _tenant_autofill_installed = True
 
 

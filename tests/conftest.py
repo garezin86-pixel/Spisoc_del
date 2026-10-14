@@ -21,6 +21,7 @@ import warnings
 
 from src.core.security import hash_password
 from src.db import Base
+from src.db.dashboard_invalidation import install_dashboard_invalidation  # noqa: E402
 from src.db.tenant_scope import _set_test_default_workspace, install_tenant_autofill  # noqa: E402
 from src.models import CommentModel, GroupModel, SpisokModel, UserModel  # noqa: F401
 from src.models.workspace import WorkspaceModel
@@ -31,6 +32,7 @@ from src.models.workspace import WorkspaceModel
 # на класс Session целиком, а не на конкретный движок, так что одного вызова
 # на процесс pytest достаточно для всех тестов.
 install_tenant_autofill()
+install_dashboard_invalidation()
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
