@@ -8,6 +8,7 @@ from .chat_router import router as chat_router
 from .checklist_router import router as checklist_router
 from .client_router import router as client_router
 from .comments_router import router as comments_router
+from .dashboard_router import router as dashboard_router
 from .deal_router import router as deal_router
 from .group_router import router as group_router
 from .interaction_router import router as interaction_router
@@ -39,6 +40,7 @@ api_router.include_router(client_router)
 api_router.include_router(interaction_router)
 api_router.include_router(client_events_router)
 api_router.include_router(events_router)
+api_router.include_router(dashboard_router)
 api_router.include_router(pipeline_router)
 api_router.include_router(pipelines_router)
 api_router.include_router(deal_router)
