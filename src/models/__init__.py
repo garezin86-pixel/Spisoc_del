@@ -14,6 +14,7 @@ from src.models.notification_settings import NotificationSettingsModel
 from src.models.personal_access_token import PersonalAccessTokenModel
 from src.models.project import ProjectModel
 from src.models.push_subscription import PushSubscriptionModel
+from src.models.scheduled_event import ScheduledEventModel
 from src.models.tag import TagModel, task_tags
 from src.models.task import SpisokModel
 from src.models.task_dependency import TaskDependencyModel
@@ -40,6 +41,7 @@ __all__ = [
     "ClientModel",
     "ContactModel",
     "InteractionModel",
+    "ScheduledEventModel",
     "NotificationSettingsModel",
     "NotificationLogModel",
     "PersonalAccessTokenModel",

@@ -17,6 +17,7 @@ from .pipeline_router import pipelines_router
 from .pipeline_router import router as pipeline_router
 from .project_router import router as project_router
 from .push_router import router as push_router
+from .scheduled_event_router import client_events_router, events_router
 from .tags_router import router as tags_router
 from .tasks_router import router as tasks_router
 from .templates_router import router as templates_router
@@ -36,6 +37,8 @@ api_router.include_router(comments_router)
 api_router.include_router(project_router)
 api_router.include_router(client_router)
 api_router.include_router(interaction_router)
+api_router.include_router(client_events_router)
+api_router.include_router(events_router)
 api_router.include_router(pipeline_router)
 api_router.include_router(pipelines_router)
 api_router.include_router(deal_router)
