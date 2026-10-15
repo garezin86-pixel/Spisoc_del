@@ -110,6 +110,21 @@ async def test_calendar_isolated_between_companies(client, world):
     assert (await client.get("/api/events", headers=hb)).json()["total"] == 0
 
 
+async def test_responses_carry_client_name(client, world):
+    _, ids, logins = world
+    h = await _headers(client, logins, "a_manager")
+    created = (await _create(client, h, ids["ca"])).json()
+    assert created["client_name"] == "Ромашка"
+    listed = (await client.get("/api/events", headers=h)).json()["items"]
+    assert [e["client_name"] for e in listed] == ["Ромашка"]
+    by_client = (await client.get(f"/api/clients/{ids['ca']}/events", headers=h)).json()["items"]
+    assert by_client[0]["client_name"] == "Ромашка"
+    patched = await client.patch(f"/api/events/{created['id']}", json={"title": "x"}, headers=h)
+    assert patched.json()["client_name"] == "Ромашка"
+    done = await client.post(f"/api/events/{created['id']}/complete", json={}, headers=h)
+    assert done.json()["client_name"] == "Ромашка"
+
+
 # ── изменение ────────────────────────────────────────────────────────────────
 async def test_assignee_and_manager_can_edit_others_cannot(client, world):
     _, ids, logins = world

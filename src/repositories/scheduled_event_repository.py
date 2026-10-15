@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.client import ClientModel
 from src.models.interaction import InteractionModel
 from src.models.scheduled_event import EventStatus, ScheduledEventModel
 
@@ -54,6 +55,15 @@ class ScheduledEventRepository:
             query.order_by(ScheduledEventModel.starts_at, ScheduledEventModel.id).offset(offset).limit(limit)
         )
         return list(result.scalars().all()), total or 0
+
+    async def client_names(self, client_ids: set[int]) -> dict[int, str]:
+        """Названия клиентов по id (для подписи событий в календаре)."""
+        if not client_ids:
+            return {}
+        result = await self.session.execute(
+            select(ClientModel.id, ClientModel.name).where(ClientModel.id.in_(client_ids))
+        )
+        return {row[0]: row[1] for row in result.all()}
 
     async def create(self, event: ScheduledEventModel) -> ScheduledEventModel:
         self.session.add(event)

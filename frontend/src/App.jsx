@@ -17,6 +17,7 @@ import { CalendarTab } from "./features/CalendarTab";
 import { ChangePasswordCard } from "./features/ChangePasswordCard";
 import { ClientsTab } from "./features/ClientsTab";
 import { DashboardTab } from "./features/DashboardTab";
+import { HomeTab } from "./features/HomeTab";
 import { DeadlineCalendarTab } from "./features/DeadlineCalendarTab";
 import { DealsBoard } from "./features/DealsBoard";
 import { ForceChangePasswordScreen } from "./features/ForceChangePasswordScreen";
@@ -39,7 +40,9 @@ import { decodeToken } from "./utils/token";
 
 function App() {
     const [token, setToken] = useState(localStorage.getItem("spisoc_token"));
-    const [tab, setTab] = useState("tasks"); // "tasks" | "projects" | "groups" | "trash" | "dashboard" | "templates"
+    const [tab, setTab] = useState("home"); // "home" | "tasks" | "projects" | "groups" | "trash" | "dashboard" | "templates" | ...
+    const [homeRefreshKey, setHomeRefreshKey] = useState(0); // растёт на каждое WS-событие dashboard_changed
+    const [clientToOpen, setClientToOpen] = useState(null); // клиент, карточку которого открыть при переходе с главной
     const [mfaPending, setMfaPending] = useState(null); // { mfaToken } — ждём код 2FA перед выдачей токенов
     const [show2faNudge, setShow2faNudge] = useState(false);
     const [mustChangePassword, setMustChangePassword] = useState(false);
@@ -80,6 +83,8 @@ function App() {
             if (currentTab === "tasks") loadTasks(tasksPageRef.current, viewModeRef.current);
             // Канбан обновляет список сам при монтировании/действиях пользователя —
             // отдельного live-refresh для него пока нет (не относится к этой правке).
+        } else if (event === "dashboard_changed") {
+            if (currentTab === "home") setHomeRefreshKey(k => k + 1); // на других вкладках главная заново загрузится при открытии
         } else if (event === "task_restored") {
             if (currentTab === "trash") loadTrash();
         } else if (event === "comment_added") {
@@ -897,8 +902,11 @@ function App() {
                     {/* Нижний ряд — навигация */}
                     <div className="header-row header-row-bottom">
                         <div className="tab-bar">
+                            <button className={`tab-btn${tab === "home" ? " active" : ""}`} onClick={() => setTab("home")}>
+                                <Icon d={ICONS.home} /> Главная
+                            </button>
                             <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => { setTab("dashboard"); loadDashboard(); }}>
-                                <Icon d={ICONS.chart} /> Дашборд
+                                <Icon d={ICONS.chart} /> Статистика
                             </button>
                             <button className={`tab-btn${tab === "timeline" ? " active" : ""}`} onClick={() => setTab("timeline")}>
                                 <Icon d={ICONS.clock} /> Лента
@@ -909,7 +917,7 @@ function App() {
                             <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
                                 <Icon d={ICONS.folder} /> Проекты
                             </button>
-                            <button className={`tab-btn${tab === "clients" ? " active" : ""}`} onClick={() => setTab("clients")}>
+                            <button className={`tab-btn${tab === "clients" ? " active" : ""}`} onClick={() => { setClientToOpen(null); setTab("clients"); }}>
                                 <Icon d={ICONS.user} /> Клиенты
                             </button>
                             <button className={`tab-btn${tab === "deals" ? " active" : ""}`} onClick={() => setTab("deals")}>
@@ -1398,7 +1406,20 @@ function App() {
                 />
             ) : (
                 <>
-                    {/* ── DASHBOARD TAB ── */}
+                    {/* ── HOME TAB: что делать сегодня ── */}
+                    {tab === "home" && (
+                        <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                            <HomeTab
+                                token={token}
+                                username={currentUsername}
+                                refreshKey={homeRefreshKey}
+                                onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
+                                onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
+                                onOpenDeals={() => setTab("deals")}
+                            />
+                        </div>
+                    )}
+                    {/* ── DASHBOARD TAB (статистика задач) ── */}
                     {tab === "dashboard" && (
                         <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
                             <DashboardTab
@@ -1426,7 +1447,7 @@ function App() {
                     {/* ── CLIENTS TAB (lite CRM) ── */}
                     {tab === "clients" && (
                         <div>
-                            <ClientsTab token={token} canManage={canManage} currentUserId={currentUserId} />
+                            <ClientsTab token={token} canManage={canManage} currentUserId={currentUserId} initialClientId={clientToOpen} />
                         </div>
                     )}
                     {/* ── DEALS TAB: воронка всех сделок компании ── */}
@@ -1447,6 +1468,9 @@ function App() {
                             <DeadlineCalendarTab
                                 token={token}
                                 onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
+                                onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
+                                currentUserId={currentUserId}
+                                canManage={canManage}
                             />
                         </div>
                     )}

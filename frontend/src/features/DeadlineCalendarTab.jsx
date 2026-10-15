@@ -1,14 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiRequest } from "../api";
+import { EventFormModal } from "../components/EventFormModal";
 import { Icon } from "../components/Icon";
 import { CAL_WEEKDAYS } from "../constants/calendar";
 import { CMDK_TASK_STATUS_LABELS } from "../constants/commandPalette";
+import { EVENT_STATUS_LABELS, INTERACTION_LABELS, emptyToNull, formatEventWhen } from "../constants/crm";
 import { ICONS } from "../constants/icons";
+import { userName, useUsersMap } from "../hooks/useUsersMap";
 import { PRIORITY_COLORS, PRIORITY_LABELS } from "../constants/priority";
 import { parseBackendDate, formatDeadline } from "../utils/date";
 
-export function DeadlineCalendarTab({ token, onOpenTask }) {
+export function DeadlineCalendarTab({ token, onOpenTask, onOpenClient, currentUserId, canManage }) {
     const today = new Date();
+    const { users, usersById } = useUsersMap(token);
     const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -18,6 +22,14 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
     const [onlyAuthor, setOnlyAuthor] = useState(false);
     const [projects, setProjects] = useState([]);
     const [selectedDay, setSelectedDay] = useState(null); // "YYYY-MM-DD" | null
+    // Слой запланированных встреч и звонков (GET /events): отдельный запрос, свои переключатели
+    const [events, setEvents] = useState([]);
+    const [showTasks, setShowTasks] = useState(true);
+    const [showEvents, setShowEvents] = useState(true);
+    const [onlyMyEvents, setOnlyMyEvents] = useState(false);
+    const [eventModal, setEventModal] = useState(null); // null | { event?, day? }
+    const [completing, setCompleting] = useState(null); // { id, summary }
+    const [eventBusy, setEventBusy] = useState(false);
 
     useEffect(() => {
         if (!token) return;
@@ -63,6 +75,24 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, cursor, projectId, onlyMine, onlyAuthor, loadTasks]);
 
+    const loadEvents = useCallback(async (from, to, mine) => {
+        try {
+            const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString(), size: "500" });
+            if (mine && currentUserId) params.set("assignee_id", currentUserId);
+            const data = await apiRequest({ path: `/events?${params}`, token });
+            setEvents(data?.items ?? []);
+        } catch (e) {
+            setError(e.message);
+        }
+    }, [token, currentUserId]);
+
+    useEffect(() => {
+        if (!token) return;
+        if (!showEvents) { setEvents([]); return; }
+        loadEvents(gridStart, gridEnd, onlyMyEvents);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, cursor, showEvents, onlyMyEvents, loadEvents]);
+
     const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     // Группируем задачи по дню дедлайна (в локальном времени пользователя)
@@ -78,6 +108,17 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
         return map;
     }, [tasks]);
 
+    const eventsByDay = useMemo(() => {
+        const map = {};
+        for (const ev of events) {
+            const d = new Date(ev.starts_at);
+            if (isNaN(d.getTime())) continue;
+            const key = dayKey(d);
+            (map[key] ||= []).push(ev);
+        }
+        return map;
+    }, [events]);
+
     const cells = useMemo(() => {
         const arr = [];
         const d = new Date(gridStart);
@@ -90,7 +131,27 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
     }, [cursor]);
 
     const todayKey = dayKey(today);
-    const selectedTasks = selectedDay ? (tasksByDay[selectedDay] ?? []) : [];
+    const selectedTasks = selectedDay && showTasks ? (tasksByDay[selectedDay] ?? []) : [];
+    const selectedEvents = selectedDay && showEvents ? (eventsByDay[selectedDay] ?? []) : [];
+
+    const canActOn = ev => canManage || ev.assignee_id === currentUserId;
+    const runEventAction = async action => {
+        setEventBusy(true);
+        setError(null);
+        try {
+            await action();
+            await loadEvents(gridStart, gridEnd, onlyMyEvents);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setEventBusy(false);
+        }
+    };
+    const completeEvent = ev => runEventAction(async () => {
+        await apiRequest({ path: `/events/${ev.id}/complete`, method: "POST", token, body: { summary: emptyToNull(completing?.summary ?? "") } });
+        setCompleting(null);
+    });
+    const cancelEvent = ev => runEventAction(() => apiRequest({ path: `/events/${ev.id}`, method: "PATCH", token, body: { status: "cancelled" } }));
 
     const monthLabel = cursor.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
 
@@ -118,6 +179,20 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
                             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                         <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                            <input type="checkbox" checked={showTasks} onChange={e => setShowTasks(e.target.checked)} />
+                            Задачи
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                            <input type="checkbox" checked={showEvents} onChange={e => setShowEvents(e.target.checked)} />
+                            Встречи и звонки
+                        </label>
+                        {showEvents && (
+                            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                                <input type="checkbox" checked={onlyMyEvents} onChange={e => setOnlyMyEvents(e.target.checked)} />
+                                Только мои
+                            </label>
+                        )}
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
                             <input type="checkbox" checked={onlyMine} onChange={e => { setOnlyMine(e.target.checked); if (e.target.checked) setOnlyAuthor(false); }} />
                             Я исполнитель
                         </label>
@@ -125,7 +200,7 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
                             <input type="checkbox" checked={onlyAuthor} onChange={e => { setOnlyAuthor(e.target.checked); if (e.target.checked) setOnlyMine(false); }} />
                             Я автор
                         </label>
-                        <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(gridStart, gridEnd, projectId, onlyMine, onlyAuthor)} disabled={loading}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { loadTasks(gridStart, gridEnd, projectId, onlyMine, onlyAuthor); if (showEvents) loadEvents(gridStart, gridEnd, onlyMyEvents); }} disabled={loading}>
                             <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
                         </button>
                     </div>
@@ -147,7 +222,8 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
                         {cells.map(d => {
                             const key = dayKey(d);
-                            const dayTasks = tasksByDay[key] ?? [];
+                            const dayTasks = showTasks ? (tasksByDay[key] ?? []) : [];
+                            const dayEvents = showEvents ? (eventsByDay[key] ?? []) : [];
                             const inMonth = d.getMonth() === cursor.getMonth();
                             const isToday = key === todayKey;
                             const isSelected = key === selectedDay;
@@ -158,7 +234,7 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
                             return (
                                 <div
                                     key={key}
-                                    onClick={() => dayTasks.length > 0 && setSelectedDay(isSelected ? null : key)}
+                                    onClick={() => setSelectedDay(isSelected ? null : key)}
                                     style={{
                                         minHeight: 68,
                                         borderRadius: 8,
@@ -166,7 +242,7 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
                                         background: isSelected ? "var(--surface2)" : "var(--surface)",
                                         border: isToday ? "1.5px solid var(--accent)" : "1px solid var(--border)",
                                         opacity: inMonth ? 1 : 0.4,
-                                        cursor: dayTasks.length > 0 ? "pointer" : "default",
+                                        cursor: "pointer",
                                         display: "flex",
                                         flexDirection: "column",
                                         gap: 4,
@@ -175,6 +251,17 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
                                     <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--accent)" : "var(--text)" }}>
                                         {d.getDate()}
                                     </div>
+                                    {dayEvents.length > 0 && (
+                                        <div style={{ display: "flex", gap: 2, flexWrap: "wrap", fontSize: 11, lineHeight: 1 }}>
+                                            {dayEvents.slice(0, 3).map(ev => (
+                                                <span key={ev.id} title={`${new Date(ev.starts_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} ${ev.title || INTERACTION_LABELS[ev.type]?.label || ""} · ${ev.client_name ?? ""}`}
+                                                    style={{ opacity: ev.status === "done" ? 0.45 : 1 }}>
+                                                    {INTERACTION_LABELS[ev.type]?.icon ?? "📅"}
+                                                </span>
+                                            ))}
+                                            {dayEvents.length > 3 && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>+{dayEvents.length - 3}</span>}
+                                        </div>
+                                    )}
                                     {dayTasks.length > 0 && (
                                         <>
                                             <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
@@ -199,11 +286,60 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
 
                 {selectedDay && (
                     <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", marginBottom: 10 }}>
-                            📅 {new Date(selectedDay).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}
-                            {" · "}{selectedTasks.length} {selectedTasks.length === 1 ? "задача" : "задач"}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>
+                                📅 {new Date(`${selectedDay}T00:00:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}
+                                {showTasks && <>{" · "}{selectedTasks.length} {selectedTasks.length === 1 ? "задача" : "задач"}</>}
+                                {showEvents && <>{" · "}{selectedEvents.length} {selectedEvents.length === 1 ? "событие" : "событий"}</>}
+                            </div>
+                            <button className="btn btn-primary btn-sm" onClick={() => setEventModal({ day: selectedDay })}>
+                                <Icon d={ICONS.plus} /> Запланировать
+                            </button>
                         </div>
+                        {selectedTasks.length === 0 && selectedEvents.length === 0 && (
+                            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>На этот день ничего нет</div>
+                        )}
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {selectedEvents.map(ev => {
+                                const type = INTERACTION_LABELS[ev.type] ?? { icon: "📅", label: ev.type };
+                                const done = ev.status === "done";
+                                return (
+                                    <div key={`e${ev.id}`} style={{ padding: "8px 12px", borderRadius: 8, background: "var(--surface2)", opacity: done ? 0.7 : 1 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                            <span title={type.label}>{type.icon}</span>
+                                            <span style={{ flex: 1, minWidth: 120, fontSize: 14 }}>
+                                                {ev.title || type.label}
+                                                {ev.client_name && (
+                                                    <>
+                                                        {" · "}
+                                                        <a href="#client" style={{ color: "var(--accent-light)" }} onClick={e => { e.preventDefault(); onOpenClient?.(ev.client_id); }}>{ev.client_name}</a>
+                                                    </>
+                                                )}
+                                            </span>
+                                            <span className="meta-chip" style={{ fontSize: 11 }}>{formatEventWhen(ev.starts_at, ev.duration_minutes)}</span>
+                                            <span className="meta-chip" style={{ fontSize: 11 }}>{userName(usersById, ev.assignee_id)}</span>
+                                            <span className="meta-chip" style={{ fontSize: 11, color: done ? "var(--green)" : undefined }}>{EVENT_STATUS_LABELS[ev.status] ?? ev.status}</span>
+                                            {ev.status === "planned" && canActOn(ev) && (
+                                                <>
+                                                    <button className="btn btn-primary btn-sm" disabled={eventBusy} onClick={() => setCompleting({ id: ev.id, summary: ev.notes ?? "" })}>Состоялась</button>
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => setEventModal({ event: ev })} title="Изменить"><Icon d={ICONS.edit} /></button>
+                                                    <button className="btn btn-ghost btn-sm" disabled={eventBusy} onClick={() => cancelEvent(ev)}>Отменить</button>
+                                                </>
+                                            )}
+                                        </div>
+                                        {completing?.id === ev.id && (
+                                            <div style={{ marginTop: 10 }}>
+                                                <label className="form-label">Итог — станет записью в «Взаимодействиях» (время — сейчас)</label>
+                                                <textarea className="form-input" rows={3} maxLength={5000} autoFocus value={completing.summary} onChange={e => setCompleting(c => ({ ...c, summary: e.target.value }))} />
+                                                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => setCompleting(null)}>Отмена</button>
+                                                    <button className="btn btn-primary btn-sm" disabled={eventBusy} onClick={() => completeEvent(ev)}>Сохранить</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                             {selectedTasks.map(t => {
                                 const dl = formatDeadline(t.deadline);
                                 return (
@@ -235,6 +371,14 @@ export function DeadlineCalendarTab({ token, onOpenTask }) {
                             })}
                         </div>
                     </div>
+                )}
+                {eventModal && (
+                    <EventFormModal
+                        token={token} event={eventModal.event ?? null} clientId={eventModal.event?.client_id ?? null}
+                        defaultDay={eventModal.day ?? null} users={users} currentUserId={currentUserId}
+                        onClose={() => setEventModal(null)}
+                        onSaved={() => loadEvents(gridStart, gridEnd, onlyMyEvents)}
+                    />
                 )}
             </div>
         </div>

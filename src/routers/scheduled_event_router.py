@@ -23,10 +23,8 @@ def get_event_service(session: SessionDep) -> ScheduledEventService:
     return ScheduledEventService(ClientRepository(session), ScheduledEventRepository(session), UserRepository(session))
 
 
-def _page(items, total: int, page: int, size: int) -> PaginatedResponse[EventSchema]:
-    return PaginatedResponse.create(
-        items=[EventSchema.model_validate(i) for i in items], total=total, page=page, size=size
-    )
+def _page(items: list[EventSchema], total: int, page: int, size: int) -> PaginatedResponse[EventSchema]:
+    return PaginatedResponse.create(items=items, total=total, page=page, size=size)
 
 
 # ── события клиента ──────────────────────────────────────────────────────────

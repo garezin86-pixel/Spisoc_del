@@ -2020,3 +2020,25 @@ textarea {
     height: min(60dvh, 420px);
   }
 }
+
+/* ── Главная: что делать сегодня ─────────────────────────────────────────── */
+.home { display: flex; flex-direction: column; gap: 16px; padding-bottom: 32px; }
+.home-section .section-header { margin-bottom: 12px; }
+.home-count { margin-left: 8px; padding: 1px 8px; border-radius: 10px; background: var(--surface2); font-size: 0.78rem; font-weight: 600; color: var(--text-dim); }
+.home-empty { color: var(--text-muted); font-size: 0.88rem; padding: 4px 0 2px; }
+.home-banner { padding: 8px 12px; border-radius: var(--radius-sm); background: var(--red-dim); color: var(--red); font-size: 0.85rem; }
+.home-list { display: flex; flex-direction: column; gap: 4px; }
+.home-more { padding: 6px 10px; font-size: 0.82rem; color: var(--text-muted); }
+.home-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.home-row:hover { background: var(--surface2); border-color: var(--border); }
+.home-row-left { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 20px; }
+.home-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.home-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
+.home-row-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; color: var(--text-muted); }
+.home-row-right { flex: 0 0 auto; font-size: 0.82rem; color: var(--text-dim); white-space: nowrap; }
+.home-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.home-stages { display: flex; flex-wrap: wrap; gap: 10px; }
+.home-stage { flex: 1 1 140px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface2); }
+.home-stage-name { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
+.home-stage-count { font-size: 1.3rem; font-weight: 700; }
+.home-stage-sum { font-size: 0.78rem; color: var(--text-dim); margin-top: 2px; }

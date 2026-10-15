@@ -11,7 +11,7 @@ from src.models.user import UserModel, UserRole
 from src.repositories.client_repository import ClientRepository
 from src.repositories.scheduled_event_repository import ScheduledEventRepository
 from src.repositories.users_repository import UserRepository
-from src.schemas.scheduled_event import EventComplete, EventCreate, EventUpdate
+from src.schemas.scheduled_event import EventComplete, EventCreate, EventSchema, EventUpdate
 
 logger = structlog.get_logger()
 
@@ -74,12 +74,23 @@ class ScheduledEventService:
         if event.status == EventStatus.done.value:
             raise HTTPException(409, "Событие уже состоялось")
 
-    async def list_events(self, **filters):
+    async def _to_schemas(self, events: list[ScheduledEventModel]) -> list[EventSchema]:
+        """Схемы ответа с названием клиента (одним запросом на все события)."""
+        names = await self.event_repo.client_names({e.client_id for e in events})
+        return [
+            EventSchema.model_validate(e).model_copy(update={"client_name": names.get(e.client_id)}) for e in events
+        ]
+
+    async def _to_schema(self, event: ScheduledEventModel) -> EventSchema:
+        return (await self._to_schemas([event]))[0]
+
+    async def list_events(self, **filters) -> tuple[list[EventSchema], int]:
         if filters.get("client_id") is not None:
             await self._client_or_404(filters["client_id"])
-        return await self.event_repo.list_events(**filters)
+        items, total = await self.event_repo.list_events(**filters)
+        return await self._to_schemas(items), total
 
-    async def create(self, client_id: int, data: EventCreate, current_user: UserModel) -> ScheduledEventModel:
+    async def create(self, client_id: int, data: EventCreate, current_user: UserModel) -> EventSchema:
         client = await self._client_or_404(client_id)
         if not (_is_manager(current_user) or client.owner_id == current_user.id):
             raise HTTPException(403, "Планировать события могут admin, manager и ответственный за клиента")
@@ -104,9 +115,9 @@ class ScheduledEventService:
         )
         created = await self.event_repo.create(event)
         await logger.ainfo("scheduled_event_created", event_id=created.id, client_id=client_id)
-        return created
+        return await self._to_schema(created)
 
-    async def update(self, event_id: int, data: EventUpdate, current_user: UserModel) -> ScheduledEventModel:
+    async def update(self, event_id: int, data: EventUpdate, current_user: UserModel) -> EventSchema:
         event = await self._event_or_404(event_id)
         self._require_editor(event, current_user)
         self._require_planned(event)
@@ -123,9 +134,9 @@ class ScheduledEventService:
 
         updated = await self.event_repo.update(event)
         await logger.ainfo("scheduled_event_updated", event_id=event_id)
-        return updated
+        return await self._to_schema(updated)
 
-    async def complete(self, event_id: int, data: EventComplete, current_user: UserModel) -> ScheduledEventModel:
+    async def complete(self, event_id: int, data: EventComplete, current_user: UserModel) -> EventSchema:
         event = await self._event_or_404(event_id)
         self._require_editor(event, current_user)
         self._require_planned(event)
@@ -143,7 +154,7 @@ class ScheduledEventService:
         )
         completed = await self.event_repo.complete(event, interaction)
         await logger.ainfo("scheduled_event_completed", event_id=event_id, interaction_id=interaction.id)
-        return completed
+        return await self._to_schema(completed)
 
     async def delete(self, event_id: int, current_user: UserModel) -> dict:
         event = await self._event_or_404(event_id)

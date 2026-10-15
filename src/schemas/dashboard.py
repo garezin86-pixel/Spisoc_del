@@ -62,3 +62,4 @@ class DashboardSchema(BaseModel):
     stale_clients: DashboardList[DashboardClient]
     upcoming_events: DashboardList[DashboardEvent]
     pipeline: PipelineSummary
+    cached: bool = False  # True — ответ из кэша (не старше 45 секунд, см. generated_at)

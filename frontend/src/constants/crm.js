@@ -153,3 +153,28 @@ export function emptyToNull(value) {
     const v = (value ?? "").trim();
     return v === "" ? null : v;
 }
+
+// Запланированные встречи и звонки (Этап 4). Ключи совпадают с бэкендом (EventType / EventStatus).
+export const EVENT_TYPES = INTERACTION_TYPES.filter(t => t.key === "meeting" || t.key === "call");
+export const EVENT_STATUS_LABELS = { planned: "Запланировано", done: "Состоялось", cancelled: "Отменено" };
+
+// Значение для <input type="datetime-local">: ближайший круглый час (или 10:00 выбранного дня «YYYY-MM-DD»)
+export function defaultEventStart(dayKey) {
+    const d = new Date();
+    if (dayKey) {
+        const [y, m, day] = dayKey.split("-").map(Number);
+        d.setFullYear(y, m - 1, day);
+        d.setHours(10, 0, 0, 0);
+    } else {
+        d.setHours(d.getHours() + 1, 0, 0, 0);
+    }
+    return isoToLocalInput(d.toISOString());
+}
+
+// «31 июл, 15:00» или «31 июл, 15:00 · 45 мин»
+export function formatEventWhen(startsAt, durationMinutes) {
+    if (!startsAt) return "—";
+    const d = new Date(startsAt);
+    const text = d.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    return durationMinutes ? `${text} · ${durationMinutes} мин` : text;
+}

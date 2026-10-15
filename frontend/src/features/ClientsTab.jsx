@@ -11,9 +11,9 @@ import { ClientCard } from "./ClientCard";
 const EMPTY_FORM = { name: "", client_type: "company", birth_date: "", gender: "", phone: "", email: "", address: "", notes: "", owner_id: "" };
 
 // Клиенты: список с поиском и пагинацией + карточка клиента. Создавать клиентов могут admin и manager.
-export function ClientsTab({ token, canManage, currentUserId }) {
+export function ClientsTab({ token, canManage, currentUserId, initialClientId = null }) {
     const { users, usersById } = useUsersMap(token);
-    const [selectedId, setSelectedId] = useState(null);
+    const [selectedId, setSelectedId] = useState(initialClientId); // с главной можно сразу открыть карточку клиента
     const [data, setData] = useState({ items: [], total: 0, pages: 1 });
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");

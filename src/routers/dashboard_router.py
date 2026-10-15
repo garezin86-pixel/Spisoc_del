@@ -13,6 +13,7 @@ from src.repositories.users_repository import UserRepository
 from src.schemas.dashboard import DashboardSchema
 from src.services.dashboard_service import DashboardService
 from src.services.deal_service import DealService
+from src.utils.dashboard_cache import dashboard_cache
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 def get_dashboard_service(session: SessionDep) -> DashboardService:
     user_repo = UserRepository(session)
     deal_service = DealService(DealRepository(session), ClientRepository(session), user_repo)
-    return DashboardService(DashboardRepository(session), deal_service, user_repo)
+    return DashboardService(DashboardRepository(session), deal_service, user_repo, dashboard_cache)
 
 
 @router.get(
@@ -30,7 +31,8 @@ def get_dashboard_service(session: SessionDep) -> DashboardService:
     description="Задачи на сегодня и просроченные, клиенты без контакта дольше `stale_days` дней, ближайшие встречи "
     "и звонки (`events_days` дней вперёд), воронка ответственного по стадиям (суммы по валютам). "
     "«Сегодня» считается в часовом поясе `tz` (IANA, например Europe/Kyiv). "
-    "Чужой дашборд (`user_id`) — только admin и manager.",
+    "Чужой дашборд (`user_id`) — только admin и manager. "
+    "Ответ кэшируется на 45 секунд (`cached: true`, время расчёта — `generated_at`).",
     responses={403: {"description": "Чужой дашборд"}, 404: {"description": "Пользователь не найден"}},
 )
 async def get_dashboard(

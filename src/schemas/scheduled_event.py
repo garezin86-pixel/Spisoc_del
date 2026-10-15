@@ -21,9 +21,9 @@ def _clean(value: Optional[str]) -> Optional[str]:
 class EventCreate(BaseModel):
     type: EventType
     starts_at: datetime
-    duration_minutes: Optional[int] = Field(None, ge=1, le=1440)
-    title: Optional[str] = Field(None, max_length=200)
-    notes: Optional[str] = Field(None, max_length=5000)
+    duration_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    title: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=5000)
     contact_id: Optional[int] = None
     assignee_id: Optional[int] = None  # не передан — текущий пользователь
 
@@ -46,9 +46,9 @@ class EventUpdate(BaseModel):
 
     type: Optional[EventType] = None
     starts_at: Optional[datetime] = None
-    duration_minutes: Optional[int] = Field(None, ge=1, le=1440)
-    title: Optional[str] = Field(None, max_length=200)
-    notes: Optional[str] = Field(None, max_length=5000)
+    duration_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    title: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=5000)
     contact_id: Optional[int] = None
     assignee_id: Optional[int] = None
     status: Optional[EventStatus] = None
@@ -81,7 +81,7 @@ class EventUpdate(BaseModel):
 class EventComplete(BaseModel):
     """Итог состоявшейся встречи/звонка — станет summary взаимодействия."""
 
-    summary: Optional[str] = Field(None, max_length=5000)
+    summary: Optional[str] = Field(default=None, max_length=5000)
 
     @field_validator("summary")
     @classmethod
@@ -92,6 +92,7 @@ class EventComplete(BaseModel):
 class EventSchema(BaseModel):
     id: int
     client_id: int
+    client_name: Optional[str] = None  # заполняется в списках и ответах API: календарю не нужен запрос за клиентом
     contact_id: Optional[int] = None
     type: EventType
     title: Optional[str] = None

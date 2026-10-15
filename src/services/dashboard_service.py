@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
 
+from src.models.scheduled_event import EventStatus, EventType
 from src.models.user import UserModel, UserRole
 from src.repositories.dashboard_repository import DashboardRepository
 from src.repositories.users_repository import UserRepository
@@ -15,6 +16,7 @@ from src.schemas.dashboard import (
     DashboardTask,
 )
 from src.services.deal_service import DealService
+from src.utils.dashboard_cache import DashboardCache, dashboard_key
 
 _LIST_LIMIT = 20  # задачи
 _CLIENT_LIMIT = 10
@@ -33,10 +35,17 @@ class DashboardService:
     (задача на сегодня с прошедшим временем остаётся в «сегодня»).
     """
 
-    def __init__(self, repo: DashboardRepository, deal_service: DealService, user_repo: UserRepository):
+    def __init__(
+        self,
+        repo: DashboardRepository,
+        deal_service: DealService,
+        user_repo: UserRepository,
+        cache: DashboardCache | None = None,
+    ):
         self.repo = repo
         self.deal_service = deal_service
         self.user_repo = user_repo
+        self.cache = cache
 
     async def _target_user_id(self, user_id: int | None, current_user: UserModel) -> int:
         if user_id is None or user_id == current_user.id:
@@ -64,6 +73,16 @@ class DashboardService:
     ) -> DashboardSchema:
         target_id = await self._target_user_id(user_id, current_user)
         zone = self._zone(tz)
+
+        # Права и пояс проверены до кэша: закэшированный ответ не обходит 403/404/422.
+        key = dashboard_key(current_user.workspace_id, target_id, tz, stale_days, events_days)
+        if self.cache is not None:
+            cached = await self.cache.get(key)
+            if cached is not None:
+                try:
+                    return DashboardSchema.model_validate_json(cached).model_copy(update={"cached": True})
+                except ValueError:
+                    pass  # формат изменился после обновления кода — считаем промахом
 
         now = datetime.now(timezone.utc)
         today = now.astimezone(zone).date()
@@ -94,7 +113,7 @@ class DashboardService:
                 )
             )
 
-        return DashboardSchema(
+        dashboard = DashboardSchema(
             user_id=target_id,
             generated_at=now,
             tz=tz,
@@ -112,14 +131,17 @@ class DashboardService:
                         id=e.id,
                         client_id=e.client_id,
                         client_name=name,
-                        type=e.type,
+                        type=EventType(e.type),
                         title=e.title,
                         starts_at=e.starts_at,
                         duration_minutes=e.duration_minutes,
-                        status=e.status,
+                        status=EventStatus(e.status),
                     )
                     for e, name in event_rows
                 ],
             ),
             pipeline=pipeline,
         )
+        if self.cache is not None:
+            await self.cache.set(key, dashboard.model_dump_json())
+        return dashboard
