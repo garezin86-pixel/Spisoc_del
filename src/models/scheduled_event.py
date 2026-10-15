@@ -36,6 +36,7 @@ def _utcnow() -> datetime:
 
 class ScheduledEventModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     __tablename__ = "scheduled_events"
+    __audit_skip_fields__ = frozenset({"reminded_at"})  # системная отметка рассылки, не история
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
@@ -54,6 +55,9 @@ class ScheduledEventModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     completed_interaction_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("interactions.id", ondelete="SET NULL"), nullable=True
     )
+    # Когда ответственному отправили напоминание «скоро начнётся» (None — ещё нет). Сбрасывается при переносе времени
+    # и возврате отменённого события в planned: новое время — новое напоминание.
+    reminded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)

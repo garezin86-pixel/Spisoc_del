@@ -26,6 +26,8 @@ class NotificationSettingsModel(Base):
     notify_group_assigned: Mapped[bool] = mapped_column(Boolean, default=True)  # Добавить
     # Напоминание ответственному «пора связаться с клиентом» (CRM, next_contact_at)
     notify_contact_due: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Напоминание ответственному «встреча или звонок скоро начнётся» (CRM, scheduled_events)
+    notify_event_reminder: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Голосовые уведомления (TTS через Groq) — по умолчанию выключены (opt-in):
     # синтез речи стоит денег за каждый вызов API, не всем нужен голосовой
     # формат, и качество синтеза русского текста менее проверено, чем STT.

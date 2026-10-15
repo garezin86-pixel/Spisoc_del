@@ -76,7 +76,11 @@ function Row({ onClick, left, title, sub, right, rightTone }) {
  * Главная: что делать сегодня. Данные — GET /dashboard (кэш на сервере 45 с). refreshKey растёт, когда по
  * WebSocket пришло dashboard_changed: страница тихо перечитывает данные (без «мигания» загрузки).
  */
-export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient, onOpenDeals }) {
+export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient, onOpenDeals, canManage = false, users = [], currentUserId = null }) {
+    // admin/manager могут смотреть дашборд сотрудника (GET /dashboard?user_id=); null — свой
+    const [viewUserId, setViewUserId] = useState(null);
+    const foreign = viewUserId !== null && viewUserId !== currentUserId;
+    const viewedName = foreign ? (users.find(u => u.id === viewUserId)?.username ?? `#${viewUserId}`) : username;
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -85,7 +89,8 @@ export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient,
     const load = useCallback(async () => {
         const id = ++requestRef.current;
         try {
-            const res = await apiRequest({ path: `/dashboard?tz=${encodeURIComponent(BROWSER_TZ)}`, token });
+            const target = foreign ? `&user_id=${viewUserId}` : "";
+            const res = await apiRequest({ path: `/dashboard?tz=${encodeURIComponent(BROWSER_TZ)}${target}`, token });
             if (id !== requestRef.current) return; // пришёл более новый запрос
             setData(res);
             setError(null);
@@ -94,7 +99,7 @@ export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient,
         } finally {
             if (id === requestRef.current) setLoading(false);
         }
-    }, [token]);
+    }, [token, foreign, viewUserId]);
 
     useEffect(() => {
         if (!token) return undefined;
@@ -108,13 +113,22 @@ export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient,
         return () => clearInterval(timer);
     }, [token, load]);
 
+    const switchUser = e => {
+        setData(null); // пока грузится дашборд другого сотрудника, чужие цифры за свои не выдаём
+        setLoading(true);
+        setViewUserId(e.target.value === "" ? null : Number(e.target.value));
+    };
+
     if (loading && !data) return <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>;
     if (!data) {
         return (
             <div className="empty-state">
                 <div className="empty-icon">⚠️</div>
                 {error || "Не удалось загрузить главную"}
-                <div style={{ marginTop: 12 }}><button className="btn-ghost" onClick={load}>Повторить</button></div>
+                <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "center" }}>
+                    <button className="btn-ghost" onClick={load}>Повторить</button>
+                    {foreign && <button className="btn-ghost" onClick={() => { setLoading(true); setViewUserId(null); }}>Мой дашборд</button>}
+                </div>
             </div>
         );
     }
@@ -144,9 +158,24 @@ export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient,
             {error && <div className="home-banner">Не удалось обновить данные: {error}</div>}
 
             <div className="card" style={{ background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%)", border: "none" }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>Привет, {username}!</div>
-                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", marginTop: 4 }}>
-                    {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })} · {summary}
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>
+                            {foreign ? `Дашборд сотрудника ${viewedName}` : `Привет, ${username}!`}
+                        </div>
+                        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", marginTop: 4 }}>
+                            {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })} · {summary}
+                        </div>
+                    </div>
+                    {canManage && users.length > 1 && (
+                        <select
+                            className="form-input" style={{ width: "auto", minWidth: 150 }} aria-label="Чей дашборд"
+                            value={foreign ? viewUserId : ""} onChange={switchUser}
+                        >
+                            <option value="">Мой дашборд</option>
+                            {users.filter(u => u.id !== currentUserId).map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                        </select>
+                    )}
                 </div>
             </div>
 
@@ -191,7 +220,7 @@ export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient,
 
             <div className="card home-section">
                 <div className="section-header">
-                    <div className="section-title">Мои сделки в работе{dealsTotal > 0 && <span className="home-count">{dealsTotal}</span>}</div>
+                    <div className="section-title">{foreign ? "Сделки в работе" : "Мои сделки в работе"}{dealsTotal > 0 && <span className="home-count">{dealsTotal}</span>}</div>
                     <button className="btn-ghost" onClick={onOpenDeals}>Воронка</button>
                 </div>
                 {dealsTotal === 0 ? <div className="home-empty">Открытых сделок нет</div> : (

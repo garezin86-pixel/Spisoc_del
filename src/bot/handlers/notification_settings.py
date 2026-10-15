@@ -82,6 +82,13 @@ def get_notification_keyboard(settings: dict) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                # .get: словари настроек из старого кода/тестов без этого ключа считаются «включено» (как и в БД)
+                text=f"{'✅' if settings.get('notify_event_reminder', True) else '❌'} Напоминания о встречах",
+                callback_data="toggle_event_reminder",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=f"{'🔊' if settings['voice_notifications_enabled'] else '🔇'} Голосовые уведомления (просрочка)",
                 callback_data="toggle_voice_notifications",
             )
@@ -116,6 +123,7 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
             "notify_mentioned": settings_obj.notify_mentioned,
             "notify_group_assigned": settings_obj.notify_group_assigned,
             "notify_contact_due": settings_obj.notify_contact_due,
+            "notify_event_reminder": settings_obj.notify_event_reminder,
             "voice_notifications_enabled": settings_obj.voice_notifications_enabled,
         }
     return {
@@ -132,6 +140,7 @@ async def _get_settings_dict(uow, user_id: int) -> dict:
         "notify_mentioned": True,
         "notify_group_assigned": True,
         "notify_contact_due": True,
+        "notify_event_reminder": True,
         # ВАЖНО: голосовые — opt-in, дефолт False (в отличие от остальных
         # текстовых уведомлений выше, которые по умолчанию включены).
         # Синтез речи стоит денег за каждый вызов Groq API — не должен
@@ -239,6 +248,10 @@ async def notification_toggle_callback(callback: CallbackQuery):
         "toggle_contact_due": (
             "notify_contact_due",
             "напоминания о клиентах (пора связаться)",
+        ),
+        "toggle_event_reminder": (
+            "notify_event_reminder",
+            "напоминания о встречах и звонках",
         ),
         "toggle_voice_notifications": (
             "voice_notifications_enabled",

@@ -1416,6 +1416,9 @@ function App() {
                                 onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
                                 onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
                                 onOpenDeals={() => setTab("deals")}
+                                canManage={canManage}
+                                users={users}
+                                currentUserId={currentUserId}
                             />
                         </div>
                     )}

@@ -446,6 +446,7 @@ class NotificationSettingsRepository:
             notify_comment=True,
             notify_mentioned=True,
             notify_contact_due=True,
+            notify_event_reminder=True,
         )
 
     async def disable_all_notifications(self, user_id: int) -> NotificationSettingsModel:
@@ -468,6 +469,7 @@ class NotificationSettingsRepository:
             # реально выключать всё, без исключений по соображениям безопасности.
             voice_notifications_enabled=False,
             notify_contact_due=False,
+            notify_event_reminder=False,
         )
 
     async def get_users_with_enabled_notification(self, notification_type: str):

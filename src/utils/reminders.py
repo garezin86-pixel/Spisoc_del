@@ -5,6 +5,7 @@ from src.services.reminders.service import (
     remind_contact_due,
     remind_deadline_1h,
     remind_deadline_24h,
+    remind_event_upcoming,
     send_weekly_report,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "remind_contact_due",
     "remind_deadline_1h",
     "remind_deadline_24h",
+    "remind_event_upcoming",
     "send_weekly_report",
 ]

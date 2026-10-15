@@ -129,8 +129,12 @@ class ScheduledEventService:
             await self._require_user_exists(changes["assignee_id"])
         self.event_repo.set_audit_user(current_user.id)
 
+        reschedule = "starts_at" in changes and changes["starts_at"] != event.starts_at
+        reopen = changes.get("status") == EventStatus.planned and event.status == EventStatus.cancelled.value
         for field, value in changes.items():
             setattr(event, field, value.value if field in ("type", "status") else value)
+        if reschedule or reopen:
+            event.reminded_at = None  # новое время / событие вернули в работу — новое напоминание
 
         updated = await self.event_repo.update(event)
         await logger.ainfo("scheduled_event_updated", event_id=event_id)

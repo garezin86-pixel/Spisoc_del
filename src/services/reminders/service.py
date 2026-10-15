@@ -7,10 +7,12 @@ from src.bot.setup import get_bot
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.repositories.client_repository import ClientRepository
+from src.repositories.scheduled_event_repository import ScheduledEventRepository
 from src.services.reminders.messages import (
     contact_due_text,
     deadline_1h_text,
     deadline_24h_text,
+    event_reminder_text,
     group_assigned_text,
     overdue_text,
     weekly_report_text,
@@ -21,6 +23,7 @@ logger = logging.getLogger(__name__)
 event_logger = structlog.get_logger()
 
 WINDOW = timedelta(minutes=10)
+EVENT_REMINDER_LEAD = timedelta(minutes=30)  # за сколько до начала напоминать о встрече/звонке
 
 
 async def _log_notification(
@@ -161,6 +164,40 @@ async def remind_contact_due() -> None:
 
     logger.info("contact_due: отправлено %d", sent)
     await event_logger.ainfo("reminder_job_finished", type="contact_due", count=sent)
+
+
+async def remind_event_upcoming() -> None:
+    """Встреча или звонок скоро начнётся: ответственному за событие — напоминание за EVENT_REMINDER_LEAD.
+
+    Раз на событие: после успешной отправки ставится reminded_at (сбрасывается при переносе времени и возврате
+    отменённого в planned). Не отправилось (нет Telegram, ошибка) — следующий прогон попробует снова, пока событие
+    не началось; отключённая компания, заблокированный пользователь и выключенная настройка notify_event_reminder
+    напоминаний не получают. Событие, созданное менее чем за EVENT_REMINDER_LEAD до начала, напомнит со следующим
+    прогоном (раз в 5 минут).
+    """
+    await event_logger.ainfo("reminder_job_started", type="event_reminder")
+    session_maker = get_session_maker()
+    sender = NotificationSender(get_bot())
+    sent = 0
+
+    async with UnitOfWork(session_maker) as uow:
+        now = datetime.now(timezone.utc)
+        for event, client_name, assignee in await ScheduledEventRepository(uow.session).get_due_for_reminder(
+            now, EVENT_REMINDER_LEAD
+        ):
+            if not assignee.telegram_id or not assignee.is_active or not assignee.workspace_is_active:
+                continue
+            settings = await uow.notification_settings.get_by_user(assignee.id)
+            if settings and not settings.notify_event_reminder:
+                continue
+            text = event_reminder_text(event, client_name, now)
+            if await _send_plain_and_log(uow, sender, assignee, "event_reminder", text):
+                event.reminded_at = now
+                sent += 1
+        await uow.commit()
+
+    logger.info("event_reminder: отправлено %d", sent)
+    await event_logger.ainfo("reminder_job_finished", type="event_reminder", count=sent)
 
 
 async def remind_deadline_24h() -> None:

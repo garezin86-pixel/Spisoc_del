@@ -42,6 +42,7 @@ from src.utils.reminders import (
     remind_contact_due,
     remind_deadline_1h,
     remind_deadline_24h,
+    remind_event_upcoming,
     send_weekly_report,
 )
 
@@ -122,6 +123,12 @@ async def lifespan(app: FastAPI):
         remind_contact_due,
         CronTrigger(hour="6-18", minute=0, timezone="UTC"),
         id="contact_due",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        remind_event_upcoming,
+        IntervalTrigger(minutes=5),
+        id="event_reminder",
         replace_existing=True,
     )
     scheduler.add_job(

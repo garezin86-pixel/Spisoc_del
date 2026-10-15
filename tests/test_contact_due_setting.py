@@ -216,6 +216,7 @@ async def test_every_toggle_flips_the_shown_state_on_first_press(user_ctx):
         "toggle_mentioned": "notify_mentioned",
         "toggle_group_assigned": "notify_group_assigned",
         "toggle_contact_due": "notify_contact_due",
+        "toggle_event_reminder": "notify_event_reminder",
         "toggle_voice_notifications": "voice_notifications_enabled",
     }
     # список кнопок в тесте совпадает с клавиатурой: новая кнопка без проверки не пройдёт незамеченной

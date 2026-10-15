@@ -1,3 +1,5 @@
+from datetime import timezone
+
 from src.utils.datetime_utils import to_local
 
 
@@ -26,6 +28,20 @@ def contact_due_text(client, today) -> str:
     )
     if client.phone:
         lines.append(f"Телефон: {client.phone}")
+    return "\n".join(lines)
+
+
+def event_reminder_text(event, client_name: str, now) -> str:
+    """Напоминание ответственному: встреча или звонок скоро начнётся."""
+    icon, label = ("🤝", "Встреча") if event.type == "meeting" else ("📞", "Звонок")
+    starts_at = event.starts_at if event.starts_at.tzinfo else event.starts_at.replace(tzinfo=timezone.utc)
+    minutes = max(1, round((starts_at - now).total_seconds() / 60))
+    lines = [f"{icon} {label} через {minutes} мин: {event.title or client_name}"]
+    if event.title:
+        lines.append(f"Клиент: {client_name}")
+    lines.append(
+        f"Начало: {to_local(event.starts_at)}" + (f", {event.duration_minutes} мин" if event.duration_minutes else "")
+    )
     return "\n".join(lines)
 
 

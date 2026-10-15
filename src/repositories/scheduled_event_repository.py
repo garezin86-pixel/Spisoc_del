@@ -1,5 +1,5 @@
 # src/repositories/scheduled_event_repository.py
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.client import ClientModel
 from src.models.interaction import InteractionModel
 from src.models.scheduled_event import EventStatus, ScheduledEventModel
+from src.models.user import UserModel
 
 
 class ScheduledEventRepository:
@@ -55,6 +56,27 @@ class ScheduledEventRepository:
             query.order_by(ScheduledEventModel.starts_at, ScheduledEventModel.id).offset(offset).limit(limit)
         )
         return list(result.scalars().all()), total or 0
+
+    async def get_due_for_reminder(
+        self, now: datetime, lead: timedelta
+    ) -> list[tuple[ScheduledEventModel, str, UserModel]]:
+        """События, о которых пора напомнить: запланированы, начнутся в ближайшие `lead`, ещё не напоминали, есть
+        ответственный. Уже начавшиеся не берём. Вызывается из планировщика без привязки к компании — видит все."""
+        result = await self.session.execute(
+            select(ScheduledEventModel, ClientModel.name, UserModel)
+            .join(ClientModel, ClientModel.id == ScheduledEventModel.client_id)
+            .join(UserModel, UserModel.id == ScheduledEventModel.assignee_id)
+            .where(
+                ScheduledEventModel.not_deleted_filter(),
+                ClientModel.not_deleted_filter(),
+                ScheduledEventModel.status == EventStatus.planned.value,
+                ScheduledEventModel.reminded_at.is_(None),
+                ScheduledEventModel.starts_at > now,
+                ScheduledEventModel.starts_at <= now + lead,
+            )
+            .order_by(ScheduledEventModel.starts_at, ScheduledEventModel.id)
+        )
+        return [(row[0], row[1], row[2]) for row in result.all()]
 
     async def client_names(self, client_ids: set[int]) -> dict[int, str]:
         """Названия клиентов по id (для подписи событий в календаре)."""
