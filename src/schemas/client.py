@@ -40,10 +40,10 @@ def _check_email(value: Optional[str]) -> Optional[str]:
 class ClientCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)  # название компании или ФИО частного лица
     client_type: ClientType = "company"
-    phone: Optional[str] = Field(None, max_length=50)
-    email: Optional[str] = Field(None, max_length=255)
-    address: Optional[str] = Field(None, max_length=500)
-    notes: Optional[str] = Field(None, max_length=5000)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)
+    address: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = Field(default=None, max_length=5000)
     # Ответственный. Не передан — станет создатель. Назначать другого может admin/manager.
     owner_id: Optional[int] = None
     birth_date: Optional[date] = None  # только для частного лица (person); в PATCH null — очистить
@@ -82,12 +82,12 @@ class ClientCreate(BaseModel):
 class ClientUpdate(BaseModel):
     """PATCH: меняются только переданные поля; null очищает необязательное поле."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     client_type: Optional[ClientType] = None
-    phone: Optional[str] = Field(None, max_length=50)
-    email: Optional[str] = Field(None, max_length=255)
-    address: Optional[str] = Field(None, max_length=500)
-    notes: Optional[str] = Field(None, max_length=5000)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)
+    address: Optional[str] = Field(default=None, max_length=500)
+    notes: Optional[str] = Field(default=None, max_length=5000)
     owner_id: Optional[int] = None
     birth_date: Optional[date] = None  # только для частного лица (person); в PATCH null — очистить
     gender: Optional[Gender] = None  # только для частного лица; в PATCH null — очистить
@@ -157,10 +157,10 @@ class ClientDetailSchema(ClientSchema):
 
 class ContactCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
-    position: Optional[str] = Field(None, max_length=200)
-    phone: Optional[str] = Field(None, max_length=50)
-    email: Optional[str] = Field(None, max_length=255)
-    notes: Optional[str] = Field(None, max_length=5000)
+    position: Optional[str] = Field(default=None, max_length=200)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)
+    notes: Optional[str] = Field(default=None, max_length=5000)
 
     @field_validator("name")
     @classmethod
@@ -182,11 +182,11 @@ class ContactCreate(BaseModel):
 
 
 class ContactUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    position: Optional[str] = Field(None, max_length=200)
-    phone: Optional[str] = Field(None, max_length=50)
-    email: Optional[str] = Field(None, max_length=255)
-    notes: Optional[str] = Field(None, max_length=5000)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    position: Optional[str] = Field(default=None, max_length=200)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)
+    notes: Optional[str] = Field(default=None, max_length=5000)
 
     @field_validator("name")
     @classmethod

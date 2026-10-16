@@ -42,10 +42,10 @@ class DashboardRepository:
         return [row[0] for row in rows], total
 
     async def stale_clients(
-        self, owner_id: int, cutoff: datetime, limit: int
+        self, owner_id: int | None, cutoff: datetime, limit: int
     ) -> tuple[list[tuple[ClientModel, datetime | None]], int]:
         """Клиенты ответственного, с которыми не было контакта с `cutoff`: последнее взаимодействие раньше cutoff,
-        а если их нет — клиент создан раньше cutoff. Самые давние сверху."""
+        а если их нет — клиент создан раньше cutoff. Самые давние сверху. owner_id=None — клиенты всех ответственных."""
         last = (
             select(InteractionModel.client_id, func.max(InteractionModel.occurred_at).label("last_at"))
             .where(InteractionModel.not_deleted_filter())
@@ -56,8 +56,10 @@ class DashboardRepository:
         query = (
             select(ClientModel, last.c.last_at)
             .outerjoin(last, last.c.client_id == ClientModel.id)
-            .where(ClientModel.not_deleted_filter(), ClientModel.owner_id == owner_id, baseline < cutoff)
+            .where(ClientModel.not_deleted_filter(), baseline < cutoff)
         )
+        if owner_id is not None:
+            query = query.where(ClientModel.owner_id == owner_id)
         rows, total = await self._page(query, (baseline, ClientModel.id), limit)
         return [(row[0], row[1]) for row in rows], total
 

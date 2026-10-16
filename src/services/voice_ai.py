@@ -23,7 +23,7 @@ import edge_tts
 from groq import AsyncGroq
 from groq.types.chat import ChatCompletionMessageParam  # type: ignore[import]
 
-from src.core.config import GROQ_API_KEY
+from src.core.config import GROQ_API_KEY, GROQ_LLM_MODEL, GROQ_STT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +297,7 @@ async def transcribe_voice(ogg_bytes: bytes) -> str:
     try:
         with open(tmp_path, "rb") as audio_file:
             response = await groq.audio.transcriptions.create(
-                model="whisper-large-v3",
+                model=GROQ_STT_MODEL,
                 file=("voice.ogg", audio_file, "audio/ogg"),
                 language="ru",
                 response_format="text",
@@ -317,7 +317,7 @@ async def transcribe_voice(ogg_bytes: bytes) -> str:
 # ── LLM с tool calling ────────────────────────────────────────────────────────
 
 
-def _system_prompt() -> str:
+def _system_prompt(extra_hints: str = "") -> str:
     today = date.today()
     friday = today + timedelta(days=(4 - today.weekday()) % 7)
     tomorrow = today + timedelta(days=1)
@@ -340,22 +340,37 @@ def _system_prompt() -> str:
 
 Правила дедлайна: сегодня={today}, завтра={tomorrow}, до пятницы={friday}.
 Правила времени: «до 12» → deadline_time=12:00, «до обеда» → 13:00.
-Приоритет: срочно/горит/ASAP → critical, важно → high, обычное → medium, потом → low."""
+Приоритет: срочно/горит/ASAP → critical, важно → high, обычное → medium, потом → low.{extra_hints}"""
+
+
+def _model_options(model: str) -> dict:
+    """Параметры, зависящие от семейства модели.
+
+    GPT-OSS — рассуждающие модели: токены рассуждения входят в лимит ответа, поэтому лимит выше обычного (иначе ответ
+    с вызовом инструмента может обрезаться), а рассуждение сведено к минимуму и не возвращается — для выбора
+    инструмента оно не нужно, а скорость и цена важны. `reasoning_format` для GPT-OSS не поддерживается.
+    """
+    if model.startswith("openai/gpt-oss"):
+        return {"max_tokens": 2048, "reasoning_effort": "low", "include_reasoning": False}
+    return {"max_tokens": 1024}
 
 
 async def call_llm_with_tools(
     text: str,
     history: list[dict],
+    tools: list | None = None,
+    extra_hints: str = "",
 ) -> list[dict]:
     """
     Вызывает Groq LLaMA с tool calling.
+    tools — описания инструментов (по умолчанию прежний набор задач); extra_hints — дополнение к системному промпту.
     Возвращает список вызовов инструментов:
     [{"name": "create_task", "arguments": {...}}, ...]
     """
     groq = _get_groq()
 
     messages: list[ChatCompletionMessageParam] = [
-        {"role": "system", "content": _system_prompt()},
+        {"role": "system", "content": _system_prompt(extra_hints)},
     ]
     for h in history:
         role = h.get("role", "user")
@@ -365,12 +380,12 @@ async def call_llm_with_tools(
     messages.append({"role": "user", "content": text})
 
     response = await groq.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=GROQ_LLM_MODEL,
         messages=messages,
-        tools=TOOLS,
+        tools=TOOLS if tools is None else tools,
         tool_choice="auto",
         temperature=0.1,
-        max_tokens=1024,
+        **_model_options(GROQ_LLM_MODEL),
     )
 
     choice = response.choices[0]
@@ -409,11 +424,13 @@ async def call_llm_with_tools(
 async def process_voice_message(
     ogg_bytes: bytes,
     history: list[dict],
+    tools: list | None = None,
+    extra_hints: str = "",
 ) -> tuple[str, list[dict]]:
     """
     Полный pipeline: байты → (транскрипт, список tool calls).
     history — история диалога из Redis.
     """
     transcript = await transcribe_voice(ogg_bytes)
-    tool_calls = await call_llm_with_tools(transcript, history)
+    tool_calls = await call_llm_with_tools(transcript, history, tools=tools, extra_hints=extra_hints)
     return transcript, tool_calls

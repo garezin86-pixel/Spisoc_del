@@ -1,6 +1,7 @@
 from aiogram import Dispatcher
 
 from src.bot.handlers.admin import router as admin_router
+from src.bot.handlers.ai_assistant import router as ai_assistant_router
 from src.bot.handlers.attachments_handler import router as attachments_router
 from src.bot.handlers.chat_bridge import router as chat_bridge_router
 from src.bot.handlers.commands import router as commands_router
@@ -36,3 +37,5 @@ def register_handlers(dp: Dispatcher):
     dp.include_router(admin_router)
     dp.include_router(attachments_router)
     dp.include_router(trash_router)
+    # ПОСЛЕДНИМ: свободный текст идёт к AI-агенту, только если его не забрали меню, мастера (FSM) и команды
+    dp.include_router(ai_assistant_router)

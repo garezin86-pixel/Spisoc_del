@@ -72,6 +72,17 @@ class ClientRepository:
         result = await self.session.execute(query.order_by(*order).offset(offset).limit(limit))
         return list(result.scalars().all()), total or 0
 
+    async def get_names(self, client_ids: set[int]) -> dict[int, str]:
+        """Названия клиентов по id (подписи к сделкам и т.п.). Удалённые не возвращаются."""
+        if not client_ids:
+            return {}
+        result = await self.session.execute(
+            select(ClientModel.id, ClientModel.name).where(
+                ClientModel.id.in_(client_ids), ClientModel.not_deleted_filter()
+            )
+        )
+        return {row[0]: row[1] for row in result.all()}
+
     async def get_due_for_reminder(self, today: date) -> list[tuple[ClientModel, UserModel]]:
         """Клиенты, о которых пора напомнить: дата наступила, ещё не напоминали, есть ответственный.
         Вызывается из планировщика без привязки к компании — видит все компании."""

@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from src.core.config import GROQ_LLM_MODEL, GROQ_STT_MODEL
 from src.services.voice_ai import (
     _mp3_to_ogg_opus,
     _system_prompt,
@@ -255,7 +256,7 @@ class TestTranscribeVoice:
         await transcribe_voice(b"audio-data")
 
         call_kwargs = mock_groq.audio.transcriptions.create.call_args.kwargs
-        assert call_kwargs["model"] == "whisper-large-v3"
+        assert call_kwargs["model"] == GROQ_STT_MODEL
         assert call_kwargs["language"] == "ru"
         assert call_kwargs["response_format"] == "text"
         # Файл передаётся как (filename, file_object, mime_type)
@@ -472,7 +473,7 @@ class TestCallLlmWithTools:
         await call_llm_with_tools("текст", history=[])
 
         call_kwargs = mock_groq.chat.completions.create.call_args.kwargs
-        assert call_kwargs["model"] == "llama-3.3-70b-versatile"
+        assert call_kwargs["model"] == GROQ_LLM_MODEL
         assert call_kwargs["tool_choice"] == "auto"
         tool_names = {t["function"]["name"] for t in call_kwargs["tools"]}
         assert "create_task" in tool_names
@@ -504,3 +505,50 @@ class TestProcessVoiceMessage:
 
         messages = mock_groq.chat.completions.create.call_args.kwargs["messages"]
         assert messages[-1]["content"] == "покажи мои задачи"
+
+
+class TestGroqModelSelection:
+    """Модели Groq живут в настройках: Groq выводит их из обращения (llama-3.3-70b-versatile — 16.08.2026)."""
+
+    RETIRED = {
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "qwen/qwen3-32b",
+        "qwen/qwen3.6-27b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+    }  # https://console.groq.com/docs/deprecations
+
+    def test_defaults_are_not_retired_models(self):
+        assert GROQ_LLM_MODEL not in self.RETIRED
+        assert GROQ_STT_MODEL not in {"distil-whisper-large-v3-en"}
+
+    @pytest.mark.asyncio
+    async def test_gpt_oss_gets_reasoning_options_and_a_larger_limit(self, mock_groq):
+        mock_groq.chat.completions.create = AsyncMock(
+            return_value=make_chat_response(finish_reason="stop", tool_calls=None, content="ok")
+        )
+        with patch("src.services.voice_ai.GROQ_LLM_MODEL", "openai/gpt-oss-120b"):
+            await call_llm_with_tools("текст", history=[])
+        kwargs = mock_groq.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == "openai/gpt-oss-120b"
+        assert kwargs["reasoning_effort"] == "low" and kwargs["include_reasoning"] is False
+        assert kwargs["max_tokens"] == 2048
+        assert "reasoning_format" not in kwargs  # для GPT-OSS не поддерживается
+
+    @pytest.mark.asyncio
+    async def test_other_models_do_not_get_gpt_oss_only_options(self, mock_groq):
+        mock_groq.chat.completions.create = AsyncMock(
+            return_value=make_chat_response(finish_reason="stop", tool_calls=None, content="ok")
+        )
+        with patch("src.services.voice_ai.GROQ_LLM_MODEL", "some/other-model"):
+            await call_llm_with_tools("текст", history=[])
+        kwargs = mock_groq.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == "some/other-model" and kwargs["max_tokens"] == 1024
+        assert "reasoning_effort" not in kwargs and "include_reasoning" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_stt_model_is_configurable(self, mock_groq):
+        mock_groq.audio.transcriptions.create = AsyncMock(return_value="text")
+        with patch("src.services.voice_ai.GROQ_STT_MODEL", "whisper-large-v3-turbo"):
+            await transcribe_voice(b"audio-data")
+        assert mock_groq.audio.transcriptions.create.call_args.kwargs["model"] == "whisper-large-v3-turbo"

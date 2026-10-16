@@ -1,0 +1,22 @@
+# src/ai/llm.py
+"""Groq-реализация LLMClient. Единственное место пакета, которое знает про конкретного провайдера."""
+
+from src.services import voice_ai
+
+_RULES = """
+Работа с CRM:
+- Имена людей и клиентов передавай как их назвали; имя сотрудника — в начальной форме («Петру» → «Петр»).
+- «завтра», «в пятницу» — считай от сегодняшней даты и передавай как YYYY-MM-DD; «в 10» → время 10:00.
+- «больше месяца» → days=30; «неделя» → 7.
+- Запись (создание, перевод, заметка) система сама подтвердит у пользователя — не спрашивай «вы уверены?».
+- Если не хватает обязательного — ответь коротким вопросом текстом, не вызывай инструмент."""
+
+
+def build_hints(tool_hints: str) -> str:
+    """Дополнение к системному промпту: правила работы с CRM + подсказки инструментов, доступных пользователю."""
+    return f"{_RULES}\n{tool_hints}"
+
+
+class GroqLLM:
+    async def plan(self, text: str, history: list[dict], *, tools: list[dict], hints: str) -> list[dict]:
+        return await voice_ai.call_llm_with_tools(text, history, tools=tools, extra_hints=build_hints(hints))

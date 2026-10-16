@@ -144,7 +144,7 @@ class PipelineUpdate(BaseModel):
 class StageCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     kind: StageKind = StageKind.open
-    position: Optional[int] = Field(None, ge=0)  # с нуля; остальные сдвигаются. Не передана — в конец
+    position: Optional[int] = Field(default=None, ge=0)  # с нуля; остальные сдвигаются. Не передана — в конец
     pipeline_id: Optional[int] = None  # не передан — воронка по умолчанию (первая)
     color: Optional[str] = None  # "#rrggbb"
 
@@ -162,8 +162,8 @@ class StageCreate(BaseModel):
 class StageUpdate(BaseModel):
     """Тип стадии (kind) после создания не меняется."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    position: Optional[int] = Field(None, ge=0)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    position: Optional[int] = Field(default=None, ge=0)
     color: Optional[str] = None  # "#rrggbb"; null — сбросить на цвет по виду стадии
 
     @field_validator("color")
@@ -191,7 +191,7 @@ class DealCreate(BaseModel):
     currency: Optional[str] = None  # не передана — UAH
     owner_id: Optional[int] = None  # не передан — создатель; назначать другого может admin/manager
     expected_close_date: Optional[date] = None
-    notes: Optional[str] = Field(None, max_length=5000)
+    notes: Optional[str] = Field(default=None, max_length=5000)
     pipeline_id: Optional[int] = None  # воронка для новой сделки; не передана — воронка по умолчанию
     stage_id: Optional[int] = None  # не передана — первая открытая стадия выбранной воронки
 
@@ -216,8 +216,8 @@ class DealUpdate(BaseModel):
     Процессные (amount, currency, owner_id, expected_close_date): только admin и manager.
     Стадия меняется отдельно: POST /deals/{id}/move."""
 
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    notes: Optional[str] = Field(None, max_length=5000)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=5000)
     amount: Optional[Money] = None
     currency: Optional[str] = None
     owner_id: Optional[int] = None
@@ -246,8 +246,8 @@ class DealMove(BaseModel):
     не передана — в конец колонки. Тот же stage_id + position — перестановка внутри колонки."""
 
     stage_id: int
-    position: Optional[int] = Field(None, ge=0)
-    lost_reason: Optional[str] = Field(None, max_length=500)  # обязательна для стадии вида lost
+    position: Optional[int] = Field(default=None, ge=0)
+    lost_reason: Optional[str] = Field(default=None, max_length=500)  # обязательна для стадии вида lost
 
     @field_validator("lost_reason")
     @classmethod

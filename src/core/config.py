@@ -87,6 +87,11 @@ class Settings(BaseSettings):
 
     # AI
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    # Модели Groq. Groq регулярно выводит модели из обращения (llama-3.3-70b-versatile отключена 16.08.2026),
+    # поэтому названия — в настройках: при следующей миграции достаточно поменять .env, без правки кода.
+    # Актуальный список и замены: https://console.groq.com/docs/deprecations
+    groq_llm_model: str = Field(default="openai/gpt-oss-120b", alias="GROQ_LLM_MODEL")
+    groq_stt_model: str = Field(default="whisper-large-v3", alias="GROQ_STT_MODEL")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     super_admin_tg_id: int = Field(default=0, alias="SUPER_ADMIN_TG_ID")
 
@@ -203,6 +208,8 @@ BOT_TOKEN = settings.bot_token
 CHAT_BRIDGE_GROUP_ID = settings.chat_bridge_group_id
 CHAT_BRIDGE_WORKSPACE_ID = settings.chat_bridge_workspace_id
 GROQ_API_KEY = settings.groq_api_key
+GROQ_LLM_MODEL = settings.groq_llm_model
+GROQ_STT_MODEL = settings.groq_stt_model
 VOICE_RATE_LIMIT_COUNT = settings.voice_rate_limit_count
 VOICE_RATE_LIMIT_WINDOW_SECONDS = settings.voice_rate_limit_window_seconds
 GEMINI_API_KEY = settings.gemini_api_key
