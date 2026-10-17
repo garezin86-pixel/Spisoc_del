@@ -249,3 +249,36 @@ def test_tools_call_services_not_raw_sql_for_crm_writes():
     for path in Path("src/ai").rglob("*.py"):
         text = path.read_text(encoding="utf8")
         assert "session.add" not in text and "insert(" not in text, path
+
+
+# ── ответы модели: без Markdown, правила против выдуманных данных ─────────────
+@pytest.mark.parametrize(
+    ("raw", "clean"),
+    [
+        ("**Ромашка и компания** (тел.: 123)", "Ромашка и компания (тел.: 123)"),
+        ("- первый\n- второй", "• первый\n• второй"),
+        ("# Заголовок\n`код`", "Заголовок\nкод"),
+        ("__важно__ и 2 * 3", "важно и 2 * 3"),
+        ("обычный текст", "обычный текст"),
+    ],
+)
+def test_strip_markdown(raw, clean):
+    from src.ai.agent import strip_markdown
+
+    assert strip_markdown(raw) == clean
+
+
+async def test_text_answers_of_the_model_are_cleaned_of_markdown(world):
+    maker, ids, _ = world
+    agent, _ = agent_with([call("text_response", text="**Уточните**, какого клиента?")])
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        turn = await agent.handle_text(ctx, "…", [])
+    assert turn.messages == ["Уточните, какого клиента?"]
+
+
+def test_prompt_forbids_answering_about_data_without_a_tool():
+    """Модель не должна отвечать «клиентов нет» из головы: по живой переписке она так делала без инструмента."""
+    from src.ai.llm import build_hints
+
+    text = build_hints("hint")
+    assert "ТОЛЬКО через инструмент" in text and "Никогда не отвечай" in text and "без Markdown" in text

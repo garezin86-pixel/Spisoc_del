@@ -53,6 +53,35 @@ async def _find_client(ctx: AIContext, args: dict[str, Any]):
     return Done("\n".join(lines))
 
 
+# ── list_clients ─────────────────────────────────────────────────────────────
+_TYPE_LABELS = {"company": "компания", "person": "частное лицо"}
+
+
+async def _list_clients(ctx: AIContext, args: dict[str, Any]):
+    client_type = args.get("client_type")
+    if client_type not in _TYPE_LABELS:
+        client_type = None
+    mine = bool(args.get("mine"))
+    search = str(args.get("search") or "").strip() or None
+    clients, total = await ctx.clients.get_clients(
+        search, 0, 15, owner_id=ctx.user.id if mine else None, client_type=client_type
+    )
+    scope = ["ваши"] if mine else []
+    if client_type:
+        scope.append("частные лица" if client_type == "person" else "компании")
+    title = f"👥 Клиенты ({', '.join(scope)})" if scope else "👥 Клиенты"
+    if not clients:
+        return Done(f"🔍 {title}: никого не найдено.")
+    owners = await _owner_names(ctx)
+    lines = [f"{title}: {total}"]
+    for c in clients:
+        owner = f"@{owners[c.owner_id]}" if c.owner_id in owners else "без ответственного"
+        lines.append(f"• {c.name} — {_TYPE_LABELS.get(c.client_type, c.client_type)}, {owner}")
+    if total > len(clients):
+        lines.append(f"…и ещё {total - len(clients)}")
+    return Done("\n".join(lines))
+
+
 # ── list_clients_without_contact ─────────────────────────────────────────────
 async def _clients_without_contact(ctx: AIContext, args: dict[str, Any]):
     try:
@@ -341,6 +370,26 @@ def register(registry: ToolRegistry) -> None:
             },
             run=_find_client,
             hint="«найди клиента», «есть ли клиент», «телефон клиента» — find_client.",
+        )
+    )
+    registry.register(
+        Tool(
+            name="list_clients",
+            description=(
+                "Показать список клиентов: всех, только своих, по типу. «Люди», «частные лица», «B2C/Б2С» — person; "
+                "«компании», «B2B/Б2Б» — company"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "mine": {"type": "boolean", "description": "true — только клиенты пользователя («мои клиенты»)"},
+                    "client_type": {"type": "string", "enum": ["company", "person"], "description": "Тип клиента"},
+                    "search": {"type": "string", "description": "Часть названия, телефона или email"},
+                },
+                "required": [],
+            },
+            run=_list_clients,
+            hint="«покажи всех клиентов», «мои клиенты», «клиенты-люди/компании» — list_clients.",
         )
     )
     registry.register(

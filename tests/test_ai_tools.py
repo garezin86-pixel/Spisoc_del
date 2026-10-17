@@ -406,3 +406,83 @@ async def test_task_edit_tools_confirm_before_changing(world, name):
         out = await call(ctx, name, search="Отчёт", **args)
         assert isinstance(out, Confirm), out
         assert (await commit(ctx, out)).startswith(("✅", "📝"))
+
+
+# ── list_clients (по живой переписке: «мои клиенты», «покажи всех клиентов», «люди Б2С») ──────────
+async def test_list_clients_all_mine_and_by_type(world):
+    maker, ids, _ = world
+    async with maker() as s:
+        s.add(ClientModel(name="Алекс Алексеев", client_type="person", workspace_id=ids["a"], owner_id=ids["other"]))
+        await s.commit()
+    await add_clients(maker, ids, ("Лютик", "owner", 0))
+
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        everyone = await call(ctx, "list_clients")
+        assert isinstance(everyone, Done) and "Клиенты: 3" in everyone.text
+        assert "Ромашка" in everyone.text and "Алекс Алексеев" in everyone.text and "Лютик" in everyone.text
+        assert "компания" in everyone.text and "частное лицо" in everyone.text
+        assert "Клиентов Б" not in everyone.text and "Б-фирма" not in everyone.text  # клиент другой компании не виден
+
+        mine = await call(ctx, "list_clients", mine=True)
+        assert "Клиенты (ваши): 2" in mine.text and "Алекс Алексеев" not in mine.text
+
+        people = await call(ctx, "list_clients", client_type="person")
+        assert "частные лица): 1" in people.text and "Алекс Алексеев" in people.text and "Ромашка" not in people.text
+
+        found = await call(ctx, "list_clients", search="Лютик")
+        assert "Лютик" in found.text and "Ромашка" not in found.text
+        assert "никого не найдено" in (await call(ctx, "list_clients", search="Несуществующий")).text
+        # неизвестный тип игнорируется (модель могла придумать «b2c») — это «все клиенты», а не ошибка
+        assert "Клиенты: 3" in (await call(ctx, "list_clients", client_type="b2c")).text
+
+
+async def test_list_clients_reports_total_when_truncated(world):
+    maker, ids, _ = world
+    await add_clients(maker, ids, *[(f"Клиент {i:02d}", "owner", 0) for i in range(20)])
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        out = await call(ctx, "list_clients")
+    assert "Клиенты: 21" in out.text and "…и ещё 6" in out.text and out.text.count("•") == 15
+
+
+async def test_list_clients_is_offered_to_everyone(world):
+    maker, ids, _ = world
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        assert "list_clients" in {t["function"]["name"] for t in default_registry().definitions(ctx.user)}
+        assert "list_clients" in default_registry().hints(ctx.user)
+
+
+# ── поиск задач по номеру и коротким словам (раньше «найди задачу 50» возвращало первые 10 любых) ──────
+async def _make_tasks(maker, ids, who, titles):
+    async with ai_ctx(maker, ids, who) as ctx:
+        made = {}
+        for title in titles:
+            await commit(ctx, await call(ctx, "create_task", title=title))
+        async with maker() as s:
+            for task in (await s.execute(select(SpisokModel))).scalars().all():
+                made[task.title] = task.id
+        return made
+
+
+async def test_get_tasks_by_number_and_short_words(world):
+    maker, ids, _ = world
+    made = await _make_tasks(maker, ids, "owner", ["Купить молоко", "ТО авто", "Отчёт 50 клиентов"])
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        by_id = await call(ctx, "get_tasks", search=str(made["Купить молоко"]))
+        assert f"[#{made['Купить молоко']}]" in by_id.text and "ТО авто" not in by_id.text.replace("Отчёт", "")
+        hashed = await call(ctx, "get_tasks", search=f"#{made['ТО авто']}")
+        assert f"[#{made['ТО авто']}]" in hashed.text
+        short = await call(ctx, "get_tasks", search="ТО")  # слово из двух букв раньше отбрасывалось
+        assert "ТО авто" in short.text and "Купить молоко" not in short.text
+        number_in_title = await call(ctx, "get_tasks", search="50")
+        assert "Отчёт 50 клиентов" in number_in_title.text
+        assert "не найдены" in (await call(ctx, "get_tasks", search="99999")).text  # не «показать всё»
+
+
+async def test_get_tasks_reports_total_when_truncated_and_edit_by_number(world):
+    maker, ids, _ = world
+    made = await _make_tasks(maker, ids, "owner", [f"Задача {i:02d}" for i in range(12)])
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        listing = await call(ctx, "get_tasks")
+        assert "Найдено: 12 (показаны первые 10)" in listing.text
+        out = await call(ctx, "update_task_status", search=f"#{made['Задача 03']}", status="done")
+        assert isinstance(out, Confirm) and "Задача 03" in out.text

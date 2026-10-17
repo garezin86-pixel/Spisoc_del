@@ -7,7 +7,7 @@
 
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from src.ai.context import AIContext
 from src.ai.registry import Tool, ToolRegistry
@@ -131,17 +131,46 @@ def _task_line(task: SpisokModel) -> str:
     return f"{PRIORITY_EMOJI.get(priority, '🔵')} {task.title} — {STATUS_LABEL.get(status, status)} [#{task.id}]"
 
 
+def _text_condition(query: str):
+    """Условие поиска по тексту: «50» и «#50» — номер задачи (или слово в названии), слова короче 3 букв не теряются.
+
+    Раньше слова короче трёх символов отбрасывались, и «найди задачу 50» превращалось в «покажи всё».
+    """
+    parts = [w.strip("#.,;:!?«»\"'") for w in query.split()]
+    parts = [w for w in parts if w]
+    conditions = []
+    for word in parts:
+        if word.isdigit():
+            conditions.append(SpisokModel.id == int(word))
+        if len(word) > 2 or word.isdigit():
+            conditions.append(SpisokModel.title.ilike(f"%{word}%"))
+    return or_(*conditions) if conditions else SpisokModel.title.ilike(f"%{query.strip()}%")
+
+
+def _visible_tasks(ctx: AIContext):
+    return [
+        SpisokModel.deleted_at.is_(None),
+        or_(SpisokModel.user_id == ctx.user.id, SpisokModel.author_id == ctx.user.id),
+    ]
+
+
+async def _search_condition(ctx: AIContext, query: str):
+    """Одно число («50», «#50») — это номер задачи: если такая видна пользователю, ищем только её, а не все задачи
+    со «50» в названии. Нет такого номера — обычный поиск по тексту."""
+    number = query.strip().lstrip("#")
+    if number.isdigit():
+        exists = await ctx.session.scalar(
+            select(SpisokModel.id).where(and_(*_visible_tasks(ctx), SpisokModel.id == int(number)))
+        )
+        if exists is not None:
+            return SpisokModel.id == int(number)
+    return _text_condition(query)
+
+
 async def _search_tasks(ctx: AIContext, query: str, limit: int = 5) -> list[SpisokModel]:
-    words = [w.strip() for w in query.split() if len(w.strip()) > 2] or [query.strip()]
     result = await ctx.session.execute(
         select(SpisokModel)
-        .where(
-            and_(
-                SpisokModel.deleted_at.is_(None),
-                or_(SpisokModel.user_id == ctx.user.id, SpisokModel.author_id == ctx.user.id),
-                or_(*[SpisokModel.title.ilike(f"%{w}%") for w in words]),
-            )
-        )
+        .where(and_(*_visible_tasks(ctx), await _search_condition(ctx, query)))
         .order_by(SpisokModel.created_at.desc())
         .limit(limit)
     )
@@ -149,27 +178,25 @@ async def _search_tasks(ctx: AIContext, query: str, limit: int = 5) -> list[Spis
 
 
 async def _get_tasks(ctx: AIContext, args: dict[str, Any]):
-    conditions = [
-        SpisokModel.deleted_at.is_(None),
-        or_(SpisokModel.user_id == ctx.user.id, SpisokModel.author_id == ctx.user.id),
-    ]
-    if args.get("search"):
-        words = [w for w in str(args["search"]).split() if len(w) > 2]
-        if words:
-            conditions.append(or_(*[SpisokModel.title.ilike(f"%{w}%") for w in words]))
+    conditions = _visible_tasks(ctx)
+    if str(args.get("search") or "").strip():
+        conditions.append(await _search_condition(ctx, str(args["search"])))
     if args.get("status") in _STATUSES:
         conditions.append(SpisokModel.status == TaskStatus(args["status"]))
     if args.get("priority") in _PRIORITIES:
         conditions.append(SpisokModel.priority == TaskPriority(args["priority"]))
     if args.get("overdue"):
         conditions += [SpisokModel.deadline < ctx.now(), SpisokModel.status != TaskStatus.done]
+    where = and_(*conditions)
+    total = await ctx.session.scalar(select(func.count()).select_from(SpisokModel).where(where)) or 0
     result = await ctx.session.execute(
-        select(SpisokModel).where(and_(*conditions)).order_by(SpisokModel.created_at.desc()).limit(10)
+        select(SpisokModel).where(where).order_by(SpisokModel.created_at.desc()).limit(10)
     )
     tasks = list(result.scalars().all())
     if not tasks:
         return Done("🔍 Задачи не найдены.")
-    return Done("\n".join([f"🔍 Найдено: {len(tasks)}", *[_task_line(t) for t in tasks]]))
+    more = f" (показаны первые {len(tasks)})" if total > len(tasks) else ""
+    return Done("\n".join([f"🔍 Найдено: {total}{more}", *[_task_line(t) for t in tasks]]))
 
 
 async def _resolve_task(ctx: AIContext, tool: str, args: dict[str, Any]) -> SpisokModel | Outcome:

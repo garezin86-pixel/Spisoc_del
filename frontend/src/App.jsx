@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setTokenRefreshHandler } from "./api";
 import { ChatBubble } from "./components/ChatBubble";
+import { APP_DESCRIPTION, APP_LOGO, APP_NAME } from "./constants/branding";
 import { CommandPalette } from "./components/CommandPalette";
 import { Icon } from "./components/Icon";
 import { NotificationBell } from "./components/NotificationBell";
@@ -55,6 +56,11 @@ function App() {
     // подписываемся, чтобы все компоненты/эффекты сразу получали новый токен
     // и не продолжали слать запросы со старым (что приводило к повторным 401
     // и refresh_token_reuse на бэкенде).
+    // Вкладок много, на узком экране панель прокручивается: активную держим в поле зрения
+    useEffect(() => {
+        document.querySelector(".tab-btn.active")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }, [tab]);
+
     useEffect(() => {
         setTokenRefreshHandler((newToken) => setToken(newToken));
         return () => setTokenRefreshHandler(null);
@@ -763,10 +769,10 @@ function App() {
             <div className="login-page">
                 <div className="auth-card">
                     <div className="login-logo">
-                        <div className="logo-mark">{import.meta.env.VITE_APP_LOGO}</div>
+                        <div className="logo-mark">{APP_LOGO}</div>
                         <div>
-                            <div className="brand-name">{import.meta.env.VITE_APP_NAME}</div>
-                            <div className="brand-tagline">{import.meta.env.VITE_APP_DESCRIPTION}</div>
+                            <div className="brand-name">{APP_NAME}</div>
+                            <div className="brand-tagline">{APP_DESCRIPTION}</div>
                         </div>
                     </div>
                     <div className="auth-title">Добро пожаловать</div>
@@ -825,10 +831,10 @@ function App() {
         <div className="page-shell">
             <header className="app-header">
                 <div className="app-header-left">
-                    <div className="logo-mark">{import.meta.env.VITE_APP_LOGO}</div>
+                    <div className="logo-mark">{APP_LOGO}</div>
                     <div>
-                        <div className="brand-name">{import.meta.env.VITE_APP_NAME}</div>
-                        <div className="brand-tagline">{import.meta.env.VITE_APP_DESCRIPTION}</div>
+                        <div className="brand-name">{APP_NAME}</div>
+                        <div className="brand-tagline">{APP_DESCRIPTION}</div>
                     </div>
                 </div>
                 <div className="header-right">

@@ -12,6 +12,7 @@
   (иначе «создай клиента и сделку для него» не нашёл бы только что созданного клиента).
 """
 
+import re
 from typing import Protocol
 
 from src.ai.context import AIContext
@@ -20,6 +21,15 @@ from src.ai.types import Choose, Confirm, Done, Pending, Refuse, ToolCall
 
 MAX_CALLS = 5  # больше вызовов за одну фразу не выполняем: защита от «размножения» команд
 _FAILURE_PREFIXES = ("❌", "⛔", "❓")
+
+
+def strip_markdown(text: str) -> str:
+    """Ответ модели без Markdown: в Telegram (HTML) и обычном тексте «**жирный**» выглядит как мусор."""
+    text = re.sub(r"\*\*(.+?)\*\*|__(.+?)__", lambda m: m.group(1) or m.group(2), text, flags=re.S)
+    text = text.replace("`", "")
+    text = re.sub(r"^\s{0,3}#{1,6}\s+", "", text, flags=re.M)
+    text = re.sub(r"^(\s*)[-*]\s+", r"\1• ", text, flags=re.M)
+    return text.strip()
 
 
 class LLMClient(Protocol):
@@ -85,7 +95,7 @@ class AIAgent:
         while queue:
             call = queue.pop(0)
             if call.name == "text_response":
-                if text := str(call.arguments.get("text") or "").strip():
+                if text := strip_markdown(str(call.arguments.get("text") or "")):
                     messages.append(text)
                 continue
             outcome = await self.registry.run(ctx, call)

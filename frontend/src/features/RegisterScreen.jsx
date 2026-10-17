@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../api";
+import { APP_DESCRIPTION, APP_LOGO, APP_NAME } from "../constants/branding";
 import { registerError } from "../utils/authErrors";
 
 /**
@@ -81,10 +82,10 @@ export function RegisterScreen({ initialInvite, onRegistered, onBackToLogin }) {
 
     const logo = (
         <div className="login-logo">
-            <div className="logo-mark">{import.meta.env.VITE_APP_LOGO}</div>
+            <div className="logo-mark">{APP_LOGO}</div>
             <div>
-                <div className="brand-name">{import.meta.env.VITE_APP_NAME}</div>
-                <div className="brand-tagline">{import.meta.env.VITE_APP_DESCRIPTION}</div>
+                <div className="brand-name">{APP_NAME}</div>
+                <div className="brand-tagline">{APP_DESCRIPTION}</div>
             </div>
         </div>
     );

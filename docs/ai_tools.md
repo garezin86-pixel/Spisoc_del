@@ -14,7 +14,7 @@ API подключаются так же: создать `AIContext`, вызва
 | Модуль | Что делает |
 |---|---|
 | `src/ai/registry.py` | `Tool`, `ToolRegistry`: описание для LLM, роль-гейт `allowed`, `run`, `commit` |
-| `src/ai/tools/crm.py` | `find_client`, `list_clients_without_contact`, `create_client`, `create_deal`, `move_deal_stage`, `list_deals`, `add_note` |
+| `src/ai/tools/crm.py` | `find_client`, `list_clients`, `list_clients_without_contact`, `create_client`, `create_deal`, `move_deal_stage`, `list_deals`, `add_note` |
 | `src/ai/tools/tasks.py` | `create_task` (можно с клиентом) и прежние команды: `get_tasks`, `update_task_status`, `update_task_priority`, `update_task_description`, `assign_task` |
 | `src/ai/agent.py` | `AIAgent`: очередь вызовов, подтверждение, выбор из нескольких |
 | `src/ai/resolve.py` | поиск клиента/сотрудника/стадии: регистр, ё/е, ООО/ТОВ, падежи («Петру» → «Петр») |

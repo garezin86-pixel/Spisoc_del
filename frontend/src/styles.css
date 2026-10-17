@@ -2042,3 +2042,39 @@ textarea {
 .home-stage-name { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
 .home-stage-count { font-size: 1.3rem; font-weight: 700; }
 .home-stage-sum { font-size: 0.78rem; color: var(--text-dim); margin-top: 2px; }
+
+/* ── Панель вкладок на широких экранах ────────────────────────────────────────
+   Вкладок больше дюжины: раньше кнопки сжимались ниже ширины своего содержимого, и подписи с иконками налезали друг на
+   друга. Теперь кнопки не сжимаются, а если панель не помещается — она прокручивается по горизонтали. */
+@media (min-width: 761px) {
+  .tab-bar {
+    max-width: 100%;
+    overflow-x: auto;
+    /* Полоса в цвет темы, как у канбана: без scrollbar-color браузер рисует светлую системную со стрелками */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-hover) transparent;
+  }
+
+  .tab-bar::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .tab-bar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .tab-bar::-webkit-scrollbar-thumb {
+    background: var(--border-hover);
+    border-radius: 999px;
+  }
+
+  .tab-bar::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  .tab-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 5px 10px;
+  }
+}
