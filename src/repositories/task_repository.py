@@ -220,6 +220,7 @@ class TaskRepository(AbstractTaskRepository):
         filter_user_group=None,
         group_id: Optional[int] = None,
         project_id: Optional[int] = None,
+        client_id: Optional[int] = None,
         filter_type=None,
         is_done: Optional[bool] = None,
         priority: str | None = None,
@@ -234,6 +235,7 @@ class TaskRepository(AbstractTaskRepository):
             selectinload(SpisokModel.user),
             selectinload(SpisokModel.group),
             selectinload(SpisokModel.project),
+            selectinload(SpisokModel.client),
             selectinload(SpisokModel.tags),
             selectinload(SpisokModel.checklist_items),
         )
@@ -291,11 +293,15 @@ class TaskRepository(AbstractTaskRepository):
 
         if project_id is not None:
             query = query.where(SpisokModel.project_id == project_id)
-        else:
+        elif client_id is None:
             # Общий список задач ("Задачи") не должен показывать задачи,
             # привязанные к проекту — для них есть отдельная вкладка "Проекты".
             # Чтобы увидеть задачи конкретного проекта, нужно явно передать project_id.
+            # Задачи клиента показываем независимо от проекта: в карточке клиента нужны все.
             query = query.where(SpisokModel.project_id.is_(None))
+
+        if client_id is not None:
+            query = query.where(SpisokModel.client_id == client_id)
 
         if deadline_from is not None:
             query = query.where(SpisokModel.deadline.is_not(None), SpisokModel.deadline >= deadline_from)
@@ -440,6 +446,7 @@ class TaskRepository(AbstractTaskRepository):
         filter_user_group=None,
         group_id: Optional[int] = None,
         project_id: Optional[int] = None,
+        client_id: Optional[int] = None,
         filter_type=None,
         is_done: Optional[bool] = None,
         priority: str | None = None,
@@ -452,6 +459,7 @@ class TaskRepository(AbstractTaskRepository):
             filter_user_group=filter_user_group,
             group_id=group_id,
             project_id=project_id,
+            client_id=client_id,
             filter_type=filter_type,
             is_done=is_done,
             priority=priority,

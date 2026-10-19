@@ -40,6 +40,7 @@ from src.repositories.abstract import (
     AbstractTaskRepository,
     AbstractUserRepository,
 )
+from src.repositories.client_repository import ClientRepository
 from src.repositories.task_dependency_repository import TaskDependencyRepository
 from src.schemas.task import (
     BulkTaskUpdate,
@@ -117,6 +118,8 @@ class TaskService:
             if not group:
                 not_found(GROUP_NOT_FOUND)
 
+        await self._ensure_client_exists(data.client_id)
+
         deadline = None
         if data.deadline is not None:
             deadline = data.deadline.replace(second=0, microsecond=0)
@@ -129,6 +132,7 @@ class TaskService:
             deadline=deadline,
             author_id=current_user.id,
             project_id=data.project_id,
+            client_id=data.client_id,
             status=data.status,
             priority=data.priority,
             recurrence_rule=data.recurrence_rule,
@@ -151,6 +155,17 @@ class TaskService:
             asyncio.create_task(notify_task_assigned(task.id))
         tasks_created.inc()
         return task
+
+    async def _ensure_client_exists(self, client_id: int | None) -> None:
+        """Клиент должен существовать в компании пользователя (чужие и удалённые — 404, как в остальных CRM-сервисах).
+
+        Привязать задачу к клиенту может тот, кто её создаёт/редактирует: видимость клиентов в CRM общая для компании
+        (читать список клиентов может любой сотрудник), права на изменение самого клиента задача не затрагивает.
+        """
+        if client_id is None or self.session is None:
+            return
+        if await ClientRepository(self.session).get_by_id(client_id) is None:
+            not_found("Клиент не найден")
 
     @staticmethod
     def _next_deadline(current_deadline: datetime | None, rule: RecurrenceRule) -> datetime | None:
@@ -196,6 +211,7 @@ class TaskService:
             group_id=completed_task.group_id,
             author_id=completed_task.author_id,
             project_id=completed_task.project_id,
+            client_id=completed_task.client_id,
             priority=completed_task.priority,
             status=TaskStatus.todo,
             deadline=next_deadline,
@@ -363,6 +379,11 @@ class TaskService:
         for field in simple_fields:
             if field in update_data:
                 setattr(task, field, update_data[field])
+
+        # Клиент: null — отвязать, число — привязать (после проверки, что он есть в компании)
+        if "client_id" in update_data:
+            await self._ensure_client_exists(update_data["client_id"])
+            task.client_id = update_data["client_id"]
 
         # completed_at — точная отметка перехода в done, для аналитики
         # "закрыто в срок". Обновляем ДО task_repo.update(), чтобы попало

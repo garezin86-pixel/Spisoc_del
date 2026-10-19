@@ -4,6 +4,7 @@ import { AuditPanel } from "./AuditPanel";
 import { ChecklistPanel } from "./ChecklistPanel";
 import { CommentsPanel } from "./CommentsPanel";
 import { DependenciesPanel } from "./DependenciesPanel";
+import { ClientPicker } from "./ClientPicker";
 import { Icon } from "./Icon";
 import { StatusMenu } from "./StatusMenu";
 import { TagsPanel } from "./TagsPanel";
@@ -12,7 +13,7 @@ import { ICONS } from "../constants/icons";
 import { PRIORITY_COLORS, PRIORITY_LABELS, PRIORITY_ICONS } from "../constants/priority";
 import { formatDeadline } from "../utils/date";
 
-export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole, selected, onToggleSelect }) {
+export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole, selected, onToggleSelect, onOpenClient }) {
     const [expanded, setExpanded] = useState(!collapsible);
     const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
@@ -43,6 +44,8 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
         deadline: formatForInput(task.deadline),
         priority: task.priority || "medium",
         recurrence_rule: task.recurrence_rule || "none",
+        client_id: task.client_id ?? null,
+        client_name: task.client_name ?? "",
     });
     const [reassignUserId, setReassignUserId] = useState("");
     const [reassignGroupId, setReassignGroupId] = useState("");
@@ -58,6 +61,7 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
                 : null,
             priority: editForm.priority,
             recurrence_rule: editForm.recurrence_rule,
+            client_id: editForm.client_id ?? null,
         });
         setSaving(false); setEditing(false);
     }
@@ -91,9 +95,10 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
                     }}>
                         <span className="task-id">#{task.id}</span> {task.title}
                     </div>
-                    {dl && (
+                    {(dl || task.client_name) && (
                         <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                            📅 {dl.fmt}
+                            {dl && <>📅 {dl.fmt}</>}
+                            {task.client_name && <>{dl ? " · " : ""}👤 {task.client_name}</>}
                         </div>
                     )}
                 </div>
@@ -173,6 +178,15 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
                             {task.group?.name && (
                                 <span className="meta-chip"><Icon d={ICONS.group} /> {task.group.name}</span>
                             )}
+                            {task.client_name && (
+                                <span
+                                    className="meta-chip" title="Клиент"
+                                    style={{ cursor: onOpenClient ? "pointer" : "default" }}
+                                    onClick={e => { e.stopPropagation(); onOpenClient?.(task.client_id); }}
+                                >
+                                    👤 {task.client_name}
+                                </span>
+                            )}
                             {task.comments_count > 0 && (
                                 <span className="meta-chip"><Icon d={ICONS.comment} /> {task.comments_count}</span>
                             )}
@@ -245,6 +259,14 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
                             <option value="high">🟠 Высокий</option>
                             <option value="critical">🔴 Критический</option>
                         </select>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">Клиент</label>
+                        <ClientPicker
+                            token={token} value={editForm.client_id} name={editForm.client_name}
+                            onChange={(id, name) => setEditForm(f => ({ ...f, client_id: id, client_name: name }))}
+                        />
                     </div>
 
                     <div className="form-group">

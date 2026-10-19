@@ -14,8 +14,8 @@ API подключаются так же: создать `AIContext`, вызва
 | Модуль | Что делает |
 |---|---|
 | `src/ai/registry.py` | `Tool`, `ToolRegistry`: описание для LLM, роль-гейт `allowed`, `run`, `commit` |
-| `src/ai/tools/crm.py` | `find_client`, `list_clients`, `list_clients_without_contact`, `create_client`, `create_deal`, `move_deal_stage`, `list_deals`, `add_note` |
-| `src/ai/tools/tasks.py` | `create_task` (можно с клиентом) и прежние команды: `get_tasks`, `update_task_status`, `update_task_priority`, `update_task_description`, `assign_task` |
+| `src/ai/tools/crm.py` | `find_client`, `list_clients`, `list_clients_without_contact`, `pipeline_summary`, `create_client`, `create_deal`, `move_deal_stage`, `list_deals`, `add_note` |
+| `src/ai/tools/tasks.py` | `create_task` (можно с клиентом) и прежние команды: `get_tasks` (в т.ч. «задачи клиента …»), `update_task_status`, `update_task_priority`, `update_task_description`, `assign_task` |
 | `src/ai/agent.py` | `AIAgent`: очередь вызовов, подтверждение, выбор из нескольких |
 | `src/ai/resolve.py` | поиск клиента/сотрудника/стадии: регистр, ё/е, ООО/ТОВ, падежи («Петру» → «Петр») |
 | `src/ai/llm.py` | единственное место, знающее про Groq |
@@ -81,7 +81,7 @@ GPT-OSS не поддерживает параллельные вызовы ин
 
 ## Ограничения
 
-- `create_task(client)`: связь с клиентом — в названии и описании задачи («Клиент: … (#id)»), отдельного поля в
-  задаче нет.
+- `create_task(client)` ставит настоящую связь `client_id` у задачи (поле есть в API: `POST/PATCH /tasks`,
+  фильтр `GET /tasks/filter?client_id=`); у задач, созданных до миграции `n9c0d1e2f3a4`, связи нет.
 - HTTP-эндпоинта для веба пока нет: реестр и агент готовы, ожидающее действие (`Pending`) сериализуется в JSON.
 - Качество выбора инструментов зависит от LLM; в тестах она подменена сценариями.

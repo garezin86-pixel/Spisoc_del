@@ -98,6 +98,7 @@ async def filter_tasks(
     filter_user_group: FilterUserGroup | None = Query(None),
     group_id: int | None = Query(None),
     project_id: int | None = Query(None),
+    client_id: int | None = Query(None, ge=1, description="Задачи, привязанные к клиенту (в т.ч. в проектах)"),
     filter_type: TaskFilter | None = Query(None),
     priority: TaskPriorityFilter | None = Query(None),
     status: TaskStatus | None = Query(None, description="Фильтр по статусу канбана"),
@@ -127,6 +128,7 @@ async def filter_tasks(
         search=search,
         tag_id=tag_id,
         target_user_id=target_user_id,
+        **({"client_id": client_id} if client_id is not None else {}),
     )
 
     return PaginatedResponse.create(

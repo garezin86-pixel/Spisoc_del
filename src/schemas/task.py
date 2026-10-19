@@ -26,6 +26,7 @@ class SpisokAddSchema(BaseModel):
     user_id: Optional[int] = Field(default=None, ge=1)
     group_id: Optional[int] = Field(default=None, ge=1)
     project_id: Optional[int] = Field(default=None, ge=1)
+    client_id: Optional[int] = Field(default=None, ge=1)  # CRM: клиент, к которому относится задача
     priority: TaskPriority = TaskPriority.medium
     status: TaskStatus = TaskStatus.todo
     recurrence_rule: RecurrenceRule = RecurrenceRule.none
@@ -67,6 +68,8 @@ class SpisokSchema(BaseModel):
     user: UserSchemaForTask | None
     group: GroupSchema | None
     project_id: Optional[int] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None  # название клиента (None — не привязана или клиент удалён)
     priority: TaskPriority = TaskPriority.medium
     status: TaskStatus = TaskStatus.todo
     recurrence_rule: RecurrenceRule = RecurrenceRule.none
@@ -88,6 +91,8 @@ class SpisokUpdate(BaseModel):
     priority: Optional[TaskPriority] = None
     status: Optional[TaskStatus] = None
     recurrence_rule: Optional[RecurrenceRule] = None
+    # Клиент: не передан — не меняется, null — отвязать, число — привязать (проверяется, что клиент есть в компании)
+    client_id: Optional[int] = Field(default=None, ge=1)
 
     @field_validator("deadline")
     @classmethod
@@ -124,6 +129,8 @@ class TaskResponse(BaseModel):
     user: UserSchemaForTask | None
     group: GroupSchema | None
     project_id: Optional[int] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
     priority: TaskPriority = TaskPriority.medium
     status: TaskStatus = TaskStatus.todo
     created_at: datetime

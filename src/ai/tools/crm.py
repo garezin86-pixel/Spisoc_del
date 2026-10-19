@@ -14,6 +14,7 @@ from src.ai.tools.common import (
     is_outcome,
     parse_amount,
     resolve_client,
+    resolve_owner,
     short,
 )
 from src.ai.types import Choose, Confirm, Done, Outcome, Refuse
@@ -61,12 +62,16 @@ async def _list_clients(ctx: AIContext, args: dict[str, Any]):
     client_type = args.get("client_type")
     if client_type not in _TYPE_LABELS:
         client_type = None
-    mine = bool(args.get("mine"))
     search = str(args.get("search") or "").strip() or None
+    owner = await resolve_owner(ctx, "list_clients", args)
+    if is_outcome(owner):
+        return owner
+    if owner is None and args.get("mine"):
+        owner = ctx.user
     clients, total = await ctx.clients.get_clients(
-        search, 0, 15, owner_id=ctx.user.id if mine else None, client_type=client_type
+        search, 0, 15, owner_id=owner.id if owner else None, client_type=client_type
     )
-    scope = ["ваши"] if mine else []
+    scope = ["ваши" if owner.id == ctx.user.id else f"@{owner.username}"] if owner else []
     if client_type:
         scope.append("частные лица" if client_type == "person" else "компании")
     title = f"👥 Клиенты ({', '.join(scope)})" if scope else "👥 Клиенты"
@@ -97,7 +102,14 @@ async def _clients_without_contact(ctx: AIContext, args: dict[str, Any]):
         None if scope_all else ctx.user.id, ctx.now() - timedelta(days=days), 10
     )
     scope = "всех ответственных" if scope_all else "ваших"
-    note = "\n(Показаны ваши клиенты: смотреть чужих могут admin и manager.)" if all_owners and not scope_all else ""
+    if all_owners and not scope_all:
+        note = "\n(Показаны ваши клиенты: смотреть чужих могут admin и manager.)"
+    elif not scope_all and is_manager(ctx.user):
+        # admin/manager по умолчанию видят свой список: подсказываем, как посмотреть всех,
+        # чтобы «нет» не вводило в заблуждение
+        note = "\nℹ️ Это только ваши клиенты. Клиенты всех ответственных: «клиенты без контакта у всех»."
+    else:
+        note = ""
     if total == 0:
         return Done(f"✅ Нет {scope} клиентов без контакта дольше {days} дн.{note}")
     lines = [f"📞 Клиентов {scope} без контакта дольше {days} дн.: {total}"]
@@ -234,9 +246,24 @@ async def _list_deals(ctx: AIContext, args: dict[str, Any]):
         if is_outcome(client):
             return client
         client_id = client.id
-    owner_id = None if (client_id is not None or (args.get("all_owners") and is_manager(ctx.user))) else ctx.user.id
+    owner = await resolve_owner(ctx, "list_deals", args)
+    if is_outcome(owner):
+        return owner
+    if owner is not None:
+        owner_id = owner.id
+    elif client_id is not None or (args.get("all_owners") and is_manager(ctx.user)):
+        owner_id = None
+    else:
+        owner_id = ctx.user.id
     deals, total = await ctx.deals.list_deals(0, 15, client_id=client_id, stage_id=stage_id, owner_id=owner_id)
-    scope = "по клиенту" if client_id is not None else ("всех ответственных" if owner_id is None else "ваши")
+    if client_id is not None:
+        scope = "по клиенту"
+    elif owner_id is None:
+        scope = "всех ответственных"
+    elif owner is not None and owner.id != ctx.user.id:
+        scope = f"@{owner.username}"
+    else:
+        scope = "ваши"
     where = f" на стадии «{stage_by_id[stage_id].name}»" if stage_id in stage_by_id else ""
     if not deals:
         return Done(f"🔍 Сделок ({scope}){where} нет.")
@@ -248,6 +275,30 @@ async def _list_deals(ctx: AIContext, args: dict[str, Any]):
         lines.append(f"• {d.title} — {names.get(d.client_id, '?')} · {stage.name if stage else '?'} · {amount}")
     if total > len(deals):
         lines.append(f"…и ещё {total - len(deals)}")
+    return Done("\n".join(lines))
+
+
+# ── pipeline_summary ─────────────────────────────────────────────────────────
+def _totals_text(totals) -> str:
+    return " · ".join(format_money(t.amount, t.currency) for t in totals if t.amount) or "без сумм"
+
+
+async def _pipeline_summary(ctx: AIContext, args: dict[str, Any]):
+    owner = await resolve_owner(ctx, "pipeline_summary", args)
+    if is_outcome(owner):
+        return owner
+    if owner is None and args.get("mine"):
+        owner = ctx.user
+    summary = await ctx.deals.get_summary(ctx.user, owner_id=owner.id if owner else None)
+    who = ("ваша" if owner.id == ctx.user.id else f"@{owner.username}") if owner else "вся компания"
+    lines = [f"📊 Воронка «{summary.pipeline_name}» ({who})"]
+    for stage in summary.stages:
+        lines.append(f"• {stage.name}: {stage.count} · {_totals_text(stage.totals)}")
+    c = summary.conversion
+    if c.closed:
+        lines.append(f"Закрыто: выиграно {c.won}, проиграно {c.lost} (успешных {round((c.win_rate or 0) * 100)}%)")
+    if not any(s.count for s in summary.stages):
+        lines.append("Сделок пока нет.")
     return Done("\n".join(lines))
 
 
@@ -376,14 +427,16 @@ def register(registry: ToolRegistry) -> None:
         Tool(
             name="list_clients",
             description=(
-                "Показать список клиентов: всех, только своих, по типу. «Люди», «частные лица», «B2C/Б2С» — person; "
-                "«компании», «B2B/Б2Б» — company"
+                "Показать список клиентов: всех, чьих-то или по типу. Тип (client_type) указывай ТОЛЬКО если "
+                "пользователь назвал его: «люди», «частные лица», «B2C/Б2С» — person; «компании-клиенты», "
+                "«юрлица», «B2B/Б2Б» — company. «Все клиенты компании» (то есть всей организации) — без типа"
             ),
             parameters={
                 "type": "object",
                 "properties": {
                     "mine": {"type": "boolean", "description": "true — только клиенты пользователя («мои клиенты»)"},
                     "client_type": {"type": "string", "enum": ["company", "person"], "description": "Тип клиента"},
+                    "owner": {"type": "string", "description": "Клиенты этого сотрудника, имя в начальной форме"},
                     "search": {"type": "string", "description": "Часть названия, телефона или email"},
                 },
                 "required": [],
@@ -402,7 +455,7 @@ def register(registry: ToolRegistry) -> None:
                     "days": {"type": "integer", "description": "Сколько дней без контакта: месяц — 30, неделя — 7"},
                     "all_owners": {
                         "type": "boolean",
-                        "description": "Клиенты всех ответственных (только admin/manager)",
+                        "description": "Клиенты всех ответственных: «у всех», «по компании» (только admin/manager)",
                     },
                 },
                 "required": [],
@@ -491,6 +544,7 @@ def register(registry: ToolRegistry) -> None:
                 "properties": {
                     "stage": {"type": "string", "description": "Название стадии воронки"},
                     "client": {"type": "string", "description": "Показать сделки этого клиента"},
+                    "owner": {"type": "string", "description": "Сделки этого сотрудника, имя в начальной форме"},
                     "all_owners": {
                         "type": "boolean",
                         "description": "Сделки всех ответственных (только admin/manager)",
@@ -500,6 +554,22 @@ def register(registry: ToolRegistry) -> None:
             },
             run=_list_deals,
             hint="«покажи сделки», «сделки на стадии ...» — list_deals.",
+        )
+    )
+    registry.register(
+        Tool(
+            name="pipeline_summary",
+            description="Сводка по воронке продаж: сколько сделок и на какую сумму на каждой стадии, итоги закрытых",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "mine": {"type": "boolean", "description": "true — только сделки пользователя («мои воронки»)"},
+                    "owner": {"type": "string", "description": "Воронка этого сотрудника, имя в начальной форме"},
+                },
+                "required": [],
+            },
+            run=_pipeline_summary,
+            hint="«покажи воронку», «мои воронки», «сколько сделок на каждой стадии» — pipeline_summary.",
         )
     )
     registry.register(

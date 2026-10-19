@@ -148,6 +148,7 @@ export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient,
             onClick={() => onOpenTask(t.title)}
             left={<span className="home-dot" style={{ background: PRIORITY_COLORS[t.priority] }} title={PRIORITY_LABELS[t.priority]} />}
             title={t.title}
+            sub={t.client_name ? `👤 ${t.client_name}` : undefined}
             right={overdueRow ? overdueText(t.deadline) : timeText(t.deadline)}
             rightTone={overdueRow ? "danger" : undefined}
         />

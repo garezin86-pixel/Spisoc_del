@@ -17,6 +17,7 @@ from src.models.mixins import TenantMixin
 if TYPE_CHECKING:
     from src.models.attachment_model import AttachmentModel
     from src.models.checklist import TaskChecklistItemModel
+    from src.models.client import ClientModel
     from src.models.group import GroupModel
     from src.models.project import ProjectModel
     from src.models.tag import TagModel
@@ -60,6 +61,8 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, TenantMixin, Base
     )
 
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    # CRM: клиент, к которому относится задача (необязательно). Удалили клиента насовсем — связь обнуляется.
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[TaskStatus] = mapped_column(
         SAEnum(TaskStatus, name="taskstatus"),
         default=TaskStatus.todo,
@@ -96,6 +99,7 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, TenantMixin, Base
         back_populates="tasks",
         lazy="selectin",
     )
+    client: Mapped[Optional["ClientModel"]] = relationship("ClientModel", lazy="selectin")
     comments = relationship(
         "CommentModel",
         back_populates="task",
@@ -123,11 +127,18 @@ class SpisokModel(AuditMixin, SoftDeleteMixin, TimestampMixin, TenantMixin, Base
         lazy="selectin",
     )
 
+    @property
+    def client_name(self) -> str | None:
+        """Название клиента для ответов API. Удалённого (мягко) клиента не показываем."""
+        client = self.client
+        return client.name if client is not None and client.deleted_at is None else None
+
     __table_args__ = (
         # Простые индексы
         Index("ix_spisok_del_author_id", "author_id"),
         Index("ix_spisok_del_user_id", "user_id"),
         Index("ix_spisok_del_group_id", "group_id"),
+        Index("ix_spisok_del_client_id", "client_id"),
         Index("ix_spisok_del_status", "status"),
         Index("ix_spisok_del_deadline", "deadline"),
         Index("ix_spisok_del_reminder_sent", "reminder_sent"),

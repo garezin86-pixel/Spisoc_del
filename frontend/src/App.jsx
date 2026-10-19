@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setTokenRefreshHandler } from "./api";
 import { ChatBubble } from "./components/ChatBubble";
+import { ClientPicker } from "./components/ClientPicker";
 import { APP_DESCRIPTION, APP_LOGO, APP_NAME } from "./constants/branding";
 import { CommandPalette } from "./components/CommandPalette";
 import { Icon } from "./components/Icon";
@@ -551,6 +552,7 @@ function App() {
                 status: form.status || "todo",
                 priority: form.priority || "medium",
                 project_id: form.project_id ? Number(form.project_id) : null,
+                client_id: form.client_id ? Number(form.client_id) : null,
                 deadline: form.deadline ? `${form.deadline}:00` : null,
                 recurrence_rule: form.recurrence_rule || "none",
             };
@@ -588,7 +590,9 @@ function App() {
     async function handleUpdateTask(task, updates) {
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...updates } : t));
         try {
-            await apiRequest({ path: `/tasks/${task.id}`, method: "PATCH", token, body: updates });
+            const saved = await apiRequest({ path: `/tasks/${task.id}`, method: "PATCH", token, body: updates });
+            // название клиента приходит с сервера: при смене клиента локальная копия его не знает
+            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, client_id: saved?.client_id ?? null, client_name: saved?.client_name ?? null } : t));
         } catch (err) {
             setTasks(prev => prev.map(t => t.id === task.id ? task : t));
             handleAuthError(err);
@@ -1141,6 +1145,13 @@ function App() {
                                         </select>
                                     </div>
                                     <div className="form-group">
+                                        <label className="form-label">Клиент</label>
+                                        <ClientPicker
+                                            token={token} value={form.client_id ? Number(form.client_id) : null} name={form.client_name}
+                                            onChange={(id, name) => setForm({ ...form, client_id: id ?? "", client_name: name })}
+                                        />
+                                    </div>
+                                    <div className="form-group">
                                         <label className="form-label">Назначить</label>
                                         <select value={assignType} onChange={e => setAssignType(e.target.value)}>
                                             <option value="self">Себе</option>
@@ -1334,6 +1345,7 @@ function App() {
                                             {visibleTasks.map(task => (
                                                 <TaskCard key={task.id} task={task}
                                                     groups={groups} users={users} token={token}
+                                                    onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
                                                     allTags={allTags}
                                                     onTagsCreated={loadTags}
                                                     onTagsUpdated={handleTaskTagsUpdated}

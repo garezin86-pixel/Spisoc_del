@@ -3,6 +3,7 @@ import { apiRequest } from "../api";
 import { ContactsPanel } from "../components/ContactsPanel";
 import { Icon } from "../components/Icon";
 import { InteractionsPanel } from "../components/InteractionsPanel";
+import { ClientTasksPanel } from "../components/ClientTasksPanel";
 import { ScheduledEventsPanel } from "../components/ScheduledEventsPanel";
 import { ICONS } from "../constants/icons";
 import { PersonFields } from "../components/PersonFields";
@@ -17,6 +18,7 @@ const SUBTABS = [
     { key: "contacts", label: "Контакты" },
     { key: "interactions", label: "Взаимодействия" },
     { key: "events", label: "Встречи" },
+    { key: "tasks", label: "Задачи" },
     { key: "deals", label: "Сделки" },
 ];
 
@@ -236,6 +238,10 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
                     token={token} clientId={clientId} canEdit={canEdit} canManage={canManage}
                     currentUserId={currentUserId} users={users} usersById={usersById} onChanged={load}
                 />
+            )}
+
+            {sub === "tasks" && (
+                <ClientTasksPanel token={token} clientId={clientId} users={users} currentUserId={currentUserId} />
             )}
 
             {sub === "deals" && <DealsBoard token={token} clientId={clientId} canManage={canManage} currentUserId={currentUserId} />}

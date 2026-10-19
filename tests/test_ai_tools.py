@@ -352,7 +352,7 @@ async def test_create_task_with_client_and_past_deadline(world):
     day, at = tomorrow_at(15, 30)
     async with ai_ctx(maker, ids, "owner") as ctx:
         out = await call(ctx, "create_task", title="Позвонить", client="Ромашка", deadline=day, deadline_time=at)
-        assert isinstance(out, Confirm) and "Позвонить — Ромашка" in out.text
+        assert isinstance(out, Confirm) and "клиент «Ромашка»" in out.text and "«Позвонить»" in out.text
         await commit(ctx, out)
         past = await call(ctx, "create_task", title="Вчера", deadline="2020-01-01")
         assert isinstance(past, Refuse) and "прошёл" in past.text
@@ -360,7 +360,8 @@ async def test_create_task_with_client_and_past_deadline(world):
         assert isinstance(await call(ctx, "create_task", title="  "), Refuse)
     async with maker() as s:
         task = (await s.execute(select(SpisokModel))).scalars().one()
-    assert task.title == "Позвонить — Ромашка" and f"Клиент: Ромашка (#{ids['ca']})" in task.description
+    # настоящая связь вместо пометки в названии и описании
+    assert task.title == "Позвонить" and task.description is None and task.client_id == ids["ca"]
 
 
 # ── прежние команды по задачам идут через сервис и с подтверждением ──────────
@@ -486,3 +487,97 @@ async def test_get_tasks_reports_total_when_truncated_and_edit_by_number(world):
         assert "Найдено: 12 (показаны первые 10)" in listing.text
         out = await call(ctx, "update_task_status", search=f"#{made['Задача 03']}", status="done")
         assert isinstance(out, Confirm) and "Задача 03" in out.text
+
+
+# ── по живой переписке: «покажи мои воронки», «сделки пользователя …», «все клиенты компании» ──────────
+async def _username(maker, ids, who) -> str:
+    async with maker() as s:
+        return (await s.execute(select(UserModel.username).where(UserModel.id == ids[who]))).scalar_one()
+
+
+async def test_pipeline_summary_all_mine_and_by_owner(world):
+    maker, ids, _ = world
+    await make_deal(maker, ids, who="owner", title="Первая", amount=1000)
+    await make_deal(maker, ids, who="a_manager", title="Вторая", amount=500)
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        everyone = await call(ctx, "pipeline_summary")
+        assert isinstance(everyone, Done) and "вся компания" in everyone.text
+        assert "Новая: 2 · 1 500 UAH" in everyone.text and "Переговоры: 0" in everyone.text
+
+        mine = await call(ctx, "pipeline_summary", mine=True)
+        assert "ваша" in mine.text and "Новая: 1 · 1 000 UAH" in mine.text
+
+        manager = await _username(maker, ids, "a_manager")
+        theirs = await call(ctx, "pipeline_summary", owner=manager)
+        assert f"@{manager}" in theirs.text and "Новая: 1 · 500 UAH" in theirs.text
+        assert "не найден" in (await call(ctx, "pipeline_summary", owner="Несуществующий")).text
+    async with ai_ctx(maker, ids, "other") as ctx:
+        assert "Сделок пока нет" in (await call(ctx, "pipeline_summary", mine=True)).text
+
+
+async def test_list_deals_and_clients_by_owner(world):
+    maker, ids, _ = world
+    await make_deal(maker, ids, who="owner", title="Сделка owner")
+    owner_name = await _username(maker, ids, "owner")
+    async with ai_ctx(maker, ids, "a_manager") as ctx:
+        deals = await call(ctx, "list_deals", owner=owner_name)
+        assert f"@{owner_name}" in deals.text and "Сделка owner" in deals.text
+        assert "нет" in (await call(ctx, "list_deals")).text  # свои у менеджера пусты
+        clients = await call(ctx, "list_clients", owner=owner_name)
+        assert "Ромашка" in clients.text and f"@{owner_name}" in clients.text.splitlines()[0]
+        assert "Сотрудник «Никто» не найден" in (await call(ctx, "list_deals", owner="Никто")).text
+
+
+async def test_ambiguous_owner_asks_which_employee(world):
+    maker, ids, _ = world
+    await add_user(maker, ids, "Борис")
+    await add_user(maker, ids, "Борислав")
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        out = await call(ctx, "list_deals", owner="Борис")
+        assert isinstance(out, Choose) and out.param == "_owner_id" and len(out.options) == 2
+        picked = await call(ctx, "list_deals", **{**out.args, out.param: out.options[0][0]})
+        assert isinstance(picked, Done)
+
+
+def test_list_clients_tool_tells_the_model_not_to_guess_the_type():
+    """«Все клиенты компании» — вся организация, а не тип «компания» (так модель ошиблась в живой переписке)."""
+    tool = default_registry().get("list_clients")
+    assert "ТОЛЬКО если" in tool.description and "без типа" in tool.description
+    assert "pipeline_summary" in default_registry().names()
+
+
+async def test_get_tasks_not_found_says_where_it_looked(world):
+    maker, ids, _ = world
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        out = await call(ctx, "get_tasks", search="99999")
+    assert "исполнитель или автор" in out.text
+
+
+async def test_managers_are_told_the_list_is_only_their_own(world):
+    """Живая проверка: админ спросил «клиентов без контакта» и получил «нет», хотя у других ответственных они есть."""
+    maker, ids, _ = world
+    await add_clients(maker, ids, ("Чужой давний", "other", 60))
+    async with ai_ctx(maker, ids, "a_manager") as ctx:
+        own = await call(ctx, "list_clients_without_contact", days=30)
+        assert "Нет ваших клиентов" in own.text and "только ваши клиенты" in own.text and "у всех" in own.text
+        everyone = await call(ctx, "list_clients_without_contact", days=30, all_owners=True)
+        assert "Чужой давний" in everyone.text and "только ваши клиенты" not in everyone.text
+    async with ai_ctx(
+        maker, ids, "owner"
+    ) as ctx:  # обычному сотруднику «у всех» всё равно недоступно — не подсказываем
+        assert "только ваши клиенты" not in (await call(ctx, "list_clients_without_contact", days=30)).text
+
+
+async def test_get_tasks_by_client_shows_everyones_tasks_of_that_client(world):
+    maker, ids, _ = world
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        await commit(ctx, await call(ctx, "create_task", title="Позвонить", client="Ромашка"))
+        await commit(ctx, await call(ctx, "create_task", title="Личное без клиента"))
+    async with ai_ctx(maker, ids, "other") as ctx:  # посторонний: «мои» задачи пусты, а задачи клиента видны команде
+        assert "не найдены" in (await call(ctx, "get_tasks", search="Позвонить")).text
+        by_client = await call(ctx, "get_tasks", client="Ромашка")
+        assert "Позвонить" in by_client.text and "👤 Ромашка" in by_client.text
+        assert "Личное без клиента" not in by_client.text
+        assert (
+            "Ищу все задачи клиента «Ромашка»" in (await call(ctx, "get_tasks", client="Ромашка", status="done")).text
+        )

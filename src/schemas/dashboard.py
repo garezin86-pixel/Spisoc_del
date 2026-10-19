@@ -25,6 +25,8 @@ class DashboardTask(BaseModel):
     priority: TaskPriority
     status: TaskStatus
     project_id: Optional[int] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

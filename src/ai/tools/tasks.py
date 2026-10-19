@@ -84,23 +84,25 @@ async def _create_task_run(ctx: AIContext, args: dict[str, Any]):
     priority = args.get("priority") if args.get("priority") in _PRIORITIES else "medium"
 
     description = str(args.get("description") or "").strip()
-    if client is not None:
-        if client.name.casefold() not in title.casefold():
-            title = f"{title} — {client.name}"
-        description = f"{description}\n".lstrip("\n") + f"Клиент: {client.name} (#{client.id})"
     title = title[:200]
-    SpisokAddSchema(title=title, description=description or None, deadline=deadline, user_id=assignee.id)  # проверка
+    client_id = client.id if client is not None else None
+    SpisokAddSchema(
+        title=title, description=description or None, deadline=deadline, user_id=assignee.id, client_id=client_id
+    )  # проверка до вопроса «да/нет»
 
     who = "для вас" if assignee.id == ctx.user.id else f"для @{assignee.username}"
     when = f", срок {deadline.astimezone(ctx.tz).strftime('%d.%m %H:%M')}" if deadline else ""
+    about = f", клиент «{client.name}»" if client is not None else ""
     resolved = {
         "title": title,
         "description": description or None,
         "priority": priority,
         "deadline": deadline.isoformat() if deadline else None,
         "assignee_id": assignee.id,
+        "client_id": client_id,
+        "client_name": client.name if client is not None else None,
     }
-    text = f"Создать задачу «{title}» {who}{when}?"
+    text = f"Создать задачу «{title}» {who}{when}{about}?"
     return Confirm(text=text, tool="create_task", args=resolved)
 
 
@@ -114,6 +116,7 @@ async def _create_task_commit(ctx: AIContext, args: dict[str, Any]) -> str:
             description=args.get("description"),
             deadline=deadline,
             user_id=int(args["assignee_id"]),
+            client_id=int(args["client_id"]) if args.get("client_id") else None,
             priority=TaskPriority(args.get("priority") or "medium"),
         ),
         ctx.user,
@@ -121,14 +124,18 @@ async def _create_task_commit(ctx: AIContext, args: dict[str, Any]) -> str:
     emoji = PRIORITY_EMOJI.get(task.priority.value, "🔵")
     when = f"\n📅 {deadline.astimezone(ctx.tz).strftime('%d.%m.%Y %H:%M')}" if deadline else ""
     label = PRIORITY_LABEL.get(task.priority.value, task.priority.value)
-    return f"✅ Создана: {task.title} [#{task.id}]\n{emoji} {label}{when}"
+    client = f"\n👤 {task.client_name}" if task.client_name else ""
+    return f"✅ Создана: {task.title} [#{task.id}]\n{emoji} {label}{when}{client}"
 
 
 # ── поиск задач (прежняя логика голосового обработчика) ──────────────────────
 def _task_line(task: SpisokModel) -> str:
     priority = task.priority.value if task.priority else "medium"
     status = task.status.value if task.status else "todo"
-    return f"{PRIORITY_EMOJI.get(priority, '🔵')} {task.title} — {STATUS_LABEL.get(status, status)} [#{task.id}]"
+    client = f" · 👤 {task.client_name}" if task.client_name else ""
+    return (
+        f"{PRIORITY_EMOJI.get(priority, '🔵')} {task.title} — {STATUS_LABEL.get(status, status)} [#{task.id}]{client}"
+    )
 
 
 def _text_condition(query: str):
@@ -179,6 +186,14 @@ async def _search_tasks(ctx: AIContext, query: str, limit: int = 5) -> list[Spis
 
 async def _get_tasks(ctx: AIContext, args: dict[str, Any]):
     conditions = _visible_tasks(ctx)
+    scope_note = "Я ищу среди задач, где вы исполнитель или автор."
+    if args.get("client") or args.get("_client_id"):
+        client = await resolve_client(ctx, "get_tasks", args)
+        if is_outcome(client):
+            return client
+        # Задачи клиента видны всей команде (как в карточке клиента), а не только исполнителю/автору
+        conditions = [SpisokModel.deleted_at.is_(None), SpisokModel.client_id == client.id]
+        scope_note = f"Ищу все задачи клиента «{client.name}»."
     if str(args.get("search") or "").strip():
         conditions.append(await _search_condition(ctx, str(args["search"])))
     if args.get("status") in _STATUSES:
@@ -194,7 +209,7 @@ async def _get_tasks(ctx: AIContext, args: dict[str, Any]):
     )
     tasks = list(result.scalars().all())
     if not tasks:
-        return Done("🔍 Задачи не найдены.")
+        return Done(f"🔍 Задачи не найдены. {scope_note}")
     more = f" (показаны первые {len(tasks)})" if total > len(tasks) else ""
     return Done("\n".join([f"🔍 Найдено: {total}{more}", *[_task_line(t) for t in tasks]]))
 
@@ -356,6 +371,7 @@ def register(registry: ToolRegistry) -> None:
                     "status": {"type": "string", "enum": _STATUSES, "description": "Фильтр по статусу"},
                     "priority": {"type": "string", "enum": _PRIORITIES, "description": "Фильтр по приоритету"},
                     "overdue": {"type": "boolean", "description": "Только просроченные задачи"},
+                    "client": {"type": "string", "description": "Показать задачи, привязанные к этому клиенту"},
                 },
                 "required": [],
             },
