@@ -8,15 +8,10 @@ from typing import Any
 from typing_extensions import TypeIs
 
 from src.ai.context import AIContext
-from src.ai.resolve import (
-    MAX_OPTIONS,
-    find_clients,
-    name_score,
-    options_of,
-    pick_unique,
-)
+from src.ai.resolve import MAX_OPTIONS, find_clients, options_of, pick_unique
 from src.ai.types import Choose, Confirm, Done, Outcome, Refuse
 from src.models.client import ClientModel
+from src.models.user import UserModel
 
 OUTCOMES = (Done, Refuse, Confirm, Choose)
 
@@ -37,10 +32,20 @@ def client_label(client: ClientModel) -> str:
 
 async def resolve_client(ctx: AIContext, tool: str, args: dict[str, Any], key: str = "client") -> ClientModel | Outcome:
     """Клиент по аргументам: либо ClientModel, либо Outcome (Refuse — не найден, Choose — выберите)."""
+    client = await _resolve_client(ctx, tool, args, key)
+    if isinstance(client, ClientModel):
+        await ctx.remember_client(client)  # дальше «этот клиент» — он
+    return client
+
+
+async def _resolve_client(ctx: AIContext, tool: str, args: dict[str, Any], key: str) -> ClientModel | Outcome:
     chosen = args.get("_client_id")
     if chosen:
         return await ctx.clients.get_client(int(chosen))
     query = str(args.get(key) or "").strip()
+    if not query and ctx.focus_client_id:
+        # клиент не назван, но он есть в контексте: открытая карточка (веб) или недавний разговор
+        return await ctx.clients.get_client(ctx.focus_client_id)
     if not query:
         return Refuse("Уточните, о каком клиенте речь.")
     found = await find_clients(ctx, query)
@@ -59,43 +64,28 @@ async def resolve_client(ctx: AIContext, tool: str, args: dict[str, Any], key: s
     )
 
 
-async def resolve_owner(ctx: AIContext, tool: str, args: dict[str, Any], key: str = "owner") -> Any | Outcome:
-    """Сотрудник по аргументам: либо UserModel, либо Outcome (Refuse — не найден, Choose — выберите)."""
-    chosen = args.get("_owner_id")
-    if chosen:
-        users = await ctx.users.get_all()
-        return next((u for u in users if u.id == int(chosen)), None)
+async def resolve_owner(
+    ctx: AIContext, tool: str, args: dict[str, Any], key: str = "owner"
+) -> UserModel | None | Outcome:
+    """Сотрудник из аргумента `owner`: UserModel, None (не назван) либо Outcome (не найден / выберите)."""
+    from src.ai.resolve import find_users
 
+    if args.get("_owner_id"):
+        user = await ctx.users.get_by_id(int(args["_owner_id"]))
+        return user or Refuse("🔍 Сотрудник не найден.")
     query = str(args.get(key) or "").strip()
     if not query:
         return None
-
-    users = await ctx.users.get_all()
-    scored = []
-    for u in users:
-        score = name_score(query, u.username)
-        full_name = getattr(u, "full_name", "") or ""
-        if full_name:
-            score = max(score, name_score(query, full_name))
-        if score > 0:
-            scored.append((score, u))
-
-    scored.sort(key=lambda p: -p[0])
-    matches = [u for score, u in scored]
-
-    if not matches:
+    found = await find_users(ctx, query)
+    if not found:
         return Refuse(f"🔍 Сотрудник «{query}» не найден.")
-    if len(matches) == 1:
-        return matches[0]
-
+    if len(found) == 1:
+        return found[0]
     return Choose(
-        prompt=f"Найдено несколько сотрудников по запросу «{query}». Выберите:",
+        prompt=f"Найдено несколько сотрудников по запросу «{query}». Чьи данные показать?",
         tool=tool,
         param="_owner_id",
-        options=options_of(
-            matches,
-            lambda u: f"@{u.username}" + (f" ({u.full_name})" if getattr(u, "full_name", None) else ""),
-        ),
+        options=options_of(found, lambda u: f"@{u.username}"),
         args=clean_args(args),
     )
 

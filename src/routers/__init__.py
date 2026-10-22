@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from .ai_router import router as ai_router
 from .analytics_router import router as analytics_router
 from .attachments_router import router as attachments_router
 from .auth_router import router as auth_router
@@ -41,6 +42,7 @@ api_router.include_router(interaction_router)
 api_router.include_router(client_events_router)
 api_router.include_router(events_router)
 api_router.include_router(dashboard_router)
+api_router.include_router(ai_router)
 api_router.include_router(pipeline_router)
 api_router.include_router(pipelines_router)
 api_router.include_router(deal_router)

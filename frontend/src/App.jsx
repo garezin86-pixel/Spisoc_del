@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setTokenRefreshHandler } from "./api";
+import { AIPanel } from "./components/AIPanel";
 import { ChatBubble } from "./components/ChatBubble";
 import { ClientPicker } from "./components/ClientPicker";
 import { APP_DESCRIPTION, APP_LOGO, APP_NAME } from "./constants/branding";
@@ -45,6 +46,8 @@ function App() {
     const [tab, setTab] = useState("home"); // "home" | "tasks" | "projects" | "groups" | "trash" | "dashboard" | "templates" | ...
     const [homeRefreshKey, setHomeRefreshKey] = useState(0); // растёт на каждое WS-событие dashboard_changed
     const [clientToOpen, setClientToOpen] = useState(null); // клиент, карточку которого открыть при переходе с главной
+    const [aiClientId, setAiClientId] = useState(null); // открытая карточка клиента — контекст для ассистента
+    const [aiRefreshKey, setAiRefreshKey] = useState(0); // растёт, когда ассистент что-то изменил
     const [mfaPending, setMfaPending] = useState(null); // { mfaToken } — ждём код 2FA перед выдачей токенов
     const [show2faNudge, setShow2faNudge] = useState(false);
     const [mustChangePassword, setMustChangePassword] = useState(false);
@@ -971,6 +974,12 @@ function App() {
             />
 
             <ChatBubble token={token} currentUserId={currentUserId} wsEvent={chatWsEvent} />
+            <AIPanel
+                token={token}
+                clientId={tab === "clients" ? aiClientId : null}
+                onChanged={() => { setAiRefreshKey(k => k + 1); setHomeRefreshKey(k => k + 1); }}
+                onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
+            />
 
             {show2faNudge && (
                 <div className="alert" style={{
@@ -1468,7 +1477,15 @@ function App() {
                     {/* ── CLIENTS TAB (lite CRM) ── */}
                     {tab === "clients" && (
                         <div>
-                            <ClientsTab token={token} canManage={canManage} currentUserId={currentUserId} initialClientId={clientToOpen} />
+                            <ClientsTab
+                                token={token} canManage={canManage} currentUserId={currentUserId} initialClientId={clientToOpen}
+                                onSelectedChange={(id) => {
+                                    setAiClientId(id);
+                                    // карточку закрыли — «клиент к открытию» сбрасываем, иначе повторная просьба открыть того же клиента не сработает
+                                    if (id === null) setClientToOpen(null);
+                                }}
+                                refreshSignal={aiRefreshKey}
+                            />
                         </div>
                     )}
                     {/* ── DEALS TAB: воронка всех сделок компании ── */}

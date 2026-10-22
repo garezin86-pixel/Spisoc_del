@@ -305,3 +305,33 @@ def mock_redis_for_tests():
     set_redis(mock_redis)
     yield mock_redis
     set_redis(None)  # сбрасываем после каждого теста
+
+
+class _DownRedis:
+    """Redis, которого нет: обращение сразу падает — ассистент уходит на память процесса без ожидания таймаутов."""
+
+    async def _fail(self, *args, **kwargs):
+        raise ConnectionError("redis is down (tests)")
+
+    set = get = getdel = delete = _fail
+
+
+@pytest.fixture(autouse=True)
+def reset_ai_state():
+    """Ассистент хранит «рабочего клиента» и ожидающие решения в памяти процесса, если Redis недоступен.
+
+    Ключи строятся из id компании и пользователя, а в каждом тесте они начинаются заново: без сброса состояние текло
+    бы из теста в тест. Redis по умолчанию «выключен», чтобы тесты не ждали подключения; тесты, которым нужен Redis,
+    подставляют fakeredis поверх (patch внутри теста перекрывает эту подмену).
+    """
+    from unittest.mock import patch
+
+    from src.ai.focus_store import focus_store
+    from src.ai.pending_store import pending_store
+
+    focus_store._memory.clear()
+    pending_store._memory.clear()
+    with patch("src.ai.focus_store.redis", _DownRedis()), patch("src.ai.pending_store.redis", _DownRedis()):
+        yield
+    focus_store._memory.clear()
+    pending_store._memory.clear()

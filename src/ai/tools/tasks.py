@@ -68,7 +68,10 @@ async def _create_task_run(ctx: AIContext, args: dict[str, Any]):
         return assignee
 
     client = None
-    if args.get("client") or args.get("_client_id"):
+    # Открытая на экране карточка клиента — достаточный повод привязать задачу к нему даже без названия в команде
+    # (недавний разговор — только подсказка модели: молча привязывать по нему слишком смело)
+    on_screen = ctx.focus_client_id is not None and ctx.focus_source == "screen"
+    if args.get("client") or args.get("_client_id") or on_screen:
         client = await resolve_client(ctx, "create_task", {**args, **({"_assignee_id": assignee.id})})
         if is_outcome(client):
             if isinstance(client, Choose):  # после выбора клиента исполнитель уже известен — не спрашивать заново

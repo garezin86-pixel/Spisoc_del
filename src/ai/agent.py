@@ -43,12 +43,13 @@ class LLMClient(Protocol):
 class Turn:
     """Итог шага: что показать пользователю и, если нужно, что он должен решить."""
 
-    def __init__(self, messages: list[str], pending: Pending | None = None) -> None:
+    def __init__(self, messages: list[str], pending: Pending | None = None, actions: list[dict] | None = None) -> None:
         self.messages = messages
         self.pending = pending
+        self.actions = actions or []  # команды интерфейсу: [{"type": "open_client", "client_id": 5}]
 
     def __repr__(self) -> str:  # для отладки и сообщений об ошибках в тестах
-        return f"Turn(messages={self.messages!r}, pending={self.pending!r})"
+        return f"Turn(messages={self.messages!r}, pending={self.pending!r}, actions={self.actions!r})"
 
 
 class AIAgent:
@@ -61,7 +62,10 @@ class AIAgent:
         if self.llm is None:
             raise RuntimeError("AIAgent создан без LLM: используйте run_calls с готовыми вызовами")
         calls = await self.llm.plan(
-            text, history, tools=self.registry.definitions(ctx.user), hints=self.registry.hints(ctx.user)
+            text,
+            history,
+            tools=self.registry.definitions(ctx.user),
+            hints=self.registry.hints(ctx.user) + ctx.focus_hint(),
         )
         return await self.run_calls(ctx, calls)
 
@@ -92,6 +96,7 @@ class AIAgent:
 
     # ── внутреннее ───────────────────────────────────────────────────────────
     async def _drain(self, ctx: AIContext, queue: list[ToolCall], messages: list[str]) -> Turn:
+        actions: list[dict] = []
         while queue:
             call = queue.pop(0)
             if call.name == "text_response":
@@ -102,13 +107,16 @@ class AIAgent:
             rest = [c.to_dict() for c in queue]
             if isinstance(outcome, (Done, Refuse)):
                 messages.append(outcome.text)
+                if isinstance(outcome, Done):
+                    actions.extend(outcome.actions)
                 if isinstance(outcome, Refuse):
                     break  # отказ: остальные вызовы фразы, скорее всего, от него зависят
             elif isinstance(outcome, Confirm):
-                return Turn(messages, Pending("confirm", outcome.tool, outcome.args, outcome.text, queue=rest))
+                return Turn(messages, Pending("confirm", outcome.tool, outcome.args, outcome.text, queue=rest), actions)
             elif isinstance(outcome, Choose):
                 return Turn(
                     messages,
                     Pending("choose", outcome.tool, outcome.args, outcome.prompt, outcome.param, outcome.options, rest),
+                    actions,
                 )
-        return Turn(messages)
+        return Turn(messages, None, actions)

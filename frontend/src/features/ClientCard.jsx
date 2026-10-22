@@ -26,7 +26,7 @@ const SUBTABS = [
  * Карточка клиента. Править клиента могут admin, manager и ответственный; менять ответственного и удалять —
  * только admin и manager (как на бэкенде; сервер всё равно перепроверяет).
  */
-export function ClientCard({ token, clientId, canManage, currentUserId, users, usersById, onBack, onDeleted }) {
+export function ClientCard({ token, clientId, canManage, currentUserId, users, usersById, onBack, onDeleted, refreshSignal = 0 }) {
     const [client, setClient] = useState(null);
     const [error, setError] = useState(null);
     const [sub, setSub] = useState("overview");
@@ -45,6 +45,8 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
     }, [token, clientId]);
 
     useEffect(() => { load(); }, [load]);
+    // Ассистент что-то изменил: перечитываем карточку; панели вкладок перемонтируются по key={refreshSignal}
+    useEffect(() => { if (refreshSignal) load(); }, [refreshSignal]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (error) {
         return (
@@ -224,27 +226,27 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
                 </div>
             ))}
 
-            {sub === "contacts" && <ContactsPanel token={token} clientId={clientId} canEdit={canEdit} />}
+            {sub === "contacts" && <ContactsPanel key={refreshSignal} token={token} clientId={clientId} canEdit={canEdit} />}
 
             {sub === "interactions" && (
-                <InteractionsPanel
+                <InteractionsPanel key={refreshSignal}
                     token={token} clientId={clientId} canEdit={canEdit} canManage={canManage}
                     currentUserId={currentUserId} usersById={usersById} onChanged={load}
                 />
             )}
 
             {sub === "events" && (
-                <ScheduledEventsPanel
+                <ScheduledEventsPanel key={refreshSignal}
                     token={token} clientId={clientId} canEdit={canEdit} canManage={canManage}
                     currentUserId={currentUserId} users={users} usersById={usersById} onChanged={load}
                 />
             )}
 
             {sub === "tasks" && (
-                <ClientTasksPanel token={token} clientId={clientId} users={users} currentUserId={currentUserId} />
+                <ClientTasksPanel key={refreshSignal} token={token} clientId={clientId} users={users} currentUserId={currentUserId} />
             )}
 
-            {sub === "deals" && <DealsBoard token={token} clientId={clientId} canManage={canManage} currentUserId={currentUserId} />}
+            {sub === "deals" && <DealsBoard key={refreshSignal} token={token} clientId={clientId} canManage={canManage} currentUserId={currentUserId} />}
         </div>
     );
 }

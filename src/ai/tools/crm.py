@@ -5,6 +5,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import func, select
+
 from src.ai.context import AIContext
 from src.ai.permissions import can_create_clients, can_edit_client, can_manage_deal, is_manager
 from src.ai.registry import Tool, ToolRegistry
@@ -19,7 +21,9 @@ from src.ai.tools.common import (
 )
 from src.ai.types import Choose, Confirm, Done, Outcome, Refuse
 from src.models.deal import DealModel, StageKind, StageModel
-from src.models.interaction import InteractionType
+from src.models.enums import TaskStatus
+from src.models.interaction import InteractionModel, InteractionType
+from src.models.task import SpisokModel
 from src.schemas.client import ClientCreate
 from src.schemas.deal import DealCreate, DealMove
 from src.schemas.interaction import InteractionCreate
@@ -45,6 +49,8 @@ async def _find_client(ctx: AIContext, args: dict[str, Any]):
     found = await find_clients(ctx, query, limit=6)
     if not found:
         return Done(f"🔍 Клиент «{query}» не найден.")
+    if len(found) == 1:
+        await ctx.remember_client(found[0])  # «найди клиента X» → «создай ему задачу» относится к X
     owners = await _owner_names(ctx)
     lines = [f"🔍 Найдено: {len(found)}"]
     for c in found[:5]:
@@ -52,6 +58,42 @@ async def _find_client(ctx: AIContext, args: dict[str, Any]):
         owner = f"ответственный @{owners[c.owner_id]}" if c.owner_id in owners else "без ответственного"
         lines.append(f"• {c.name} — {', '.join(extra + [owner])}")
     return Done("\n".join(lines))
+
+
+# ── open_client ──────────────────────────────────────────────────────────────
+async def _open_client(ctx: AIContext, args: dict[str, Any]):
+    """Сводка по клиенту; в вебе — ещё и команда «открыть карточку» (в Telegram её просто нет, хватает текста)."""
+    client = await resolve_client(ctx, "open_client", args)
+    if is_outcome(client):
+        return client
+    owners = await _owner_names(ctx)
+    deals_total = (await ctx.deals.list_deals(0, 1, client_id=client.id))[1]
+    open_tasks = (
+        await ctx.session.scalar(
+            select(func.count())
+            .select_from(SpisokModel)
+            .where(
+                SpisokModel.deleted_at.is_(None),
+                SpisokModel.client_id == client.id,
+                SpisokModel.status != TaskStatus.done,
+            )
+        )
+        or 0
+    )
+    last_contact = await ctx.session.scalar(
+        select(func.max(InteractionModel.occurred_at)).where(
+            InteractionModel.client_id == client.id, InteractionModel.deleted_at.is_(None)
+        )
+    )
+    owner = f"@{owners[client.owner_id]}" if client.owner_id in owners else "не назначен"
+    lines = [f"📇 {client.name} — {_TYPE_LABELS.get(client.client_type, client.client_type)}"]
+    contacts = [x for x in (client.phone, client.email) if x]
+    if contacts:
+        lines.append(", ".join(contacts))
+    lines.append(f"Ответственный: {owner}")
+    last = last_contact.strftime("%d.%m.%Y") if last_contact else "контактов ещё не было"
+    lines.append(f"Сделок: {deals_total} · открытых задач: {open_tasks} · последний контакт: {last}")
+    return Done("\n".join(lines), actions=[{"type": "open_client", "client_id": client.id}])
 
 
 # ── list_clients ─────────────────────────────────────────────────────────────
@@ -421,6 +463,22 @@ def register(registry: ToolRegistry) -> None:
             },
             run=_find_client,
             hint="«найди клиента», «есть ли клиент», «телефон клиента» — find_client.",
+        )
+    )
+    registry.register(
+        Tool(
+            name="open_client",
+            description=(
+                "Открыть карточку клиента: показать сводку (контакты, ответственный, сделки, задачи, последний "
+                "контакт); в веб-интерфейсе карточка откроется на экране. Дальше «этот клиент» — он"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"client": {"type": "string", "description": "Название клиента, телефон или email"}},
+                "required": ["client"],
+            },
+            run=_open_client,
+            hint="«открой карточку клиента ...», «покажи клиента ...», «перейди к клиенту» — open_client.",
         )
     )
     registry.register(

@@ -427,3 +427,22 @@ async def test_reply_handlers_fire_only_in_their_own_state():
     assert not await _matches(ai_bot.reply_to_confirmation, msg, raw_state=ai_bot.AIFlow.choose.state)
     assert await _matches(ai_bot.reply_while_choosing, msg, raw_state=ai_bot.AIFlow.choose.state)
     assert not await _matches(ai_bot.reply_while_choosing, msg, raw_state=ai_bot.AIFlow.confirm.state)
+
+
+# ── рабочий клиент в Telegram: «найди клиента X» → «создай ему задачу» ───────────────────────────
+async def test_bot_remembers_the_client_found_in_the_previous_message(bot_env):
+    bot_env.use_llm([call("find_client", query="Ромашка")], [call("text_response", text="ок")])
+    first, _ = text_message(TG["owner"], "найди клиента Ромашка")
+    await ai_bot.handle_text(first, fsm(TG["owner"]))
+    assert "Недавно" not in bot_env.llm.seen[0]["hints"]
+
+    second, _ = text_message(TG["owner"], "создай ему задачу позвонить завтра")
+    await ai_bot.handle_text(second, fsm(TG["owner"]))
+    assert "Недавно в разговоре шла речь о клиенте «Ромашка»" in bot_env.llm.seen[1]["hints"]
+
+
+async def test_bot_open_client_shows_the_summary_and_ignores_ui_actions(bot_env):
+    bot_env.use_llm([call("open_client", client="Ромашка")])
+    message, status = text_message(TG["owner"], "Открой карточку клиента Ромашка")
+    await ai_bot.handle_text(message, fsm(TG["owner"]))
+    assert "📇 Ромашка — компания" in shown(status.edit_text) and "Ответственный" in shown(status.edit_text)

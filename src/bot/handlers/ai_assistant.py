@@ -18,8 +18,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from src.ai import AIAgent, AIContext, Pending, Turn, default_registry
-from src.ai.llm import GroqLLM
+from src.ai import AIAgent, AIContext, Pending, Turn
+from src.ai.runtime import get_agent
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
 from src.services.chat_memory import add_message, get_history
@@ -41,16 +41,6 @@ class AIFlow(StatesGroup):
 
 
 Send = Callable[[str, InlineKeyboardMarkup | None], Awaitable[object]]
-
-_agent: AIAgent | None = None
-
-
-def get_agent() -> AIAgent:
-    """Один агент на процесс: реестр без состояния, LLM — Groq."""
-    global _agent
-    if _agent is None:
-        _agent = AIAgent(default_registry(), GroqLLM())
-    return _agent
 
 
 def _esc(text: str) -> str:
@@ -121,7 +111,9 @@ async def run_turn(user_id: int, step: Callable[[AIAgent, AIContext], Awaitable[
         user = await uow.users.get_by_id(user_id)
         if user is None or not user.is_active:
             return Turn(["⛔ Аккаунт недоступен. Обратитесь к администратору."])
-        turn = await step(get_agent(), AIContext(user=user, session=uow.session))
+        ctx = AIContext(user=user, session=uow.session)
+        await ctx.load_recent_focus()  # «найди клиента X» → «создай ему задачу позвонить завтра»
+        turn = await step(get_agent(), ctx)
         await uow.commit()
         return turn
 
