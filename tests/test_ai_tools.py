@@ -331,6 +331,19 @@ async def test_create_task_for_colleague_tomorrow_at_ten(world):
     assert local.strftime("%Y-%m-%d %H:%M") == f"{day} {at}"
 
 
+async def test_create_task_confirmation_shows_description_and_priority(world):
+    """Вопрос «да/нет» должен показывать описание и нестандартный приоритет, чтобы ошибку модели было видно до «да»."""
+    maker, ids, _ = world
+    async with ai_ctx(maker, ids, "a_manager") as ctx:
+        out = await call(
+            ctx, "create_task", title="Позвонить", description="уточнить условия договора", priority="critical"
+        )
+        assert isinstance(out, Confirm)
+        assert "описание «уточнить условия договора»" in out.text and "приоритет: критический" in out.text
+        plain = await call(ctx, "create_task", title="Позвонить")
+        assert isinstance(plain, Confirm) and "описание" not in plain.text and "приоритет" not in plain.text
+
+
 async def test_create_task_assignee_matching_and_choice(world):
     maker, ids, _ = world
     await add_user(maker, ids, "Пётр")
@@ -381,6 +394,18 @@ async def test_task_status_change_goes_through_service_with_confirmation(world):
         assert "не найдена" in (await call(ctx, "update_task_status", search="несуществующая", status="done")).text
     async with maker() as s:
         assert (await s.execute(select(SpisokModel.status))).scalar_one().value == "done"
+
+
+async def test_exact_task_title_wins_over_partial_matches(world):
+    """«Позвонить Илье» — задача с таким названием; другие «Позвонить …» не должны вызывать вопрос «Какая?»."""
+    maker, ids, _ = world
+    async with ai_ctx(maker, ids, "owner") as ctx:
+        for title in ("Позвонить Илье", "Позвонить клиенту", "Позвонить Марине Илье"):
+            await commit(ctx, await call(ctx, "create_task", title=title))
+        out = await call(ctx, "update_task_priority", search="Позвонить Илье", priority="critical")
+        assert isinstance(out, Confirm) and "«Позвонить Илье»" in out.text
+        ambiguous = await call(ctx, "update_task_priority", search="Позвонить", priority="critical")
+        assert isinstance(ambiguous, Choose)
 
 
 async def test_task_tools_respect_task_access(world):

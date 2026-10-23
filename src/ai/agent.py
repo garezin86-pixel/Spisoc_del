@@ -32,6 +32,60 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
+_PRIORITY_WORDS = (
+    (r"срочн|критич|горит", "critical"),
+    (r"важн|высок", "high"),
+    (r"низк|неважн|не\s+срочн", "low"),
+    (r"обычн|средн|нормальн", "medium"),
+)
+_PRIORITY_PHRASE = re.compile(
+    r"^\s*(?:сделай|сделать|поставь|измени|смени)\s+задач\w*\s+(?P<task>.+?)[,\s]+(?:как\s+|на\s+)?"
+    r"(?P<word>срочн|критич|важн|высок|низк|неважн|обычн|средн|нормальн)\w*[\s.!]*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def fix_priority_intent(text: str, calls: list[dict]) -> list[dict]:
+    """«Сделай задачу X срочной» — это смена приоритета, а не создание задачи.
+
+    Модель иногда понимает такую фразу как create_task. Это не мелочь: после «да» появилась бы лишняя задача, а
+    нужная осталась бы прежней. Подсказки в промпте этого не гарантируют, поэтому жёсткий случай разбираем по тексту:
+    фраза должна начинаться с «сделай/поставь/измени/смени задачу ...» и заканчиваться названием приоритета.
+    Если модель вернула create_task, а не смену приоритета — подменяем вызов.
+    """
+    if not any(c.get("name") == "create_task" for c in calls):
+        return calls
+    m = _PRIORITY_PHRASE.match(text)
+    if m is None:
+        return calls
+    word = m.group("word").lower()
+    priority = next((p for pattern, p in _PRIORITY_WORDS if re.match(pattern, word)), None)
+    task = m.group("task").strip(' ,.«»"')
+    if priority is None or not task:
+        return calls
+    return [{"name": "update_task_priority", "arguments": {"search": task, "priority": priority}}]
+
+
+_PRIORITY_MENTION = re.compile(r"срочн|критич|горит|важн|высок|низк|приоритет|asap", re.IGNORECASE)
+
+
+def drop_unasked_priority(text: str, calls: list[dict]) -> list[dict]:
+    """Приоритет новой задачи — только если он назван в текущей фразе.
+
+    Модель видит историю диалога и может перенести «срочно» из прошлой команды в новую задачу. Такая задача
+    создавалась бы с чужим приоритетом, поэтому без слов о приоритете в самой фразе поле убираем (останется «Средний»).
+    """
+    if _PRIORITY_MENTION.search(text):
+        return calls
+    fixed: list[dict] = []
+    for c in calls:
+        args = c.get("arguments") or {}
+        if c.get("name") == "create_task" and args.get("priority") not in (None, "medium"):
+            c = {**c, "arguments": {k: v for k, v in args.items() if k != "priority"}}
+        fixed.append(c)
+    return fixed
+
+
 class LLMClient(Protocol):
     """Модель, которая по тексту и истории выбирает инструменты. Реализация (Groq и т.п.) — отдельный модуль."""
 
@@ -67,7 +121,7 @@ class AIAgent:
             tools=self.registry.definitions(ctx.user),
             hints=self.registry.hints(ctx.user) + ctx.focus_hint(),
         )
-        return await self.run_calls(ctx, calls)
+        return await self.run_calls(ctx, drop_unasked_priority(text, fix_priority_intent(text, calls)))
 
     async def run_calls(self, ctx: AIContext, calls: list[dict] | list[ToolCall]) -> Turn:
         queue = [ToolCall.from_dict(c) for c in calls][:MAX_CALLS]

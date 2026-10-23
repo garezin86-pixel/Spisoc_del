@@ -362,6 +362,23 @@ class TestCmdStart:
         assert "приглашен" in call.args[0]
 
     @pytest.mark.asyncio
+    async def test_start_clears_fsm_state(self):
+        """Иначе после «🔍 По ID» бот молча игнорировал обычные сообщения."""
+        from src.bot.handlers.start import cmd_start
+
+        message = make_message()
+        state = AsyncMock()
+        uow = make_uow(user=None)
+
+        with (
+            patch("src.bot.handlers.start.UnitOfWork", return_value=uow),
+            patch("src.bot.handlers.start.get_session_maker"),
+        ):
+            await cmd_start(message, state)
+
+        state.clear.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_start_inactive_user_blocked(self):
         from src.bot.handlers.start import cmd_start
 
@@ -1113,3 +1130,33 @@ class TestFormatting:
 
         task = make_task(deadline=None)
         assert "без дедлайна" in _fmt_deadline(task)
+
+
+class TestEditTaskFreeText:
+    """В режиме редактирования задачи обычная фраза не должна теряться."""
+
+    @pytest.mark.asyncio
+    async def test_plain_text_goes_to_assistant_and_state_is_cleared(self):
+        from src.bot.handlers.tasks import edit_task_menu
+
+        message = make_message(text="покажи клиента Алекс Алексеев")
+        state = AsyncMock()
+        state.get_data = AsyncMock(return_value={"task_id": 1})
+        with patch("src.bot.handlers.ai_assistant.process_text", new=AsyncMock()) as process:
+            await edit_task_menu(message, state)
+
+        state.clear.assert_awaited_once()
+        process.assert_awaited_once()
+        assert process.await_args.args[2] == "покажи клиента Алекс Алексеев"
+
+    @pytest.mark.asyncio
+    async def test_unknown_button_gets_a_hint(self):
+        from src.bot.handlers.tasks import edit_task_menu
+
+        message = make_message(text="📋 Мои задачи")
+        state = AsyncMock()
+        state.get_data = AsyncMock(return_value={"task_id": 1})
+        await edit_task_menu(message, state)
+
+        message.answer.assert_awaited_once()
+        state.clear.assert_not_awaited()

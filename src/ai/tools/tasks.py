@@ -105,7 +105,13 @@ async def _create_task_run(ctx: AIContext, args: dict[str, Any]):
         "client_id": client_id,
         "client_name": client.name if client is not None else None,
     }
-    text = f"Создать задачу «{title}» {who}{when}{about}?"
+    urgency = (
+        f", приоритет: {PRIORITY_LABEL[priority].lower()}"
+        if priority != "medium" and priority in PRIORITY_LABEL
+        else ""
+    )
+    details = f", описание «{short(description, 80)}»" if description else ""
+    text = f"Создать задачу «{title}» {who}{when}{about}{urgency}{details}?"
     return Confirm(text=text, tool="create_task", args=resolved)
 
 
@@ -230,6 +236,9 @@ async def _resolve_task(ctx: AIContext, tool: str, args: dict[str, Any]) -> Spis
         return Refuse(f"🔍 Задача «{query}» не найдена.")
     if len(found) == 1:
         return found[0]
+    exact = [t for t in found if t.title.strip().casefold() == query.casefold()]
+    if len(exact) == 1:  # «Позвонить Илье» — это задача с таким названием, а не все «Позвонить …»
+        return exact[0]
     return Choose(
         prompt=f"Найдено несколько задач по запросу «{query}». Какая?",
         tool=tool,
@@ -360,7 +369,10 @@ def register(registry: ToolRegistry) -> None:
             },
             run=_create_task_run,
             commit=_create_task_commit,
-            hint="«создай/добавь/запиши задачу ...» — create_task (имя исполнителя в начальной форме).",
+            hint=(
+                "«создай/добавь/запиши задачу ...» — create_task (имя исполнителя в начальной форме). "
+                "Только для НОВЫХ задач."
+            ),
         )
     )
     registry.register(
@@ -413,7 +425,11 @@ def register(registry: ToolRegistry) -> None:
             },
             run=_priority_run,
             commit=_priority_commit,
-            hint="«сделай срочной», «повысь приоритет», «низкий приоритет» — update_task_priority.",
+            hint=(
+                "«сделай задачу X срочной/важной/низкой», «повысь приоритет» — update_task_priority: "
+                "X — уже существующая задача, новую создавать НЕ нужно "
+                "(create_task — только при «создай/добавь/запиши»)."
+            ),
         )
     )
     registry.register(

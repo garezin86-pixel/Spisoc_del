@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from src.ai import AIAgent, Pending, ToolCall, default_registry
+from src.ai.agent import drop_unasked_priority, fix_priority_intent
 from src.models.client import ClientModel
 from src.models.deal import DealModel
 from src.models.task import SpisokModel
@@ -282,3 +283,47 @@ def test_prompt_forbids_answering_about_data_without_a_tool():
 
     text = build_hints("hint")
     assert "ТОЛЬКО через инструмент" in text and "Никогда не отвечай" in text and "без Markdown" in text
+
+
+@pytest.mark.parametrize(
+    ("text", "task", "priority"),
+    [
+        ("сделай задачу Позвонить клиенту срочной", "Позвонить клиенту", "critical"),
+        ("сделай задачу Позвонить Илье, срочной", "Позвонить Илье", "critical"),
+        ("поставь задачу Отчёт высоким", "Отчёт", "high"),
+        ("сделай задачу Позвонить клиенту низкой", "Позвонить клиенту", "low"),
+    ],
+)
+def test_priority_phrase_is_not_a_new_task(text, task, priority):
+    wrong = [call("create_task", title=task, priority=priority)]
+    assert fix_priority_intent(text, wrong) == [call("update_task_priority", search=task, priority=priority)]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "создай задачу позвонить клиенту срочной",
+        "создай задачу Позвонить Илье, срочно",
+        "сделай задачу Позвонить клиенту завтра в 10",
+    ],
+)
+def test_real_create_phrases_are_left_alone(text):
+    calls = [call("create_task", title="Позвонить")]
+    assert fix_priority_intent(text, calls) == calls
+
+
+def test_priority_fix_ignores_other_tools():
+    calls = [call("update_task_priority", search="Позвонить", priority="critical")]
+    assert fix_priority_intent("сделай задачу Позвонить срочной", calls) == calls
+
+
+def test_priority_from_history_is_not_applied_to_new_task():
+    calls = [call("create_task", title="Отправить договор", priority="critical", description="проверить пункты 3 и 4")]
+    fixed = drop_unasked_priority("создай задачу отправить договор, описание: проверить пункты 3 и 4", calls)
+    assert fixed == [call("create_task", title="Отправить договор", description="проверить пункты 3 и 4")]
+
+
+def test_priority_named_in_phrase_is_kept():
+    calls = [call("create_task", title="Отчёт", priority="critical")]
+    assert drop_unasked_priority("создай задачу отчёт, срочно", calls) == calls
+    assert drop_unasked_priority("создай задачу отчёт с высоким приоритетом", calls) == calls

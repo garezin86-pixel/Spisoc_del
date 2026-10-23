@@ -13,7 +13,9 @@ import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
+from groq import BadRequestError
 
 from src.core.config import GROQ_LLM_MODEL, GROQ_STT_MODEL
 from src.services.voice_ai import (
@@ -552,3 +554,86 @@ class TestGroqModelSelection:
         with patch("src.services.voice_ai.GROQ_STT_MODEL", "whisper-large-v3-turbo"):
             await transcribe_voice(b"audio-data")
         assert mock_groq.audio.transcriptions.create.call_args.kwargs["model"] == "whisper-large-v3-turbo"
+
+
+def make_tool_use_failed(failed_generation: str, code: str = "tool_use_failed") -> BadRequestError:
+    """Ошибка Groq 400 в том виде, в каком её отдаёт SDK (тело — {"error": {...}})."""
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    body = {
+        "error": {
+            "message": "validation failed",
+            "type": "invalid_request_error",
+            "code": code,
+            "failed_generation": failed_generation,
+        }
+    }
+    response = httpx.Response(400, request=request, json=body)
+    return BadRequestError("Error code: 400", response=response, body=body)
+
+
+class TestNullArguments:
+    @pytest.mark.asyncio
+    async def test_null_arguments_are_dropped_from_normal_response(self, mock_groq):
+        tc = make_tool_call("create_task", {"title": "Позвонить", "description": None, "assignee_username": None})
+        mock_groq.chat.completions.create = AsyncMock(return_value=make_chat_response(tool_calls=[tc]))
+
+        result = await call_llm_with_tools("создай задачу позвонить", history=[])
+
+        assert result == [{"name": "create_task", "arguments": {"title": "Позвонить"}}]
+
+    @pytest.mark.asyncio
+    async def test_tool_use_failed_is_recovered_without_nulls(self, mock_groq):
+        failed = json.dumps(
+            {
+                "name": "create_task",
+                "arguments": {
+                    "assignee_username": None,
+                    "client": "Алекс Алексеев.",
+                    "deadline": "2026-10-23",
+                    "deadline_time": "13:00",
+                    "description": None,
+                    "priority": "medium",
+                    "title": "Позвонить клиенту",
+                },
+            }
+        )
+        mock_groq.chat.completions.create = AsyncMock(side_effect=make_tool_use_failed(failed))
+
+        result = await call_llm_with_tools("создай ему задачу позвонить завтра в 13", history=[])
+
+        assert result == [
+            {
+                "name": "create_task",
+                "arguments": {
+                    "client": "Алекс Алексеев.",
+                    "deadline": "2026-10-23",
+                    "deadline_time": "13:00",
+                    "priority": "medium",
+                    "title": "Позвонить клиенту",
+                },
+            }
+        ]
+        assert mock_groq.chat.completions.create.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_tool_use_failed_with_unknown_tool_is_raised(self, mock_groq):
+        failed = json.dumps({"name": "drop_database", "arguments": {}})
+        mock_groq.chat.completions.create = AsyncMock(side_effect=make_tool_use_failed(failed))
+
+        with pytest.raises(BadRequestError):
+            await call_llm_with_tools("привет", history=[])
+
+    @pytest.mark.asyncio
+    async def test_unparseable_failed_generation_is_raised(self, mock_groq):
+        mock_groq.chat.completions.create = AsyncMock(side_effect=make_tool_use_failed("<function=create_task>{"))
+
+        with pytest.raises(BadRequestError):
+            await call_llm_with_tools("привет", history=[])
+
+    @pytest.mark.asyncio
+    async def test_other_bad_request_is_raised(self, mock_groq):
+        failed = json.dumps({"name": "create_task", "arguments": {"title": "x"}})
+        mock_groq.chat.completions.create = AsyncMock(side_effect=make_tool_use_failed(failed, code="other_error"))
+
+        with pytest.raises(BadRequestError):
+            await call_llm_with_tools("привет", history=[])

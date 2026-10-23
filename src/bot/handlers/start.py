@@ -175,8 +175,14 @@ async def cmd_start_deeplink(message: Message, command: CommandObject, state: FS
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message):
-    """Обычный /start без параметров."""
+async def cmd_start(message: Message, state: FSMContext | None = None):
+    """Обычный /start без параметров.
+
+    Сбрасывает диалог (FSM): иначе после «🔍 По ID» бот оставался в режиме редактирования задачи и молча игнорировал
+    обычные сообщения, включая команды ассистенту.
+    """
+    if state is not None:
+        await state.clear()
     async with UnitOfWork(get_session_maker()) as uow:
         assert message.from_user is not None
         user = await uow.users.get_by_telegram_id(message.from_user.id)

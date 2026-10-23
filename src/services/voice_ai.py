@@ -20,7 +20,7 @@ import tempfile
 from datetime import date, timedelta
 
 import edge_tts
-from groq import AsyncGroq
+from groq import AsyncGroq, BadRequestError
 from groq.types.chat import ChatCompletionMessageParam  # type: ignore[import]
 
 from src.core.config import GROQ_API_KEY, GROQ_LLM_MODEL, GROQ_STT_MODEL
@@ -355,6 +355,52 @@ def _model_options(model: str) -> dict:
     return {"max_tokens": 1024}
 
 
+def _drop_nulls(args: object) -> dict:
+    """Убрать из аргументов инструмента ключи со значением null.
+
+    Модель иногда передаёт необязательные поля как null («description»: null), хотя в схеме они string. Для кода
+    «null» и «не передано» — одно и то же, поэтому null просто отбрасывается.
+    """
+    if not isinstance(args, dict):
+        return {}
+    return {k: v for k, v in args.items() if v is not None}
+
+
+def _recover_failed_tool_call(exc: BadRequestError, tools: list) -> list[dict] | None:
+    """Достать вызов инструмента из ошибки Groq `tool_use_failed`.
+
+    Groq сам проверяет вызов по схеме и при нарушении (например, null вместо string) отвечает 400, но кладёт
+    сгенерированный вызов в `failed_generation`. Вызов по смыслу корректный, поэтому разбираем его, убираем null
+    и используем, вместо того чтобы терять команду пользователя. Возвращает None, если это другая ошибка или
+    вызов не удаётся разобрать — тогда исключение нужно пробросить дальше.
+    """
+    body = exc.body if isinstance(exc.body, dict) else {}
+    err = body.get("error", body)
+    if not isinstance(err, dict) or err.get("code") != "tool_use_failed":
+        return None
+    raw = err.get("failed_generation")
+    if not isinstance(raw, str):
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    items = data if isinstance(data, list) else [data]
+    known = {t.get("function", {}).get("name") for t in tools}
+    calls: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict) or item.get("name") not in known:
+            return None
+        arguments = item.get("arguments", {})
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                return None
+        calls.append({"name": item["name"], "arguments": _drop_nulls(arguments)})
+    return calls or None
+
+
 async def call_llm_with_tools(
     text: str,
     history: list[dict],
@@ -379,14 +425,22 @@ async def call_llm_with_tools(
             messages.append({"role": role, "content": content})  # type: ignore[arg-type]
     messages.append({"role": "user", "content": text})
 
-    response = await groq.chat.completions.create(
-        model=GROQ_LLM_MODEL,
-        messages=messages,
-        tools=TOOLS if tools is None else tools,
-        tool_choice="auto",
-        temperature=0.1,
-        **_model_options(GROQ_LLM_MODEL),
-    )
+    active_tools = TOOLS if tools is None else tools
+    try:
+        response = await groq.chat.completions.create(
+            model=GROQ_LLM_MODEL,
+            messages=messages,
+            tools=active_tools,
+            tool_choice="auto",
+            temperature=0.1,
+            **_model_options(GROQ_LLM_MODEL),
+        )
+    except BadRequestError as exc:
+        recovered = _recover_failed_tool_call(exc, active_tools)
+        if recovered is None:
+            raise
+        logger.warning("Groq отклонил вызов по схеме, вызов восстановлен: %s", [c["name"] for c in recovered])
+        return recovered
 
     choice = response.choices[0]
     tool_calls = []
@@ -394,7 +448,7 @@ async def call_llm_with_tools(
     if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
         for tc in choice.message.tool_calls:
             try:
-                args = json.loads(tc.function.arguments)
+                args = _drop_nulls(json.loads(tc.function.arguments))
             except json.JSONDecodeError:
                 args = {}
             tool_calls.append(

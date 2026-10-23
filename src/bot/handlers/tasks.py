@@ -806,6 +806,18 @@ async def edit_task_menu(message: Message, state: FSMContext):
                 await message.answer(f"❌ Ошибка: {str(e)}")
                 await state.clear()
 
+    else:
+        # Не кнопка меню: раньше такой текст молча терялся, и бот «замолкал» до нажатия «Назад».
+        # Обычную фразу передаём ассистенту, а нажатие чужой кнопки подсказкой возвращаем к меню.
+        text = (message.text or "").strip()
+        if text and text[0].isalnum():
+            from src.bot.handlers.ai_assistant import process_text
+
+            await state.clear()
+            await process_text(message, state, text, prefix="<i>Редактирование задачи закрыто.</i>")
+        else:
+            await message.answer("Выберите действие кнопкой или вернитесь в меню: «🔙 Назад в меню фильтры».")
+
 
 @router.message(ReassignTask.assign_to)
 async def reassign_task_assign(message: Message, state: FSMContext):
