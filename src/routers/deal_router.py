@@ -4,10 +4,14 @@ from fastapi import APIRouter, Depends, Query
 from src.core.dependencies import get_current_user
 from src.db import SessionDep
 from src.models.user import UserModel
+from src.repositories.client_repository import ClientRepository
+from src.repositories.deal_repository import DealRepository
+from src.repositories.users_repository import UserRepository
 from src.routers.pipeline_router import get_deal_service
 from src.schemas.client import ClientType
 from src.schemas.deal import DealCreate, DealMove, DealSchema, DealStageChange, DealUpdate
 from src.schemas.pagination import PaginatedResponse, PaginationParams
+from src.services.crm_export_service import CrmExportService, csv_response
 
 router = APIRouter(tags=["Deals"])
 
@@ -19,6 +23,28 @@ def _page(items, total, pagination: PaginationParams):
         page=pagination.page,
         size=pagination.size,
     )
+
+
+@router.get(
+    "/deals/export",
+    summary="Экспорт сделок в CSV",
+    description="Выгружает сделки в CSV (UTF-8 с BOM, разделитель «;» — открывается в Excel). Фильтры: `stage_id`, "
+    "`owner_id`, `client_id`, `client_type`. **Требует роль admin или manager.**",
+    responses={403: {"description": "Требуется роль admin или manager"}},
+)
+async def export_deals(
+    session: SessionDep,
+    stage_id: int | None = Query(None),
+    owner_id: int | None = Query(None),
+    client_id: int | None = Query(None),
+    client_type: ClientType | None = Query(None, description="company — B2B, person — B2C"),
+    current_user: UserModel = Depends(get_current_user),
+):
+    service = CrmExportService(ClientRepository(session), DealRepository(session), UserRepository(session))
+    content = await service.deals_csv(
+        current_user, stage_id=stage_id, owner_id=owner_id, client_id=client_id, client_type=client_type
+    )
+    return csv_response(content, "deals_export")
 
 
 @router.get(

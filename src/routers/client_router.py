@@ -1,15 +1,21 @@
 # src/routers/client_router.py
-from fastapi import APIRouter, Depends, Query
+import json
+from dataclasses import asdict
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from src.core.dependencies import get_current_user
 from src.db import SessionDep
-from src.models.user import UserModel
+from src.models.user import UserModel, UserRole
 from src.repositories.client_repository import ClientRepository
+from src.repositories.deal_repository import DealRepository
 from src.repositories.interaction_repository import InteractionRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.client import (
     ClientCreate,
     ClientDetailSchema,
+    ClientImportColumns,
+    ClientImportReport,
     ClientSchema,
     ClientType,
     ClientUpdate,
@@ -18,13 +24,109 @@ from src.schemas.client import (
     ContactUpdate,
 )
 from src.schemas.pagination import PaginatedResponse, PaginationParams
+from src.services.client_import_service import ClientImportError, ClientImportService, describe_columns
 from src.services.client_service import ClientService
+from src.services.crm_export_service import CrmExportService, csv_response
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
 
 def get_client_service(session: SessionDep) -> ClientService:
     return ClientService(ClientRepository(session), UserRepository(session))
+
+
+def get_import_service(session: SessionDep) -> ClientImportService:
+    return ClientImportService(ClientRepository(session), UserRepository(session))
+
+
+def _parse_mapping(raw: str) -> dict[str, int]:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(422, "Сопоставление колонок должно быть JSON-объектом {поле: номер колонки}") from exc
+    if not isinstance(data, dict) or any(not isinstance(v, int) or isinstance(v, bool) for v in data.values()):
+        raise HTTPException(422, "Сопоставление колонок должно быть JSON-объектом {поле: номер колонки}")
+    return data
+
+
+@router.get(
+    "/export",
+    summary="Экспорт клиентов в CSV",
+    description="Выгружает клиентов в CSV (UTF-8 с BOM, разделитель «;» — открывается в Excel). Те же фильтры, что у "
+    "списка клиентов. Файл можно загрузить обратно через импорт. **Требует роль admin или manager.**",
+    responses={403: {"description": "Требуется роль admin или manager"}},
+)
+async def export_clients(
+    session: SessionDep,
+    search: str | None = Query(None, max_length=100),
+    contact_due: bool = Query(False),
+    owner_id: int | None = Query(None),
+    client_type: ClientType | None = Query(None, description="company — B2B, person — B2C"),
+    current_user: UserModel = Depends(get_current_user),
+):
+    service = CrmExportService(ClientRepository(session), DealRepository(session), UserRepository(session))
+    content = await service.clients_csv(
+        current_user, search=search, owner_id=owner_id, client_type=client_type, contact_due=contact_due
+    )
+    return csv_response(content, "clients_export")
+
+
+@router.post(
+    "/import/columns",
+    response_model=ClientImportColumns,
+    summary="Импорт клиентов: колонки файла",
+    description="Читает .csv/.xlsx и возвращает колонки с примерами значений и подсказкой, какое поле клиента "
+    "к какой колонке подходит. Ничего не создаёт. **Требует роль admin или manager.**",
+    responses={422: {"description": "Файл не удалось прочитать"}},
+)
+async def import_clients_columns(
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.admin, UserRole.manager):
+        raise HTTPException(403, "Импортировать клиентов могут admin и manager")
+    try:
+        return describe_columns(file.filename or "", await file.read())
+    except ClientImportError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post(
+    "/import",
+    response_model=ClientImportReport,
+    summary="Импорт клиентов из CSV/Excel",
+    description="Создаёт клиентов из файла по сопоставлению `mapping` (JSON `{поле: номер колонки}`, колонки с 0, "
+    "обязательно поле `name`). С `dry_run=true` ничего не создаёт и возвращает тот же отчёт — предпросмотр. "
+    "`default_type` — тип, если в файле его нет: company, person или auto (угадать по названию: «ООО …» "
+    "и кавычки — компания, «Иванов Иван» — человек). "
+    "Дубликаты (тот же телефон, email или, без них, то же название и тип) по умолчанию пропускаются. "
+    "Все строки создаются одной транзакцией. Ответственный — из колонки `owner`, иначе тот, кто импортирует. "
+    "**Требует роль admin или manager.**",
+    responses={422: {"description": "Файл или сопоставление не подходят"}},
+)
+async def import_clients(
+    session: SessionDep,
+    file: UploadFile = File(...),
+    mapping: str = Form(...),
+    default_type: str = Form("company"),
+    skip_duplicates: bool = Form(True),
+    dry_run: bool = Form(False),
+    current_user: UserModel = Depends(get_current_user),
+):
+    parsed = _parse_mapping(mapping)
+    try:
+        report = await get_import_service(session).import_clients(
+            filename=file.filename or "",
+            content=await file.read(),
+            mapping=parsed,
+            current_user=current_user,
+            default_type=default_type,
+            skip_duplicates=skip_duplicates,
+            dry_run=dry_run,
+        )
+    except ClientImportError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return asdict(report)
 
 
 @router.post(

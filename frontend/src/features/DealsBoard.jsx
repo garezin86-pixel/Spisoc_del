@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiRequest } from "../api";
+import { apiRequest, downloadFile } from "../api";
 import { DealModal } from "../components/DealModal";
 import { Icon } from "../components/Icon";
 import { KanbanBoard } from "../components/KanbanBoard";
@@ -90,6 +90,17 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
         const timer = setTimeout(() => setMoveError(null), 6000);
         return () => clearTimeout(timer);
     }, [moveError]);
+
+    const exportCsv = async () => {
+        try {
+            const qs = new URLSearchParams();
+            if (clientId) qs.set("client_id", clientId);
+            if (typeFilter) qs.set("client_type", typeFilter);
+            await downloadFile({ path: `/deals/export?${qs}`, token, fallbackName: "deals_export.csv" });
+        } catch (e) {
+            setMoveError(e.message);
+        }
+    };
 
     const pipeline = pipelines.find(p => p.id === selectedId) ?? null;
     const stages = useMemo(() => pipeline?.stages ?? [], [pipeline]);
@@ -213,6 +224,11 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                 <button className="btn btn-ghost btn-sm" onClick={() => load()}>
                     <Icon d={ICONS.refresh} /> Обновить
                 </button>
+                {canManage && (
+                    <button className="btn btn-ghost btn-sm" onClick={exportCsv} title="Выгрузить сделки в CSV (для общей доски — с выбранным типом клиентов)">
+                        Экспорт
+                    </button>
+                )}
                 {pipelines.length > 1 && (
                     <select
                         value={selectedId ?? ""} onChange={e => selectPipeline(Number(e.target.value))}

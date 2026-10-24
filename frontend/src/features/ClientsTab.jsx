@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiRequest } from "../api";
+import { apiRequest, downloadFile } from "../api";
 import { Icon } from "../components/Icon";
 import { Pagination } from "../components/Pagination";
 import { ICONS } from "../constants/icons";
@@ -7,6 +7,7 @@ import { PersonFields } from "../components/PersonFields";
 import { CLIENT_TYPES, clientTypeInfo, emptyToNull, formatDate, isContactDue, plural } from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 import { ClientCard } from "./ClientCard";
+import { ClientImportModal } from "../components/ClientImportModal";
 
 const EMPTY_FORM = { name: "", client_type: "company", birth_date: "", gender: "", phone: "", email: "", address: "", notes: "", owner_id: "" };
 
@@ -35,6 +36,8 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showCreate, setShowCreate] = useState(false);
+    const [showImport, setShowImport] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
     const [formError, setFormError] = useState(null);
@@ -44,6 +47,23 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
         const timer = setTimeout(() => { setQuery(search.trim()); setPage(1); }, 300);
         return () => clearTimeout(timer);
     }, [search]);
+
+    const exportCsv = async () => {
+        setExporting(true);
+        try {
+            const qs = new URLSearchParams();
+            if (query) qs.set("search", query);
+            if (onlyDue) qs.set("contact_due", "true");
+            if (onlyMine && currentUserId) qs.set("owner_id", currentUserId);
+            if (typeFilter) qs.set("client_type", typeFilter);
+            await downloadFile({ path: `/clients/export?${qs}`, token, fallbackName: "clients_export.csv" });
+            setError(null);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -114,11 +134,21 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                     <div className="section-sub">{data.total > 0 ? `${data.total} ${plural(data.total, "клиент", "клиента", "клиентов")}` : "Нет клиентов"}</div>
                 </div>
                 {canManage && (
-                    <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(v => !v); setFormError(null); }}>
-                        <Icon d={ICONS.plus} /> Клиент
-                    </button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setShowImport(true)}>Импорт</button>
+                        <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting} title="Выгрузить клиентов с текущими фильтрами в CSV">
+                            {exporting ? "Экспорт…" : "Экспорт"}
+                        </button>
+                        <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(v => !v); setFormError(null); }}>
+                            <Icon d={ICONS.plus} /> Клиент
+                        </button>
+                    </div>
                 )}
             </div>
+
+            {showImport && (
+                <ClientImportModal token={token} onClose={() => setShowImport(false)} onImported={() => { setPage(1); load(); }} />
+            )}
 
             {showCreate && (
                 <form className="form" onSubmit={create} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, marginBottom: 14 }}>

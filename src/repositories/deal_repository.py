@@ -142,6 +142,15 @@ class DealRepository:
         result = await self.session.execute(select(StageModel.id, StageModel.name).where(StageModel.id.in_(stage_ids)))
         return {row[0]: row[1] for row in result.all()}
 
+    async def get_stages_by_ids(self, stage_ids: set[int]) -> dict[int, tuple[str, str]]:
+        """id стадии → (название, вид). Берём и удалённые стадии, чтобы в выгрузке не терялись названия."""
+        if not stage_ids:
+            return {}
+        result = await self.session.execute(
+            select(StageModel.id, StageModel.name, StageModel.kind).where(StageModel.id.in_(stage_ids))
+        )
+        return {row[0]: (row[1], row[2]) for row in result.all()}
+
     async def count_deals_in_stage(self, stage_id: int) -> int:
         return (
             await self.session.scalar(

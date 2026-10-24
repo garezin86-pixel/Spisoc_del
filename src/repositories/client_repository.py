@@ -99,6 +99,15 @@ class ClientRepository:
         )
         return [(row[0], row[1]) for row in result.all()]
 
+    async def list_dedup_fields(self) -> list[tuple[str, str, str | None, str | None]]:
+        """(название, тип, телефон, email) всех живых клиентов компании — для поиска дубликатов при импорте."""
+        result = await self.session.execute(
+            select(ClientModel.name, ClientModel.client_type, ClientModel.phone, ClientModel.email).where(
+                ClientModel.not_deleted_filter()
+            )
+        )
+        return [(row[0], row[1], row[2], row[3]) for row in result.all()]
+
     async def create(self, client: ClientModel) -> ClientModel:
         self.session.add(client)
         await self.session.commit()

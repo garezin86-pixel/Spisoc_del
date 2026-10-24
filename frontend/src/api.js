@@ -115,14 +115,16 @@ export async function apiRequest({
     if (accessToken) {
         headers.Authorization = `Bearer ${accessToken}`;
     }
-    if (body !== null) {
+    // FormData (загрузка файла) отправляем как есть: Content-Type с boundary браузер выставит сам
+    const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+    if (body !== null && !isForm) {
         headers["Content-Type"] = "application/json";
     }
 
     const response = await fetch(`${API_BASE}${path}`, {
         method,
         headers,
-        body: body !== null ? JSON.stringify(body) : null,
+        body: body === null ? null : isForm ? body : JSON.stringify(body),
     });
 
     // ── Автообновление токена при 401 ────────────────────────────────────────
@@ -141,4 +143,30 @@ export async function apiRequest({
     }
 
     return parseResponse(response);
+}
+
+// ─── Скачивание файла (CSV и т.п.) ────────────────────────────────────────────
+// apiRequest ждёт JSON, поэтому файл забираем отдельным fetch и отдаём браузеру через временную ссылку.
+export async function downloadFile({ path, token, fallbackName = "export.csv" }) {
+    const response = await fetch(`${API_BASE}${path}`, {
+        headers: { Authorization: `Bearer ${token || getAccessToken()}` },
+    });
+    if (!response.ok) {
+        let message = `Ошибка ${response.status}`;
+        try {
+            const data = await response.json();
+            if (typeof data?.detail === "string") message = data.detail;
+        } catch { /* тело не JSON — оставляем код ошибки */ }
+        throw new Error(message);
+    }
+    const blob = await response.blob();
+    const match = (response.headers.get("Content-Disposition") || "").match(/filename="?([^";]+)"?/);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = match ? match[1] : fallbackName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
 }

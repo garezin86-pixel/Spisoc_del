@@ -221,3 +221,49 @@ class ContactSchema(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── импорт клиентов из файла ─────────────────────────────────────────────────
+class ImportIssue(BaseModel):
+    row: int  # номер строки в файле (строка 1 — заголовки)
+    message: str
+
+
+class ImportPreviewRow(BaseModel):
+    row: int
+    name: str
+    client_type: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class ClientImportReport(BaseModel):
+    dry_run: bool
+    default_type: str  # company / person / auto — как сервер понял «Тип, если не указан»
+    total_rows: int
+    to_create: int  # сколько строк годятся к созданию
+    created: int  # сколько реально создано (при dry_run — 0)
+    skipped_duplicates: int
+    errors: list[ImportIssue]  # строка пропущена целиком
+    warnings: list[ImportIssue]  # строка создаётся, но часть значений отброшена
+    duplicates: list[ImportIssue]
+    preview: list[ImportPreviewRow]  # первые годные строки
+
+
+class ImportColumn(BaseModel):
+    index: int
+    header: str
+    suggested: Optional[str] = None  # поле клиента, которое подсказано автоматически
+    samples: list[str]
+
+
+class ImportField(BaseModel):
+    key: str
+    label: str
+    required: bool
+
+
+class ClientImportColumns(BaseModel):
+    columns: list[ImportColumn]
+    fields: list[ImportField]
+    total_rows: int
