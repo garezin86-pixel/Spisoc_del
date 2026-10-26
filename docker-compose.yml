@@ -80,6 +80,38 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Бэкап БД по умолчанию: раз в сутки pg_dump в ./backups (BACKUP_HOUR, по UTC), старые дампы удаляются
+  # (BACKUP_LOCAL_RETENTION_DAYS). Первый дамп снимается сразу при запуске. Ручной дамп:
+  #   docker compose run --rm backup once
+  # Без отдельного профиля: бэкап — часть базовой установки, отключать его не нужно. Выгрузка в R2 и
+  # восстановление — scripts/backup.sh и README. Образ postgres:16 — та же версия, что у сервера (pg_dump должен совпадать).
+  backup:
+    image: postgres:16-alpine
+    container_name: spisoc_backup
+    # tr убирает \r: на Windows git может превратить переводы строк скрипта в CRLF, и тогда /bin/sh падает на `set -eu\r`.
+    entrypoint: [ "/bin/sh", "-c", "tr -d '\\r' < /usr/local/bin/backup_loop.sh > /tmp/backup_loop.sh && exec /bin/sh /tmp/backup_loop.sh \"$$@\"", "backup" ]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATABASE: ${POSTGRES_DB:-spisok_del_db}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_LOCAL_RETENTION_DAYS: ${BACKUP_LOCAL_RETENTION_DAYS:-7}
+    volumes:
+      - ./scripts/backup_loop.sh:/usr/local/bin/backup_loop.sh:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Нездоров, если за последние ~26 часов не появилось ни одного дампа: виден в `docker compose ps`.
+      test: [ "CMD-SHELL", "find /backups -maxdepth 1 -name 'db-*.sql.gz' -mmin -1560 | grep -q ." ]
+      interval: 1h
+      timeout: 10s
+      retries: 1
+      start_period: 15m
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus

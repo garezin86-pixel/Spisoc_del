@@ -46,6 +46,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER обязателен в проде}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен в проде}
 
+  backup:
+    restart: always
+    environment:
+      # Те же обязательные POSTGRES_*, что у postgres выше: бэкап не должен молча подключаться с дев-паролем.
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER обязателен в проде}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен в проде}
+      PGDATABASE: ${POSTGRES_DB:?POSTGRES_DB обязателен в проде}
+
   redis:
     restart: always
 
