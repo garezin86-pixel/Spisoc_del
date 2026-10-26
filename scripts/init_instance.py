@@ -13,6 +13,7 @@
     --admin   / INIT_ADMIN_USERNAME   имя администратора (из него строится логин для входа)
     INIT_ADMIN_PASSWORD               пароль (не короче 8 символов); не задан — будет сгенерирован и показан один раз
     --stages  / INIT_STAGES           стадии воронки через запятую, «Успех» и «Отказ» добавятся сами
+    --demo    / INIT_DEMO=1           сразу загрузить демо-данные (пример клиентов, сделок и задач; убираются кнопкой)
 
 Повторный запуск безопасен: если в базе уже есть пользователи, скрипт ничего не меняет и завершается с кодом 0.
 Коды выхода: 0 — готово (или уже настроено), 1 — неверные данные, 2 — база недоступна или не мигрирована.
@@ -29,7 +30,9 @@ import sys
 from sqlalchemy.exc import DBAPIError, OperationalError, ProgrammingError
 
 from src.db import get_session_maker
+from src.models.user import UserModel
 from src.services.deal_service import DEFAULT_STAGES
+from src.services.demo_data_service import load_demo
 from src.services.instance_setup_service import AlreadyInitialized, SetupError, setup_instance
 
 
@@ -37,6 +40,21 @@ def _ask(prompt: str, default: str = "") -> str:
     suffix = f" [{default}]" if default else ""
     value = input(f"{prompt}{suffix}: ").strip()
     return value or default
+
+
+def _wants_demo(args: argparse.Namespace) -> bool:
+    if args.demo or os.getenv("INIT_DEMO", "").strip().lower() in ("1", "true", "yes", "y", "да"):
+        return True
+    if sys.stdin.isatty():
+        return _ask(
+            "Загрузить демо-данные (пример клиентов и сделок; удаляются одной кнопкой)? да/нет", "нет"
+        ).lower() in (
+            "да",
+            "д",
+            "y",
+            "yes",
+        )
+    return False
 
 
 def _collect(args: argparse.Namespace) -> tuple[str, str, str | None, str | None]:
@@ -68,10 +86,16 @@ def _collect(args: argparse.Namespace) -> tuple[str, str, str | None, str | None
 async def run(args: argparse.Namespace) -> int:
     try:
         company, admin, password, stages = _collect(args)
+        demo = _wants_demo(args)
+        demo_counts = None
         async with get_session_maker()() as session:
             result = await setup_instance(
                 session, company_name=company, admin_username=admin, admin_password=password, stages=stages
             )
+            if demo:
+                admin_user = await session.get(UserModel, result.admin_id)
+                if admin_user is not None:
+                    demo_counts = await load_demo(session, admin_user)
     except AlreadyInitialized:
         print("Установка уже настроена: в базе есть пользователи, ничего не изменено.")
         return 0
@@ -95,7 +119,13 @@ async def run(args: argparse.Namespace) -> int:
     else:
         print("  Пароль:          тот, что вы задали")
     print(f"  Воронка «Продажи»: {' → '.join(result.stages)}")
-    print("\nОткройте приложение в браузере и войдите. Сотрудников приглашайте из админ-панели ссылкой-приглашением.")
+    if demo_counts:
+        print(
+            f"  Демо-данные:     {demo_counts['clients']} клиентов, "
+            f"{demo_counts['deals']} сделок, {demo_counts['tasks']} задач"
+        )
+    print("\nОткройте приложение в браузере и войдите.")
+    print("Сотрудников приглашайте из админ-панели ссылкой-приглашением.")
     return 0
 
 
@@ -104,6 +134,7 @@ def main() -> None:
     parser.add_argument("--company", help="название компании")
     parser.add_argument("--admin", help="имя администратора")
     parser.add_argument("--stages", help="стадии воронки через запятую (по умолчанию стандартные)")
+    parser.add_argument("--demo", action="store_true", help="сразу загрузить демо-данные")
     sys.exit(asyncio.run(run(parser.parse_args())))
 
 

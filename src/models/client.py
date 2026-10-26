@@ -9,7 +9,8 @@
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, String, Text
+import sqlalchemy as sa
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db import Base
@@ -39,6 +40,8 @@ class ClientModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Создан кнопкой «Загрузить демо-данные»: по этому флагу демо убирается, не затрагивая настоящих клиентов
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.false())
 
     # Ответственный сотрудник. При удалении пользователя клиент остаётся без ответственного.
     owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

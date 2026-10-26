@@ -11,6 +11,7 @@ from .client_router import router as client_router
 from .comments_router import router as comments_router
 from .dashboard_router import router as dashboard_router
 from .deal_router import router as deal_router
+from .demo_router import router as demo_router
 from .group_router import router as group_router
 from .interaction_router import router as interaction_router
 from .notifications_router import router as notifications_router
@@ -46,6 +47,7 @@ api_router.include_router(ai_router)
 api_router.include_router(pipeline_router)
 api_router.include_router(pipelines_router)
 api_router.include_router(deal_router)
+api_router.include_router(demo_router)
 api_router.include_router(push_router)
 api_router.include_router(templates_router)
 api_router.include_router(two_factor_router)

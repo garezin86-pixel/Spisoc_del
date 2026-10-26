@@ -145,7 +145,7 @@ async def test_setup_works_when_another_company_row_exists_but_no_users(maker):
 def _args(**kwargs):
     import argparse
 
-    return argparse.Namespace(**{"company": None, "admin": None, "stages": None, **kwargs})
+    return argparse.Namespace(**{"company": None, "admin": None, "stages": None, "demo": False, **kwargs})
 
 
 @pytest.fixture
@@ -154,7 +154,7 @@ def cli(maker, monkeypatch):
     from scripts import init_instance
 
     monkeypatch.setattr(init_instance, "get_session_maker", lambda: maker)
-    for name in ("INIT_COMPANY_NAME", "INIT_ADMIN_USERNAME", "INIT_ADMIN_PASSWORD", "INIT_STAGES"):
+    for name in ("INIT_COMPANY_NAME", "INIT_ADMIN_USERNAME", "INIT_ADMIN_PASSWORD", "INIT_STAGES", "INIT_DEMO"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False, raising=False)
     return init_instance
@@ -210,10 +210,34 @@ async def test_cli_database_not_ready_exit_code_2(cli, capsys, monkeypatch):
 
 
 async def test_cli_interactive_dialog_generates_password_on_enter(cli, capsys, monkeypatch, maker):
-    answers = iter(["Диалог ООО", "dialog_admin", ""])  # компания, админ, стадии (Enter — по умолчанию)
+    answers = iter(["Диалог ООО", "dialog_admin", "", ""])  # компания, админ, стадии и демо (Enter — по умолчанию)
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     monkeypatch.setattr(cli.getpass, "getpass", lambda prompt="": "")  # пароль: Enter — сгенерировать
     monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
     assert await cli.run(_args()) == 0
     out = capsys.readouterr().out
     assert "Логин для входа: dialogadmin" in out and "Новая → Связались" in out
+
+
+async def test_cli_demo_flag_loads_demo_data_into_the_new_company(cli, capsys, maker):
+    from src.models.client import ClientModel
+
+    assert await cli.run(_args(company="Демо Компания", admin="boss", demo=True)) == 0
+    out = capsys.readouterr().out
+    assert "Демо-данные:     12 клиентов, 8 сделок, 6 задач" in out
+    assert await _count(maker, ClientModel) == 12
+
+
+async def test_cli_demo_from_environment_and_not_by_default(cli, capsys, maker, monkeypatch):
+    from src.models.client import ClientModel
+
+    assert await cli.run(_args(company="Без демо", admin="boss")) == 0
+    assert "Демо-данные" not in capsys.readouterr().out and await _count(maker, ClientModel) == 0
+
+
+async def test_cli_demo_env_switch(cli, capsys, maker, monkeypatch):
+    from src.models.client import ClientModel
+
+    monkeypatch.setenv("INIT_DEMO", "1")
+    assert await cli.run(_args(company="Демо через env", admin="boss")) == 0
+    assert await _count(maker, ClientModel) == 12

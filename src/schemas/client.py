@@ -143,6 +143,7 @@ class ClientSchema(BaseModel):
     birth_date: Optional[date] = None
     gender: Optional[str] = None
     next_contact_at: Optional[date] = None
+    is_demo: bool = False  # создан кнопкой «Загрузить демо-данные»
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -267,3 +268,18 @@ class ClientImportColumns(BaseModel):
     columns: list[ImportColumn]
     fields: list[ImportField]
     total_rows: int
+
+
+# ── демо-данные ──────────────────────────────────────────────────────────────
+class DemoStatus(BaseModel):
+    loaded: bool  # есть ли в компании живые демо-клиенты
+    clients: int
+
+
+class DemoCounts(BaseModel):
+    clients: int
+    contacts: int
+    deals: int
+    interactions: int
+    tasks: int
+    events: int

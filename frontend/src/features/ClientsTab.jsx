@@ -14,6 +14,7 @@ const EMPTY_FORM = { name: "", client_type: "company", birth_date: "", gender: "
 // Клиенты: список с поиском и пагинацией + карточка клиента. Создавать клиентов могут admin и manager.
 export function ClientsTab({ token, canManage, currentUserId, initialClientId = null, onSelectedChange, refreshSignal = 0 }) {
     const { users, usersById } = useUsersMap(token);
+    const isAdmin = users.find(u => u.id === currentUserId)?.role === "admin"; // демо-данные загружает и удаляет только admin
     const [selectedId, setSelectedId] = useState(initialClientId); // с главной можно сразу открыть карточку клиента
 
     // Просят открыть другую карточку, пока вкладка уже открыта (например, «открой клиента X» в панели ассистента)
@@ -38,6 +39,8 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
     const [showCreate, setShowCreate] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [demo, setDemo] = useState({ loaded: false, clients: 0 }); // есть ли в компании демо-клиенты
+    const [demoBusy, setDemoBusy] = useState(false);
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
     const [formError, setFormError] = useState(null);
@@ -62,6 +65,29 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
             setError(e.message);
         } finally {
             setExporting(false);
+        }
+    };
+
+    const loadDemoStatus = useCallback(async () => {
+        try {
+            setDemo(await apiRequest({ path: "/demo", token }));
+        } catch { /* статус демо — не критично: без него просто нет кнопок */ }
+    }, [token]);
+    useEffect(() => { if (token && canManage) loadDemoStatus(); }, [token, canManage, loadDemoStatus]);
+
+    const changeDemo = async (method, confirmText) => {
+        if (confirmText && !window.confirm(confirmText)) return;
+        setDemoBusy(true);
+        try {
+            await apiRequest({ path: method === "POST" ? "/demo/load" : "/demo", method, token });
+            await loadDemoStatus();
+            setPage(1);
+            await load();
+            setError(null);
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setDemoBusy(false);
         }
     };
 
@@ -227,12 +253,35 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                 </label>
             </div>
 
+            {demo.loaded && canManage && (
+                <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", padding: "8px 12px", margin: "8px 0", borderRadius: 8, background: "var(--bg-hover, rgba(124,108,248,0.12))", fontSize: 13 }}>
+                    <span>🧪 В списке есть демо-данные ({demo.clients} {plural(demo.clients, "клиент", "клиента", "клиентов")}) — для знакомства с системой.</span>
+                    {isAdmin && (
+                        <button className="btn btn-ghost btn-sm" disabled={demoBusy} onClick={() => changeDemo("DELETE", "Удалить демо-данные? Будут убраны демо-клиенты, их сделки, задачи и встречи. Ваши настоящие данные не затрагиваются.")}>
+                            {demoBusy ? "Удаляю…" : "Удалить демо"}
+                        </button>
+                    )}
+                </div>
+            )}
+
             {error ? (
                 <div className="alert">{error}</div>
             ) : loading ? (
                 <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
             ) : data.items.length === 0 ? (
-                <div className="empty-state"><div className="empty-icon">🏢</div>{query ? "Ничего не найдено" : "Клиентов пока нет"}</div>
+                <div className="empty-state">
+                    <div className="empty-icon">🏢</div>{query ? "Ничего не найдено" : "Клиентов пока нет"}
+                    {!query && isAdmin && !demo.loaded && (
+                        <div style={{ marginTop: 12 }}>
+                            <button className="btn btn-ghost btn-sm" disabled={demoBusy} onClick={() => changeDemo("POST")}>
+                                {demoBusy ? "Загружаю…" : "Загрузить демо-данные"}
+                            </button>
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+                                Пример клиентов, сделок и задач, чтобы посмотреть систему в деле. Удаляется одной кнопкой.
+                            </div>
+                        </div>
+                    )}
+                </div>
             ) : (
                 <div>
                     {data.items.map(c => (
@@ -241,7 +290,7 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                             style={{ display: "flex", gap: 12, padding: "10px 4px", borderBottom: "1px solid var(--border)", cursor: "pointer", alignItems: "center" }}
                         >
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontWeight: 600 }}><span title={clientTypeInfo(c.client_type).label}>{clientTypeInfo(c.client_type).icon}</span> {c.name}</div>
+                                <div style={{ fontWeight: 600 }}><span title={clientTypeInfo(c.client_type).label}>{clientTypeInfo(c.client_type).icon}</span> {c.name}{c.is_demo && <span title="Демо-данные: удаляются кнопкой «Удалить демо»" style={{ marginLeft: 8, fontSize: 10, fontWeight: 500, padding: "1px 6px", borderRadius: 8, background: "var(--surface2)", color: "var(--text-dim)" }}>демо</span>}</div>
                                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{[c.phone, c.email].filter(Boolean).join(" · ") || "—"}</div>
                             </div>
                             {c.next_contact_at && (
