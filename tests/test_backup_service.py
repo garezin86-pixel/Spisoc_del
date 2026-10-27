@@ -18,10 +18,22 @@ SH = shutil.which("sh")
 needs_sh = pytest.mark.skipif(SH is None, reason="нужен POSIX sh (на Windows — Git Bash/WSL)")
 
 STUB_PG_DUMP = """#!/bin/sh
+echo "pg_dump $*" >> "${CALL_LOG:-/dev/null}"
 while [ $# -gt 0 ]; do case "$1" in -f) out="$2"; shift 2;; *) shift;; esac; done
 [ "${STUB_FAIL:-0}" = "1" ] && { echo "stub failure" >&2; exit 1; }
 [ "${STUB_EMPTY:-0}" = "1" ] && { : > "$out"; exit 0; }
 printf 'CREATE TABLE t(id int);\\nINSERT INTO t VALUES (1);\\n' > "$out"
+"""
+STUB_PSQL = """#!/bin/sh
+echo "psql $*" >> "${CALL_LOG:-/dev/null}"
+case "$*" in
+  *to_regclass*) echo t ;;
+  *"count(*)"*) echo 7 ;;
+  *alembic_version*) echo n9c0d1e2f3a4 ;;
+  *DROP*) [ "${PSQL_FAIL_DROP:-0}" = "1" ] && exit 1; : ;;
+  *) cat > "${PSQL_STDIN:-/dev/null}"; [ "${PSQL_FAIL_LOAD:-0}" = "1" ] && exit 1; : ;;
+esac
+exit 0
 """
 STUB_SLEEP = """#!/bin/sh
 echo "$1" > "$SLEEP_LOG"
@@ -34,7 +46,7 @@ def env(tmp_path):
     """PATH с подставными pg_dump и sleep + каталог для дампов."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    for name, body in (("pg_dump", STUB_PG_DUMP), ("sleep", STUB_SLEEP)):
+    for name, body in (("pg_dump", STUB_PG_DUMP), ("sleep", STUB_SLEEP), ("psql", STUB_PSQL)):
         f = bindir / name
         f.write_text(body, encoding="utf-8")
         f.chmod(0o755)
@@ -46,8 +58,17 @@ def env(tmp_path):
         "BACKUP_DIR": str(out),
         "PGDATABASE": "testdb",
         "SLEEP_LOG": str(tmp_path / "sleep.log"),
+        "CALL_LOG": str(tmp_path / "calls.log"),
+        "PSQL_STDIN": str(tmp_path / "loaded.sql"),
     }
-    for var in ("BACKUP_HOUR", "BACKUP_LOCAL_RETENTION_DAYS", "STUB_FAIL", "STUB_EMPTY"):
+    for var in (
+        "BACKUP_HOUR",
+        "BACKUP_LOCAL_RETENTION_DAYS",
+        "STUB_FAIL",
+        "STUB_EMPTY",
+        "PSQL_FAIL_DROP",
+        "PSQL_FAIL_LOAD",
+    ):
         environ.pop(var, None)
     return environ, out, tmp_path / "sleep.log"
 
@@ -170,6 +191,144 @@ def test_loop_retries_failed_first_dump(env):
     assert sleep_log.read_text().strip() == "600"
     assert "повтор через 10 минут" in result.stdout
     assert list(out.iterdir()) == []
+
+
+# ── восстановление ───────────────────────────────────────────────────────────
+SQL = b"CREATE TABLE restored(id int);\nINSERT INTO restored VALUES (42);\n"
+
+
+def _calls(environ) -> list[str]:
+    log = Path(environ["CALL_LOG"])
+    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+
+
+def _dump_file(out: Path, name: str = "db-2026-10-20_03-00-00.sql.gz", payload: bytes = SQL) -> Path:
+    f = out / name
+    f.write_bytes(gzip.compress(payload))
+    return f
+
+
+@needs_sh
+def test_restore_without_file_lists_available_dumps(env):
+    environ, out, _ = env
+    _dump_file(out, "db-2026-10-20_03-00-00.sql.gz")
+    result = _run(environ, "restore")
+    assert result.returncode == 2
+    assert "db-2026-10-20_03-00-00.sql.gz" in result.stdout
+    assert _calls(environ) == []
+
+
+@needs_sh
+def test_restore_requires_explicit_confirmation(env):
+    environ, out, _ = env
+    _dump_file(out)
+    result = _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz")
+    assert result.returncode == 3 and "--yes" in result.stdout
+    assert _calls(environ) == [], "без --yes база не должна затрагиваться"
+
+
+@needs_sh
+@pytest.mark.parametrize("name", ["missing.sql.gz", "../../etc/passwd-not-there.gz"])
+def test_restore_rejects_missing_file(env, name):
+    environ, out, _ = env
+    result = _run(environ, "restore", name, "--yes")
+    assert result.returncode == 1 and "не найден" in result.stdout
+    assert _calls(environ) == []
+
+
+@needs_sh
+def test_restore_rejects_corrupt_file_before_touching_the_database(env):
+    environ, out, _ = env
+    (out / "db-2026-10-20_03-00-00.sql.gz").write_bytes(b"this is not gzip")
+    result = _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--yes")
+    assert result.returncode == 1 and "повреждён" in result.stdout
+    assert _calls(environ) == []
+
+
+@needs_sh
+def test_restore_saves_current_db_then_recreates_and_loads_the_dump(env):
+    environ, out, _ = env
+    _dump_file(out)
+    result = _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--yes")
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = _calls(environ)
+    kinds = [
+        "pg_dump" if c.startswith("pg_dump") else "drop" if "DROP" in c else "load"
+        for c in calls
+        if "to_regclass" not in c and "count(*)" not in c and "alembic" not in c
+    ]
+    assert kinds == ["pg_dump", "drop", "load"], kinds  # сначала страховка, потом замена
+    assert any('DROP DATABASE IF EXISTS "testdb" WITH (FORCE)' in c and 'CREATE DATABASE "testdb"' in c for c in calls)
+    assert Path(environ["PSQL_STDIN"]).read_bytes() == SQL, "в psql должен уйти ровно распакованный дамп"
+    guards = list(out.glob("pre-restore-*.sql.gz"))
+    assert len(guards) == 1 and "CREATE TABLE t" in gzip.decompress(guards[0].read_bytes()).decode()
+    assert "users: 7" in result.stdout and "версия миграций: n9c0d1e2f3a4" in result.stdout
+
+
+@needs_sh
+def test_restore_safety_copy_is_not_pruned_as_a_regular_dump(env):
+    environ, out, _ = env
+    _dump_file(out)
+    _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--yes")
+    guard = next(out.glob("pre-restore-*.sql.gz"))
+    stamp = time.time() - 400 * 86400
+    os.utime(guard, (stamp, stamp))
+    _run(environ, "once", BACKUP_LOCAL_RETENTION_DAYS="1")
+    assert guard.exists(), "страховочная копия перед восстановлением не должна удаляться ротацией"
+
+
+@needs_sh
+def test_restore_no_safety_skips_the_copy(env):
+    environ, out, _ = env
+    _dump_file(out)
+    result = _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--yes", "--no-safety")
+    assert result.returncode == 0
+    assert not list(out.glob("pre-restore-*")) and not any(c.startswith("pg_dump") for c in _calls(environ))
+
+
+@needs_sh
+def test_restore_aborts_if_the_safety_copy_cannot_be_made(env):
+    environ, out, _ = env
+    _dump_file(out)
+    result = _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--yes", STUB_FAIL="1")
+    assert result.returncode == 1 and "Восстановление отменено" in result.stdout
+    assert not any("DROP" in c for c in _calls(environ)), "базу нельзя трогать, если не удалось её сохранить"
+    assert not list(out.glob("pre-restore-*")) and not list(out.glob(".*"))
+
+
+@needs_sh
+def test_restore_reports_failure_when_dump_does_not_load(env):
+    environ, out, _ = env
+    _dump_file(out)
+    result = _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--yes", PSQL_FAIL_LOAD="1")
+    assert result.returncode == 1 and "не залился" in result.stdout and "pre-restore" in result.stdout
+
+
+@needs_sh
+def test_restore_stops_if_database_cannot_be_recreated(env):
+    environ, out, _ = env
+    _dump_file(out)
+    result = _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--yes", PSQL_FAIL_DROP="1")
+    assert result.returncode == 1 and "пересоздать" in result.stdout
+    assert Path(environ["PSQL_STDIN"]).exists() is False
+
+
+@needs_sh
+def test_restore_rejects_unknown_option(env):
+    environ, out, _ = env
+    _dump_file(out)
+    assert _run(environ, "restore", "db-2026-10-20_03-00-00.sql.gz", "--force").returncode == 2
+
+
+@needs_sh
+def test_restore_reads_the_newest_dump_made_by_the_service_itself(env):
+    """Круг целиком: снятый сервисом дамп восстанавливается тем же сервисом."""
+    environ, out, _ = env
+    assert _run(environ, "once").returncode == 0
+    (dump,) = _dumps(out)
+    result = _run(environ, "restore", dump.name, "--yes", "--no-safety")
+    assert result.returncode == 0, result.stdout
+    assert b"CREATE TABLE t(id int);" in Path(environ["PSQL_STDIN"]).read_bytes()
 
 
 # ── подключение в compose ────────────────────────────────────────────────────

@@ -10,6 +10,11 @@
 # Запуск:
 #   backup_loop.sh        — цикл: дамп при старте (если за сутки его ещё не было), затем каждый день в BACKUP_HOUR
 #   backup_loop.sh once   — один дамп и выход (ручной бэкап: `docker compose run --rm backup once`)
+#   backup_loop.sh restore [ФАЙЛ] [--yes] [--no-safety]
+#                         — восстановить БД из дампа (`docker compose run --rm backup restore db-….sql.gz --yes`).
+#                           Без ФАЙЛа показывает доступные дампы. Без --yes ничего не делает. ЗАМЕНЯЕТ текущую БД
+#                           целиком; перед этим сохраняет её в pre-restore-….sql.gz (отключается --no-safety).
+#                           Приложение перед восстановлением остановите: `docker compose stop app bot`.
 #
 # Настройки (переменные окружения):
 #   PGHOST/PGUSER/PGPASSWORD/PGDATABASE      — подключение к БД (задаёт docker-compose.yml)
@@ -80,6 +85,70 @@ seconds_until_next_run() {
   [ "$wait" -le 0 ] && wait=$(( wait + 86400 ))
   echo "$wait"
 }
+
+# Восстановление из дампа: проверяет файл, сохраняет текущую БД «на случай», пересоздаёт БД и заливает дамп.
+restore_db() {
+  file=""; confirmed=0; safety=1
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) confirmed=1 ;;
+      --no-safety) safety=0 ;;
+      -*) log "неизвестный параметр: $arg"; return 2 ;;
+      *) file="$arg" ;;
+    esac
+  done
+  if [ -z "$file" ]; then
+    log "укажите файл дампа. Доступные:"
+    # shellcheck disable=SC2012
+    ls -1t "$DIR"/db-*.sql.gz 2>/dev/null | while read -r f; do echo "  $(basename "$f")  ($(du -h "$f" | cut -f1))"; done
+    return 2
+  fi
+  case "$file" in /*) path="$file" ;; *) path="$DIR/$file" ;; esac
+  if [ ! -s "$path" ]; then log "ОШИБКА: файл не найден или пуст: $path"; return 1; fi
+  if ! gzip -t "$path" 2>/dev/null; then log "ОШИБКА: файл повреждён (не проходит проверку gzip): $path"; return 1; fi
+  if [ "$confirmed" -ne 1 ]; then
+    log "будет ПОЛНОСТЬЮ заменена база ${PGDATABASE:-?} данными из $path"
+    log "остановите приложение (docker compose stop app bot) и повторите команду с --yes"
+    return 3
+  fi
+
+  if [ "$safety" -eq 1 ]; then
+    guard="$DIR/pre-restore-$(date '+%F_%H-%M-%S').sql.gz"
+    log "сохраняю текущую БД перед заменой: $guard"
+    if pg_dump --no-owner --no-privileges -f "$guard.sql" && gzip -9 -f "$guard.sql" && mv "$guard.sql.gz" "$guard"; then
+      log "текущее состояние сохранено"
+    else
+      rm -f "$guard.sql" "$guard.sql.gz" "$guard"
+      log "ОШИБКА: не удалось сохранить текущую БД. Восстановление отменено (повторите с --no-safety, если текущая БД не нужна)"
+      return 1
+    fi
+  fi
+
+  log "пересоздаю базу ${PGDATABASE}..."
+  psql -d postgres -v ON_ERROR_STOP=1 -q \
+    -c "DROP DATABASE IF EXISTS \"$PGDATABASE\" WITH (FORCE)" -c "CREATE DATABASE \"$PGDATABASE\"" || {
+    log "ОШИБКА: не удалось пересоздать базу"; return 1; }
+  log "заливаю дамп..."
+  if ! gunzip -c "$path" | psql -v ON_ERROR_STOP=1 -q -o /dev/null; then
+    log "ОШИБКА: дамп не залился полностью. База в неполном состоянии — восстановите из pre-restore-*.sql.gz или другого дампа"
+    return 1
+  fi
+  log "готово. Что в базе сейчас:"
+  for t in users workspaces clients deals spisok_del; do
+    if [ "$(psql -At -c "SELECT to_regclass('public.$t') IS NOT NULL" 2>/dev/null)" = "t" ]; then
+      log "  $t: $(psql -At -c "SELECT count(*) FROM public.$t")"
+    fi
+  done
+  log "  версия миграций: $(psql -At -c 'SELECT version_num FROM alembic_version' 2>/dev/null)"
+  log "теперь запустите приложение: docker compose up -d (недостающие миграции применятся при старте)"
+  return 0
+}
+
+if [ "${1:-}" = "restore" ]; then
+  shift
+  restore_db "$@"
+  exit $?
+fi
 
 if [ "${1:-}" = "once" ]; then
   dump_once && prune

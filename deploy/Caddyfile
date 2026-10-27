@@ -1,0 +1,15 @@
+# deploy/Caddyfile — HTTPS-прокси перед приложением (необязательный профиль `https`, см. docs/INSTALL.md).
+#
+# {$DOMAIN} берётся из .env.prod. Caddy сам получает и продлевает сертификат Let's Encrypt: нужны публичный DNS-адрес,
+# указывающий на этот сервер, и открытые порты 80 и 443. Заголовки X-Forwarded-* он выставляет сам, WebSocket
+# (чат, уведомления) проксируется без дополнительных настроек.
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=15552000"
+		-Server
+	}
+
+	reverse_proxy app:8000
+}

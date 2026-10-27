@@ -76,3 +76,34 @@ services:
       # не резолвится (не задана в shell/.env/--env-file) — деплой упадёт
       # с понятной ошибкой вместо тихого дефолта.
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD обязателен в проде. Задай его в shell-окружении, файле .env рядом с docker-compose.yml, или передай через --env-file .env.prod}
+
+  # HTTPS «из коробки» — необязательно. Включается профилем: `... --profile https up -d` (см. docs/INSTALL.md).
+  # Без профиля не стартует и ничего не меняет. DOMAIN задаётся в .env.prod; без него контейнер остановится с понятной
+  # ошибкой (проверка внутри команды, а не `${DOMAIN:?}`: интерполяция compose сработала бы и без профиля и ломала бы
+  # обычный запуск).
+  caddy:
+    image: caddy:2-alpine
+    container_name: spisoc_caddy
+    profiles: [ "https" ]
+    restart: always
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    command:
+      - sh
+      - -c
+      - 'test -n "$$DOMAIN" || { echo "ОШИБКА: DOMAIN не задан в .env.prod"; exit 1; }; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile'
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data  # сертификаты: не удалять, у Let's Encrypt есть лимиты на выпуск
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:

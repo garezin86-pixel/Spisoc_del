@@ -41,7 +41,8 @@ def test_postgres_host_port_is_configurable_with_default_5432():
 
 
 def test_application_port_is_still_published():
-    assert "8000:8000" in _effective_ports("app", "docker-compose.yml", "docker-compose.prod.yml")
+    # По умолчанию — на всех интерфейсах, как и раньше; APP_BIND=127.0.0.1 (HTTPS-профиль) закрывает порт снаружи.
+    assert "${APP_BIND:-0.0.0.0}:8000:8000" in _effective_ports("app", "docker-compose.yml", "docker-compose.prod.yml")
 
 
 def test_prod_file_does_not_pretend_to_close_ports_with_empty_list():
