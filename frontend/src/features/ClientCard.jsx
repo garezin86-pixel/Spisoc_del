@@ -118,28 +118,45 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
     };
 
     const row = (label, value) => (
-        <div style={{ display: "flex", gap: 12, padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
-            <div style={{ width: 160, color: "var(--text-muted)", flexShrink: 0 }}>{label}</div>
-            <div style={{ flex: 1, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{value || "—"}</div>
+        <div className="cl-kv">
+            <div className="cl-kv-label">{label}</div>
+            <div className="cl-kv-value">{value || "—"}</div>
         </div>
     );
 
+    const typeInfo = clientTypeInfo(client.client_type);
+    const due = client.next_contact_at && isContactDue(client.next_contact_at);
+
     return (
-        <div className="card">
-            <div className="section-header">
-                <div>
-                    <button className="btn btn-ghost btn-sm" onClick={onBack} style={{ marginBottom: 6 }}>← К списку</button>
-                    <div className="section-title" style={{ fontSize: 18 }}>{clientTypeInfo(client.client_type).icon} {client.name}</div>
-                    <div className="section-sub">Ответственный: {userName(usersById, client.owner_id)}</div>
+        <div className="cl-page">
+            <nav className="cl-crumbs" aria-label="Путь">
+                <button type="button" className="cl-crumb-link" onClick={onBack}>Клиенты</button>
+                <span aria-hidden="true">/</span>
+                <span aria-current="page">{client.name}</span>
+            </nav>
+
+            <div className="cl-head">
+                <div className="cl-head-main">
+                    <div className="cl-avatar cl-avatar--lg" title={typeInfo.label}>{(client.name || "?").trim().charAt(0).toUpperCase()}</div>
+                    <div>
+                        <h1 className="cl-title">{client.name}</h1>
+                        <div className="cl-sub">{typeInfo.icon} {typeInfo.label} · Ответственный: {userName(usersById, client.owner_id)}{due && <span className="cl-pill cl-pill--due" style={{ marginLeft: 8 }}>пора связаться</span>}</div>
+                    </div>
+                </div>
+                <div className="cl-actions">
+                    <button className="btn btn-ghost" onClick={onBack}>← К списку</button>
+                    {canEdit && <button className="btn btn-primary" onClick={() => { setSub("overview"); startEdit(); }}><Icon d={ICONS.edit} /> Изменить</button>}
+                    {canManage && <button className="btn btn-danger" onClick={remove}><Icon d={ICONS.trash} /> Удалить</button>}
                 </div>
             </div>
 
-            <div className="tab-bar" style={{ marginBottom: 14 }}>
+            <div className="cl-tabs" role="tablist" aria-label="Разделы клиента">
                 {SUBTABS.map(t => (
-                    <button key={t.key} className={`tab-btn${sub === t.key ? " active" : ""}`} onClick={() => setSub(t.key)}>{t.label}</button>
+                    <button key={t.key} type="button" role="tab" aria-selected={sub === t.key} className={`cl-tab${sub === t.key ? " active" : ""}`} onClick={() => setSub(t.key)}>{t.label}</button>
                 ))}
             </div>
 
+            <div className="card cl-body">
             {sub === "overview" && (editing ? (
                 <form className="form" onSubmit={save}>
                     {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
@@ -198,30 +215,33 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
             ) : (
                 <div>
                     {formError && <div className="alert" style={{ marginBottom: 10 }}>{formError}</div>}
-                    {row("Тип клиента", clientTypeInfo(client.client_type).label)}
-                    {client.client_type === "person" && row("Дата рождения", client.birth_date ? (() => {
-                        const age = ageFromDate(client.birth_date);
-                        return `${formatDate(client.birth_date)}${age !== null ? ` · ${age} ${plural(age, "год", "года", "лет")}` : ""}`;
-                    })() : null)}
-                    {client.client_type === "person" && row("Пол", genderLabel(client.gender))}
-                    {row("Телефон", client.phone)}
-                    {row("Email", client.email)}
-                    {row("Адрес", client.address)}
-                    {row("Последний контакт", client.last_interaction_at ? formatDateTime(client.last_interaction_at) : "ещё не было")}
-                    {row("Связаться снова", client.next_contact_at ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                            <span style={{ color: isContactDue(client.next_contact_at) ? "var(--red)" : "inherit", fontWeight: isContactDue(client.next_contact_at) ? 600 : 400 }}>
-                                {formatDate(client.next_contact_at)}{isContactDue(client.next_contact_at) && " — пора связаться"}
-                            </span>
-                            {canEdit && (
-                                <button className="btn btn-ghost btn-sm" onClick={markContacted} title="Убрать напоминание">Связались</button>
-                            )}
-                        </span>
-                    ) : null)}
-                    {row("Заметки", client.notes)}
-                    <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                        {canEdit && <button className="btn btn-primary btn-sm" onClick={startEdit}><Icon d={ICONS.edit} /> Изменить</button>}
-                        {canManage && <button className="btn btn-danger btn-sm" onClick={remove}><Icon d={ICONS.trash} /> Удалить</button>}
+                    <div className="cl-grid">
+                        <section className="cl-panel">
+                            <h3 className="cl-panel-title">Основное</h3>
+                            {client.client_type === "person" && row("Дата рождения", client.birth_date ? (() => {
+                                const age = ageFromDate(client.birth_date);
+                                return `${formatDate(client.birth_date)}${age !== null ? ` · ${age} ${plural(age, "год", "года", "лет")}` : ""}`;
+                            })() : null)}
+                            {client.client_type === "person" && row("Пол", genderLabel(client.gender))}
+                            {row("Телефон", client.phone)}
+                            {row("Email", client.email)}
+                            {row("Адрес", client.address)}
+                        </section>
+                        <section className="cl-panel">
+                            <h3 className="cl-panel-title">Связь с клиентом</h3>
+                            {row("Последний контакт", client.last_interaction_at ? formatDateTime(client.last_interaction_at) : "ещё не было")}
+                            {row("Связаться снова", client.next_contact_at ? (
+                                <span className="cl-inline">
+                                    <span style={{ color: due ? "var(--red)" : "inherit", fontWeight: due ? 600 : 400 }}>
+                                        {formatDate(client.next_contact_at)}{due && " — пора связаться"}
+                                    </span>
+                                    {canEdit && (
+                                        <button className="btn btn-ghost btn-sm" onClick={markContacted} title="Убрать напоминание">Связались</button>
+                                    )}
+                                </span>
+                            ) : null)}
+                            {row("Заметки", client.notes)}
+                        </section>
                     </div>
                 </div>
             ))}
@@ -247,6 +267,7 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
             )}
 
             {sub === "deals" && <DealsBoard key={refreshSignal} token={token} clientId={clientId} canManage={canManage} currentUserId={currentUserId} />}
+            </div>
         </div>
     );
 }

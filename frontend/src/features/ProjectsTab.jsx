@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { apiRequest } from "../api";
 import { Icon } from "../components/Icon";
 import { TaskCard } from "../components/TaskCard";
+import { TaskRow } from "../components/TaskRow";
 import { UserProfileAvatar } from "../components/UserProfileAvatar";
 import { ICONS } from "../constants/icons";
 import { extractItems } from "../utils/extractItems";
@@ -40,6 +41,7 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
     const [assignUserId, setAssignUserId] = useState("");
     const [creatingTask, setCreatingTask] = useState(false);
     const [taskError, setTaskError] = useState(null);
+    const [expandedTaskId, setExpandedTaskId] = useState(null);
 
     async function loadProjects() {
         setLoading(true);
@@ -238,6 +240,16 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
         finally { setMemberLoading(false); }
     }
 
+    async function toggleProjectTaskStatus(task, newStatus) {
+        const nextIsDone = newStatus === "done";
+        setProjectTasks(prev => prev.map(x => x.id === task.id ? { ...x, status: newStatus, is_done: nextIsDone } : x));
+        try {
+            await apiRequest({ path: `/tasks/${task.id}/status`, method: "PATCH", token, body: { status: newStatus } });
+        } catch {
+            setProjectTasks(prev => prev.map(x => x.id === task.id ? { ...x, status: task.status, is_done: task.is_done } : x));
+        }
+    }
+
     const pct = (p) => p.task_count > 0 ? Math.round((p.done_count / p.task_count) * 100) : 0;
 
     // ── Детальный вид проекта ──────────────────────────────
@@ -245,16 +257,18 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
         const progress = selectedProject.task_count > 0
             ? Math.round((selectedProject.done_count / selectedProject.task_count) * 100) : 0;
         return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="cl-page">
+                <nav className="cl-crumbs" aria-label="Путь">
+                    <button type="button" className="cl-crumb-link" onClick={() => { setSelectedProject(null); setProjectTasks([]); setExpandedTaskId(null); }}>Проекты</button>
+                    <span aria-hidden="true">/</span>
+                    <span aria-current="page">{selectedProject.name}</span>
+                </nav>
                 <div className="card">
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedProject(null); setProjectTasks([]); }} style={{ marginBottom: 12 }}>
-                        ← Назад к проектам
-                    </button>
-                    <div className="section-header">
+                    <div className="cl-head">
                         <div>
-                            <div className="section-title">{selectedProject.name}</div>
+                            <h1 className="cl-title">{selectedProject.name}</h1>
                             {selectedProject.description && (
-                                <div className="section-sub">{selectedProject.description}</div>
+                                <div className="cl-sub">{selectedProject.description}</div>
                             )}
                             {selectedProject.group?.name && (
                                 <div style={{ marginTop: 4 }}>
@@ -337,27 +351,14 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                         </form>
                     )}
 
-                    <div className="stats-grid" style={{ marginBottom: 12 }}>
-                        <div className="stat-box">
-                            <div className="stat-value">{selectedProject.task_count}</div>
-                            <div className="stat-label">Задач</div>
-                        </div>
-                        <div className="stat-box">
-                            <div className="stat-value" style={{ color: "var(--green)" }}>{selectedProject.done_count}</div>
-                            <div className="stat-label">Готово</div>
-                        </div>
-                        <div className="stat-box">
-                            <div className="stat-value" style={{ color: "var(--accent-light)" }}>
-                                {selectedProject.task_count - selectedProject.done_count}
-                            </div>
-                            <div className="stat-label">В работе</div>
-                        </div>
+                    <div className="home-kpis pj-kpis">
+                        <div className="card home-kpi"><span className="home-kpi-label">Задач</span><span className="home-kpi-value">{selectedProject.task_count}</span></div>
+                        <div className="card home-kpi"><span className="home-kpi-label">Готово</span><span className="home-kpi-value" style={{ color: "var(--green)" }}>{selectedProject.done_count}</span></div>
+                        <div className="card home-kpi"><span className="home-kpi-label">В работе</span><span className="home-kpi-value">{selectedProject.task_count - selectedProject.done_count}</span></div>
                     </div>
-                    <div className="progress-wrap" style={{ marginBottom: 16 }}>
-                        <div className="progress-track">
-                            <div className="progress-fill" style={{ width: `${progress}%` }} />
-                        </div>
-                        <div className="progress-caption">{progress}% выполнено</div>
+                    <div className="pj-prog">
+                        <div className="pj-prog-row"><span>Прогресс проекта</span><span>{progress}%</span></div>
+                        <div className="pj-track"><div className="pj-fill" style={{ width: `${progress}%` }} /></div>
                     </div>
 
                     {selectedProject.members && selectedProject.members.length > 0 && (
@@ -395,38 +396,21 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                             <div className="empty-icon">📋</div>Нет задач в проекте
                         </div>
                     ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div className="tr-table" role="table" aria-label="Задачи проекта">
                             {projectTasks.map(t => (
+                                <TaskRow
+                                    key={t.id} task={t} hideSelect
+                                    expanded={expandedTaskId === t.id}
+                                    onToggleExpand={() => setExpandedTaskId(id => id === t.id ? null : t.id)}
+                                    onToggleStatus={toggleProjectTaskStatus}
+                                >
                                 <TaskCard
                                     key={t.id}
                                     task={t}
                                     groups={[]}
                                     users={users}
                                     token={token}
-                                    onToggle={async (task, newStatus) => {
-                                        const nextIsDone = newStatus === "done";
-
-                                        setProjectTasks(prev => prev.map(t =>
-                                            t.id === task.id
-                                                ? { ...t, status: newStatus, is_done: nextIsDone }
-                                                : t
-                                        ));
-
-                                        try {
-                                            await apiRequest({
-                                                path: `/tasks/${task.id}/status`,
-                                                method: "PATCH",
-                                                token,
-                                                body: { status: newStatus },
-                                            });
-                                        } catch {
-                                            setProjectTasks(prev => prev.map(t =>
-                                                t.id === task.id
-                                                    ? { ...t, status: task.status, is_done: task.is_done }
-                                                    : t
-                                            ));
-                                        }
-                                    }}
+                                    onToggle={toggleProjectTaskStatus}
                                     onDelete={async (task) => {
                                         if (!window.confirm("Удалить задачу?")) return;
                                         setProjectTasks(prev => prev.filter(t => t.id !== task.id));
@@ -461,10 +445,10 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                                         await loadProjectTasks(selectedProject.id);
                                     }}
                                     hideReassign
-                                    collapsible
                                     currentUserId={currentUserId}
                                     currentRole={currentRole}
                                 />
+                                </TaskRow>
                             ))}
                         </div>
                     )}
@@ -475,26 +459,26 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
 
     // ── Список проектов ────────────────────────────────────
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="card">
-                <div className="section-header">
-                    <div>
-                        <div className="section-title">Проекты</div>
-                        <div className="section-sub">{total > 0 ? `${total} проектов` : "Нет проектов"}</div>
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={loadProjects} disabled={loading}>
-                            <Icon d={ICONS.refresh} /> Обновить
-                        </button>
-                        {canManage && (
-                            <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(v => !v)}>
-                                + Создать
-                            </button>
-                        )}
-                    </div>
+        <div className="cl-page">
+            <div className="cl-head">
+                <div>
+                    <h1 className="cl-title">Проекты</h1>
+                    <div className="cl-sub">{total > 0 ? `${total} проектов · ` : "Нет проектов. "}Проекты, их прогресс и участники.</div>
                 </div>
+                <div className="cl-actions">
+                    <button className="btn btn-ghost" onClick={loadProjects} disabled={loading}>
+                        <Icon d={ICONS.refresh} /> Обновить
+                    </button>
+                    {canManage && (
+                        <button className="btn btn-primary" onClick={() => setShowCreate(v => !v)} aria-expanded={showCreate}>
+                            <Icon d={ICONS.plus} /> Новый проект
+                        </button>
+                    )}
+                </div>
+            </div>
 
-                {showCreate && (
+            {showCreate && (
+                <div className="card">
                     <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12, padding: 12, background: "var(--surface)", borderRadius: 8 }}>
                         {error && <div className="alert">{error}</div>}
                         <div className="form-group">
@@ -528,25 +512,23 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                             </button>
                         </div>
                     </form>
-                )}
-            </div>
+                </div>
+            )}
 
             {loading ? (
                 <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
             ) : projects.length === 0 ? (
                 <div className="empty-state"><div className="empty-icon">📁</div>Нет доступных проектов</div>
             ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div className="pj-grid">
                     {projects.map(p => {
                         const isEditing = editingProjectId === p.id;
                         const isShowingMembers = membersProjectId === p.id;
                         const currentMembers = membersData[p.id] || p.members || [];
                         const notMember = users.filter(u => !currentMembers.some(m => m.id === u.id));
                         return (
-                            <div key={p.id} className="card">
+                            <div key={p.id} className="card pj-card">
                                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                                    <div style={{ fontSize: 28, lineHeight: 1, cursor: "pointer" }}
-                                        onClick={() => openProject(p.id)}>📁</div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         {isEditing ? (
                                             <form onSubmit={e => handleEditProject(e, p.id)}
@@ -583,63 +565,62 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                                                         {p.description}
                                                     </div>
                                                 )}
-                                                <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--text-muted)", marginBottom: 8, cursor: "pointer" }}
-                                                    onClick={() => openProject(p.id)}>
-                                                    <span>📋 {p.task_count}</span>
-                                                    <span style={{ color: "var(--green)" }}>✅ {p.done_count}</span>
-                                                    {p.members?.length > 0 && <span>👥 {p.members.length}</span>}
-                                                    {p.group?.name && <span>🏷 {p.group.name}</span>}
-                                                </div>
-                                                <div className="progress-wrap" style={{ cursor: "pointer" }}
-                                                    onClick={() => openProject(p.id)}>
-                                                    <div className="progress-track">
-                                                        <div className="progress-fill" style={{ width: `${pct(p)}%` }} />
-                                                    </div>
-                                                    <div className="progress-caption">{pct(p)}%</div>
+                                                <div style={{ cursor: "pointer" }} onClick={() => openProject(p.id)}>
+                                                    <div className="pj-prog-row"><span>{p.done_count} из {p.task_count} задач</span><span>{pct(p)}%</span></div>
+                                                    <div className="pj-track"><div className="pj-fill" style={{ width: `${pct(p)}%` }} /></div>
                                                 </div>
                                             </>
                                         )}
                                     </div>
-                                    {canManage && !isEditing && (
-                                        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                                            <button className="btn btn-ghost btn-sm"
-                                                title="Редактировать проект"
-                                                onClick={e => {
-                                                    e.stopPropagation();
-                                                    setEditForm({ name: p.name, description: p.description || "" });
-                                                    setEditingProjectId(p.id);
-                                                    setMembersProjectId(null);
-                                                }}>
-                                                <Icon d={ICONS.edit} />
-                                            </button>
-                                            <button className="btn btn-ghost btn-sm"
-                                                title="Участники"
-                                                style={{ color: isShowingMembers ? "var(--accent-light)" : undefined }}
-                                                onClick={e => { e.stopPropagation(); toggleMembersPanel(p.id, p.members); }}>
-                                                <Icon d={ICONS.userPlus} />
-                                            </button>
-                                            {/* сюда кнопку  */}
-                                            <button
-                                                className="btn btn-ghost btn-sm"
-                                                title={p.group ? "Сменить группу" : "Привязать группу"}
-                                                onClick={e => {
-                                                    e.stopPropagation();
-                                                    setGroupPickerProjectId(
-                                                        groupPickerProjectId === p.id ? null : p.id
-                                                    );
-                                                }}
-                                            >
-                                                🏷
-                                            </button>
-                                            <button className="btn btn-ghost btn-sm"
-                                                title="Удалить проект"
-                                                style={{ color: "var(--red)" }}
-                                                onClick={e => { e.stopPropagation(); handleDelete(p.id); }}>
-                                                <Icon d={ICONS.trash} />
-                                            </button>
-                                        </div>
-                                    )}
                                 </div>
+
+                                {!isEditing && (
+                                    <div className="pj-foot">
+                                        <span className="pj-chips">
+                                            {p.group?.name && <span className="meta-chip">🏷 {p.group.name}</span>}
+                                            {p.members?.length > 0 && <span className="meta-chip">👥 {p.members.length}</span>}
+                                        </span>
+                                    {canManage && !isEditing && (
+                                            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                                                <button className="btn btn-ghost btn-sm"
+                                                    title="Редактировать проект"
+                                                    onClick={e => {
+                                                        e.stopPropagation();
+                                                        setEditForm({ name: p.name, description: p.description || "" });
+                                                        setEditingProjectId(p.id);
+                                                        setMembersProjectId(null);
+                                                    }}>
+                                                    <Icon d={ICONS.edit} />
+                                                </button>
+                                                <button className="btn btn-ghost btn-sm"
+                                                    title="Участники"
+                                                    style={{ color: isShowingMembers ? "var(--accent-light)" : undefined }}
+                                                    onClick={e => { e.stopPropagation(); toggleMembersPanel(p.id, p.members); }}>
+                                                    <Icon d={ICONS.userPlus} />
+                                                </button>
+                                                {/* сюда кнопку  */}
+                                                <button
+                                                    className="btn btn-ghost btn-sm"
+                                                    title={p.group ? "Сменить группу" : "Привязать группу"}
+                                                    onClick={e => {
+                                                        e.stopPropagation();
+                                                        setGroupPickerProjectId(
+                                                            groupPickerProjectId === p.id ? null : p.id
+                                                        );
+                                                    }}
+                                                >
+                                                    🏷
+                                                </button>
+                                                <button className="btn btn-ghost btn-sm"
+                                                    title="Удалить проект"
+                                                    style={{ color: "var(--red)" }}
+                                                    onClick={e => { e.stopPropagation(); handleDelete(p.id); }}>
+                                                    <Icon d={ICONS.trash} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Панель выбора группы */}
                                 {groupPickerProjectId === p.id && canManage && (

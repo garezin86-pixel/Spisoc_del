@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiRequest } from "../api";
 import { Icon } from "../components/Icon";
 import { UserProfileAvatar } from "../components/UserProfileAvatar";
+import { ChatIcon } from "../components/layout/shellIcons";
 import { ICONS } from "../constants/icons";
 import { ROLE_LABELS, ROLE_COLORS } from "../constants/roles";
 
@@ -35,24 +36,27 @@ export function TeamTab({ token, currentUserId }) {
     }, [users, query]);
 
     return (
-        <div className="card">
-            <div className="section-header">
+        <div className="cl-page">
+            <div className="cl-head">
                 <div>
-                    <div className="section-title">👥 Команда</div>
-                    <div className="section-sub">{users.length} человек</div>
+                    <h1 className="cl-title">Команда</h1>
+                    <div className="cl-sub">{users.length} человек</div>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
-                    <Icon d={ICONS.refresh} /> Обновить
-                </button>
+                <div className="cl-actions">
+                    <button className="btn btn-ghost" onClick={load} disabled={loading}>
+                        <Icon d={ICONS.refresh} /> Обновить
+                    </button>
+                </div>
             </div>
 
-            <input
-                className="input"
-                placeholder="Поиск по имени или должности…"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                style={{ marginBottom: 14 }}
-            />
+            <div className="cl-filters">
+                <input
+                    className="form-input cl-search" aria-label="Поиск по имени или должности"
+                    placeholder="Поиск по имени или должности…"
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                />
+            </div>
 
             {error && <div className="alert">{error}</div>}
             {loading ? (
@@ -60,18 +64,13 @@ export function TeamTab({ token, currentUserId }) {
             ) : filtered.length === 0 ? (
                 <div className="empty-state"><div className="empty-icon">🔍</div>Никого не нашли</div>
             ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 10 }}>
+                <div className="tm-grid">
                     {filtered.map(u => {
                         const rc = ROLE_COLORS[u.role] ?? ROLE_COLORS.user;
                         return (
-                            <div key={u.id}
+                            <div key={u.id} className="tm-card" role="button" tabIndex={0}
                                 onClick={() => window.openUserProfile?.(u.id)}
-                                style={{
-                                    display: "flex", alignItems: "center", gap: 10,
-                                    padding: "10px 12px", borderRadius: 10,
-                                    background: "var(--surface2)", border: "1px solid var(--border)",
-                                    cursor: "pointer",
-                                }}>
+                                onKeyDown={e => { if (e.key === "Enter") window.openUserProfile?.(u.id); }}>
                                 <UserProfileAvatar userId={u.id} username={u.username} size={40} />
                                 <div style={{ minWidth: 0, flex: 1 }}>
                                     <div style={{
@@ -98,11 +97,11 @@ export function TeamTab({ token, currentUserId }) {
                                 {u.id !== currentUserId && (
                                     <button
                                         className="btn btn-ghost btn-sm"
-                                        title="Написать личное сообщение"
+                                        title="Написать личное сообщение" aria-label={`Написать сообщение: ${u.username}`}
                                         onClick={(e) => { e.stopPropagation(); window.openDmWith?.(u.id, u.username); }}
                                         style={{ flexShrink: 0, padding: "4px 8px" }}
                                     >
-                                        ✉️
+                                        <ChatIcon size={16} />
                                     </button>
                                 )}
                             </div>

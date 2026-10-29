@@ -153,20 +153,20 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
     }
 
     return (
-        <div className="card">
-            <div className="section-header">
+        <div className="cl-page">
+            <div className="cl-head">
                 <div>
-                    <div className="section-title"><Icon d={ICONS.user} size={15} /> Клиенты</div>
-                    <div className="section-sub">{data.total > 0 ? `${data.total} ${plural(data.total, "клиент", "клиента", "клиентов")}` : "Нет клиентов"}</div>
+                    <h1 className="cl-title">Клиенты</h1>
+                    <div className="cl-sub">{data.total > 0 ? `${data.total} ${plural(data.total, "клиент", "клиента", "клиентов")} · ` : ""}Управляйте клиентами, их контактами и связями с задачами.</div>
                 </div>
                 {canManage && (
-                    <div style={{ display: "flex", gap: 8 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setShowImport(true)}>Импорт</button>
-                        <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting} title="Выгрузить клиентов с текущими фильтрами в CSV">
+                    <div className="cl-actions">
+                        <button className="btn btn-ghost" onClick={() => setShowImport(true)}>Импорт</button>
+                        <button className="btn btn-ghost" onClick={exportCsv} disabled={exporting} title="Выгрузить клиентов с текущими фильтрами в CSV">
                             {exporting ? "Экспорт…" : "Экспорт"}
                         </button>
-                        <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(v => !v); setFormError(null); }}>
-                            <Icon d={ICONS.plus} /> Клиент
+                        <button className="btn btn-primary" onClick={() => { setShowCreate(v => !v); setFormError(null); }}>
+                            <Icon d={ICONS.plus} /> Добавить клиента
                         </button>
                     </div>
                 )}
@@ -230,25 +230,26 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                 </form>
             )}
 
-            <input
-                className="form-input" placeholder="Поиск по названию, телефону, email…" value={search}
-                onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }}
-            />
-            <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                {[{ key: "", label: "Все" }, ...CLIENT_TYPES.map(t => ({ key: t.key, label: `${t.icon} ${t.short === "B2B" ? "Компании" : "Люди"} (${t.short})` }))].map(opt => (
+            <div className="cl-tabs" role="tablist" aria-label="Тип клиента">
+                {[{ key: "", label: "Все" }, ...CLIENT_TYPES.map(t => ({ key: t.key, label: t.short === "B2B" ? "Компании" : "Люди" }))].map(opt => (
                     <button
-                        key={opt.key} type="button" onClick={() => { setTypeFilter(opt.key); setPage(1); }}
-                        className={`btn btn-sm ${typeFilter === opt.key ? "btn-primary" : "btn-ghost"}`}
-                    >{opt.label}</button>
+                        key={opt.key} type="button" role="tab" aria-selected={typeFilter === opt.key}
+                        onClick={() => { setTypeFilter(opt.key); setPage(1); }}
+                        className={`cl-tab${typeFilter === opt.key ? " active" : ""}`}
+                    >{opt.label}{typeFilter === opt.key && data.total > 0 && <span className="cl-tab-count">{data.total}</span>}</button>
                 ))}
             </div>
-            <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 13 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", width: "auto" }}>
-                    <input type="checkbox" style={{ width: "auto" }} checked={onlyDue} onChange={e => { setOnlyDue(e.target.checked); setPage(1); }} />
+            <div className="cl-filters">
+                <input
+                    className="form-input cl-search" placeholder="Поиск по названию, телефону, email…" aria-label="Поиск клиентов"
+                    value={search} onChange={e => setSearch(e.target.value)}
+                />
+                <label className="cl-check">
+                    <input type="checkbox" checked={onlyDue} onChange={e => { setOnlyDue(e.target.checked); setPage(1); }} />
                     Пора связаться
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", width: "auto" }}>
-                    <input type="checkbox" style={{ width: "auto" }} checked={onlyMine} onChange={e => { setOnlyMine(e.target.checked); setPage(1); }} />
+                <label className="cl-check">
+                    <input type="checkbox" checked={onlyMine} onChange={e => { setOnlyMine(e.target.checked); setPage(1); }} />
                     Мои клиенты
                 </label>
             </div>
@@ -283,28 +284,39 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                     )}
                 </div>
             ) : (
-                <div>
-                    {data.items.map(c => (
-                        <div
-                            key={c.id} onClick={() => setSelectedId(c.id)}
-                            style={{ display: "flex", gap: 12, padding: "10px 4px", borderBottom: "1px solid var(--border)", cursor: "pointer", alignItems: "center" }}
-                        >
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontWeight: 600 }}><span title={clientTypeInfo(c.client_type).label}>{clientTypeInfo(c.client_type).icon}</span> {c.name}{c.is_demo && <span title="Демо-данные: удаляются кнопкой «Удалить демо»" style={{ marginLeft: 8, fontSize: 10, fontWeight: 500, padding: "1px 6px", borderRadius: 8, background: "var(--surface2)", color: "var(--text-dim)" }}>демо</span>}</div>
-                                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{[c.phone, c.email].filter(Boolean).join(" · ") || "—"}</div>
-                            </div>
-                            {c.next_contact_at && (
-                                <span title="Связаться снова" style={{
-                                    fontSize: 11, padding: "2px 8px", borderRadius: 10,
-                                    color: isContactDue(c.next_contact_at) ? "var(--red)" : "var(--text-dim)",
-                                    background: isContactDue(c.next_contact_at) ? "var(--red-dim)" : "var(--surface2)",
-                                }}>
-                                    📞 {formatDate(c.next_contact_at)}
+                <div className="card cl-table" role="table" aria-label="Список клиентов">
+                    <div className="cl-row cl-row--head" role="row">
+                        <span role="columnheader">Клиент</span>
+                        <span role="columnheader">Контакты</span>
+                        <span role="columnheader">Связаться снова</span>
+                        <span role="columnheader">Ответственный</span>
+                    </div>
+                    {data.items.map(c => {
+                        const info = clientTypeInfo(c.client_type);
+                        const due = c.next_contact_at && isContactDue(c.next_contact_at);
+                        const owner = userName(usersById, c.owner_id);
+                        return (
+                            <button key={c.id} type="button" role="row" className="cl-row cl-row--item" onClick={() => setSelectedId(c.id)}>
+                                <span className="cl-cell-main" role="cell">
+                                    <span className="cl-avatar" title={info.label}>{(c.name || "?").trim().charAt(0).toUpperCase()}</span>
+                                    <span className="cl-name-wrap">
+                                        <span className="cl-name">{c.name}{c.is_demo && <span className="cl-demo" title="Демо-данные: удаляются кнопкой «Удалить демо»">демо</span>}</span>
+                                        <span className="cl-type">{info.icon} {info.label}</span>
+                                    </span>
                                 </span>
-                            )}
-                            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{userName(usersById, c.owner_id)}</div>
-                        </div>
-                    ))}
+                                <span className="cl-cell-contacts" role="cell">
+                                    <span>{c.phone || "—"}</span>
+                                    {c.email && <span className="cl-muted">{c.email}</span>}
+                                </span>
+                                <span role="cell">
+                                    {c.next_contact_at
+                                        ? <span className={`cl-pill${due ? " cl-pill--due" : ""}`} title={due ? "Пора связаться" : "Связаться снова"}>{formatDate(c.next_contact_at)}{due ? " · пора" : ""}</span>
+                                        : <span className="cl-muted">—</span>}
+                                </span>
+                                <span className="cl-cell-owner" role="cell">{owner}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             )}
             <Pagination page={page} totalPages={data.pages} onPage={setPage} />

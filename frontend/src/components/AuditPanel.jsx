@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiRequest } from "../api";
-import { AUDIT_ACTION_ICONS, AUDIT_ACTION_LABELS, AUDIT_FIELD_LABELS } from "../constants/audit";
+import { AUDIT_ACTION_ICONS, AUDIT_ACTION_LABELS, AUDIT_FIELD_LABELS, formatAuditValue } from "../constants/audit";
 
 export function AuditPanel({ taskId, token }) {
     const [entries, setEntries] = useState([]);
@@ -43,12 +43,15 @@ export function AuditPanel({ taskId, token }) {
                                                 {AUDIT_FIELD_LABELS[field] || field}:
                                             </span>{" "}
                                             {e.old_values?.[field] !== undefined && (
-                                                <span style={{ textDecoration: "line-through", marginRight: 4 }}>
-                                                    {String(e.old_values[field] ?? "—")}
-                                                </span>
+                                                <>
+                                                    <span style={{ textDecoration: "line-through" }}>
+                                                        {formatAuditValue(field, e.old_values[field])}
+                                                    </span>
+                                                    <span aria-hidden="true" style={{ margin: "0 6px" }}>→</span>
+                                                </>
                                             )}
                                             <span style={{ color: "var(--accent-light)" }}>
-                                                {String(newVal ?? "—")}
+                                                {formatAuditValue(field, newVal)}
                                             </span>
                                         </div>
                                     ))}

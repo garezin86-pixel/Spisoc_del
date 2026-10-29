@@ -52,18 +52,14 @@ export function CalendarTab({ token }) {
     const googleCalendarUrl = webcalUrl ? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}` : null;
 
     return (
-        <div>
-            <div className="card" style={{ marginTop: 0 }}>
-                <div className="section-header">
-                    <div>
-                        <div className="section-title"><Icon d={ICONS.calendar} /> Календарь дедлайнов</div>
-                        <div className="section-sub">
-                            Подпишитесь на дедлайны своих задач в Google Calendar, Outlook или Apple Calendar —
-                            они будут показываться в вашем основном календаре без захода в приложение.
-                            Календарь сам периодически перечитывает ссылку, ничего обновлять вручную не нужно.
-                        </div>
-                    </div>
+        <div className="cl-page">
+            <div className="cl-head">
+                <div>
+                    <h1 className="cl-title"><Icon d={ICONS.calendar} /> Календарь дедлайнов</h1>
+                    <div className="cl-sub">Подпишитесь на дедлайны своих задач в Google Calendar, Outlook или Apple Calendar — они будут показываться в вашем основном календаре без захода в приложение. Календарь сам периодически перечитывает ссылку, ничего обновлять вручную не нужно.</div>
                 </div>
+            </div>
+            <div className="card">
 
                 {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
 
@@ -94,13 +90,13 @@ export function CalendarTab({ token }) {
                         </div>
 
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <a className="btn btn-sm" href={googleCalendarUrl} target="_blank" rel="noreferrer">
+                            <a className="btn btn-primary btn-sm" href={googleCalendarUrl} target="_blank" rel="noreferrer">
                                 Добавить в Google Calendar
                             </a>
-                            <a className="btn btn-sm" href={webcalUrl}>
+                            <a className="btn btn-ghost btn-sm" href={webcalUrl}>
                                 Добавить в Outlook / Apple Calendar
                             </a>
-                            <button className="btn btn-sm" onClick={handleCreateOrRotate} disabled={creating}>
+                            <button className="btn btn-ghost btn-sm" onClick={handleCreateOrRotate} disabled={creating}>
                                 {creating ? "…" : "Перевыпустить ссылку"}
                             </button>
                         </div>

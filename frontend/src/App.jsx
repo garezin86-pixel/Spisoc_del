@@ -3,18 +3,20 @@ import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setToke
 import { AIPanel } from "./components/AIPanel";
 import { ChatBubble } from "./components/ChatBubble";
 import { ClientPicker } from "./components/ClientPicker";
+import { PushNotificationsCard } from "./features/PushNotificationsCard";
+import { Sidebar } from "./components/layout/Sidebar";
+import { TaskRow } from "./components/TaskRow";
+import { TopBar } from "./components/layout/TopBar";
+import { groupOfTab } from "./constants/navigation";
 import { APP_DESCRIPTION, APP_LOGO, APP_NAME } from "./constants/branding";
 import { CommandPalette } from "./components/CommandPalette";
 import { Icon } from "./components/Icon";
-import { NotificationBell } from "./components/NotificationBell";
 import { Pagination } from "./components/Pagination";
 import { SidebarDeadlineWidget } from "./components/SidebarDeadlineWidget";
 import { TaskCard } from "./components/TaskCard";
 import { TrashCard } from "./components/TrashCard";
-import { UserProfileAvatar } from "./components/UserProfileAvatar";
 import { initialForm } from "./constants/forms";
 import { ICONS } from "./constants/icons";
-import { ROLE_COLORS, ROLE_LABELS } from "./constants/roles";
 import { STATUS_LIST } from "./constants/status";
 import { CalendarTab } from "./features/CalendarTab";
 import { ChangePasswordCard } from "./features/ChangePasswordCard";
@@ -60,11 +62,6 @@ function App() {
     // подписываемся, чтобы все компоненты/эффекты сразу получали новый токен
     // и не продолжали слать запросы со старым (что приводило к повторным 401
     // и refresh_token_reuse на бэкенде).
-    // Вкладок много, на узком экране панель прокручивается: активную держим в поле зрения
-    useEffect(() => {
-        document.querySelector(".tab-btn.active")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-    }, [tab]);
-
     useEffect(() => {
         setTokenRefreshHandler((newToken) => setToken(newToken));
         return () => setTokenRefreshHandler(null);
@@ -86,13 +83,31 @@ function App() {
     // до тех пор просто держат дефолт, handleWsEvent их читает лениво,
     // только когда реально прилетает WS-событие.
     const tasksPageRef = useRef(1);
+    // Фоновая перезагрузка списка по WebSocket: события склеиваем (debounce), чтобы пачка событий = один запрос.
+    const wsReloadTimerRef = useRef(null);
+    // Режим вкладки «Задачи»: "list" — список, "board" — канбан. Хранится между сеансами.
+    const [taskView, setTaskView] = useState(() => localStorage.getItem("spisoc_tasks_view") === "board" ? "board" : "list");
+    const taskViewRef = useRef(taskView);
+    const [boardKey, setBoardKey] = useState(0);
+    useEffect(() => { taskViewRef.current = taskView; localStorage.setItem("spisoc_tasks_view", taskView); }, [taskView]);
+    // Смены статуса, отправленные на сервер, но ещё не «устоявшиеся»: id задачи → { status, seq }.
+    // Накладываются поверх любого результата loadTasks, чтобы запоздавший ответ со старым
+    // статусом не откатывал локальное (оптимистичное) обновление.
+    const pendingStatusRef = useRef(new Map());
+    const statusSeqRef = useRef(0);
 
     const handleWsEvent = useCallback((event, data) => {
         const currentTab = tabRef.current;
         if (event === "task_created" || event === "task_updated" || event === "kanban_moved" || event === "task_deleted") {
-            if (currentTab === "tasks") loadTasks(tasksPageRef.current, viewModeRef.current);
-            // Канбан обновляет список сам при монтировании/действиях пользователя —
-            // отдельного live-refresh для него пока нет (не относится к этой правке).
+            if (currentTab === "tasks") {
+                // «Тихо»: без экрана «Загрузка задач…» — иначе после смены статуса (событие приходит и автору
+                // изменения) список пропадал бы на время запроса, и новый статус был виден с задержкой.
+                clearTimeout(wsReloadTimerRef.current);
+                wsReloadTimerRef.current = setTimeout(() => {
+                    if (taskViewRef.current === "board") setBoardKey(k => k + 1);
+                    else loadTasks(tasksPageRef.current, viewModeRef.current, { silent: true });
+                }, 300);
+            }
         } else if (event === "dashboard_changed") {
             if (currentTab === "home") setHomeRefreshKey(k => k + 1); // на других вкладках главная заново загрузится при открытии
         } else if (event === "task_restored") {
@@ -173,6 +188,7 @@ function App() {
     // Раньше здесь была клиентская фильтрация по подстроке в title/id —
     // это скрывало бы результаты, найденные сервером по description.
     const visibleTasks = tasks;
+    const projectNames = new Map(appProjects.map(p => [p.id, p.name]));
 
     const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
     const [bulkStatus, setBulkStatus] = useState("");
@@ -234,9 +250,28 @@ function App() {
         }
     }
 
-    const [showTooltip, setShowTooltip] = useState(false);
-    const chipRef = React.useRef(null);
-    const [tooltipPos, setTooltipPos] = useState({ top: 0, right: 0 });
+    // Оболочка: мобильное меню, чат из верхней панели, последняя активная группа
+    const [navOpen, setNavOpen] = useState(false);
+    const [showCreate, setShowCreate] = useState(false);       // форма «Новая задача» (по кнопке)
+    const [expandedTaskId, setExpandedTaskId] = useState(null); // раскрытая строка списка задач
+    const [chatUnread, setChatUnread] = useState(0);
+    const [chatToggleKey, setChatToggleKey] = useState(0);
+    const [lastGroup, setLastGroup] = useState("work");
+    const activeGroup = groupOfTab(tab) ?? lastGroup;   // какие страницы показывает боковое меню
+    const chipGroup = groupOfTab(tab);                    // какая группа подсвечена сверху (null для Корзины/Настроек)
+    useEffect(() => { const g = groupOfTab(tab); if (g) setLastGroup(g); }, [tab]);
+    // Канбан теперь режим вкладки «Задачи»: старые ссылки/командная палитра с tab="kanban" ведут туда же
+    useEffect(() => { if (tab === "kanban") { setTaskView("board"); setTab("tasks"); } }, [tab]);
+    // Статусы могли поменяться на доске (канбан грузит свои данные) — при возврате в «Список» обновляем его,
+    // иначе одна и та же задача в списке и на доске показывала бы разные статусы.
+    const prevTaskViewRef = useRef(taskView);
+    useEffect(() => {
+        if (prevTaskViewRef.current === taskView) return;
+        prevTaskViewRef.current = taskView;
+        if (taskView === "list" && tabRef.current === "tasks") {
+            loadTasks(tasksPageRef.current, viewModeRef.current, { silent: true });
+        }
+    }, [taskView]); // eslint-disable-line react-hooks/exhaustive-deps
     const loadAppProjects = React.useCallback(async () => {
         if (!token) return;
         try {
@@ -276,14 +311,14 @@ function App() {
     const tasksAbortRef = React.useRef(null);
     const trashAbortRef = React.useRef(null);
 
-    const loadTasks = useCallback(async (page = 1, filterUserGroup) => {
+    const loadTasks = useCallback(async (page = 1, filterUserGroup, { silent = false } = {}) => {
         // Отменяем предыдущий запрос если он ещё выполняется
         if (tasksAbortRef.current) tasksAbortRef.current.abort();
         const controller = new AbortController();
         tasksAbortRef.current = controller;
 
         const mode = filterUserGroup ?? viewModeRef.current;
-        setLoading(true);
+        if (!silent) setLoading(true);
         try {
             const q = new URLSearchParams();
             q.set("filter_user_group", mode);
@@ -297,7 +332,11 @@ function App() {
             const data = await apiRequest({ path: `/tasks/filter?${q}`, token: tokenRef.current });
             // Если запрос был отменён — игнорируем результат
             if (controller.signal.aborted) return;
-            setTasks(extractItems(data));
+            const pending = pendingStatusRef.current;
+            setTasks(extractItems(data).map(t => {
+                const p = pending.get(t.id);
+                return p ? { ...t, status: p.status, is_done: p.status === "done" } : t;
+            }));
             setTasksTotal(data?.total ?? 0);
             setTasksPage(page);
         } catch (err) {
@@ -567,6 +606,8 @@ function App() {
             await apiRequest({ path: "/tasks", method: "POST", token, body: payload });
             setForm(initialForm); setAssignType("self");
             setSelectedGroupId(""); setSelectedUserId("");
+            setShowCreate(false);
+            setBoardKey(k => k + 1);
             await loadTasks(1);
         } catch (err) { handleAuthError(err); }
     }
@@ -574,6 +615,8 @@ function App() {
     async function handleToggleTask(task, newStatus) {
         if (!newStatus) return;
         const nextIsDone = newStatus === "done";
+        const seq = ++statusSeqRef.current;
+        pendingStatusRef.current.set(task.id, { status: newStatus, seq });
         setTasks(prev => prev.map(t =>
             t.id === task.id ? { ...t, status: newStatus, is_done: nextIsDone } : t
         ));
@@ -585,9 +628,15 @@ function App() {
                 body: { status: newStatus },
             });
         } catch (err) {
+            if (pendingStatusRef.current.get(task.id)?.seq === seq) pendingStatusRef.current.delete(task.id);
             setTasks(prev => prev.map(t => t.id === task.id ? task : t));
             handleAuthError(err);
+            return;
         }
+        // Ещё ~1.5 с держим наложение: запрос списка, начатый до записи на сервере, мог вернуться позже.
+        setTimeout(() => {
+            if (pendingStatusRef.current.get(task.id)?.seq === seq) pendingStatusRef.current.delete(task.id);
+        }, 1500);
     }
 
     async function handleUpdateTask(task, updates) {
@@ -695,7 +744,7 @@ function App() {
             formData.append("file", file);
 
             const q = new URLSearchParams();
-            if (projectId) q.set("project_id", projectId); // если на странице выбран проект — импортируем в него
+            // На вкладке «Задачи» проект не выбирается — импортируем без привязки к проекту
 
             const response = await fetch(`${API_BASE}/tasks/import?${q}`, {
                 method: "POST",
@@ -750,8 +799,13 @@ function App() {
     const tasksTotalPages = Math.ceil((tasksTotal ?? 0) / PAGE_SIZE);
     const trashTotalPages = Math.ceil((trashTotal ?? 0) / PAGE_SIZE);
 
-    // ── Role badge in header ──────────────────────────────
-    const roleColor = ROLE_COLORS[currentRole] ?? ROLE_COLORS.user;
+    // Переход по разделу из бокового меню / верхней панели (сохраняет прежние побочные эффекты кнопок вкладок)
+    function navigateTo(next) {
+        if (next === "dashboard") loadDashboard();
+        if (next === "clients") setClientToOpen(null);
+        setProfileUserId(null);
+        setTab(next);
+    }
 
     // ── Login screen ─────────────────────────────────────
     if (!token && authScreen === "register") {
@@ -835,152 +889,34 @@ function App() {
 
     // ── Main screen ──────────────────────────────────────
     return (
-        <div className="page-shell">
-            <header className="app-header">
-                <div className="app-header-left">
-                    <div className="logo-mark">{APP_LOGO}</div>
-                    <div>
-                        <div className="brand-name">{APP_NAME}</div>
-                        <div className="brand-tagline">{APP_DESCRIPTION}</div>
-                    </div>
-                </div>
-                <div className="header-right">
-                    {/* Верхний ряд — пользователь и управление */}
-                    <div className="header-row header-row-top">
-                        <button className="cmdk-trigger" onClick={() => setPaletteOpen(true)} title="Command Palette">
-                            🔍 <span>Поиск</span> <kbd>Ctrl K</kbd>
-                        </button>
-                        <div className="user-chip"
-                            ref={chipRef}
-                            onClick={() => currentUserId != null && setProfileUserId(currentUserId)}
-                            style={{ cursor: currentUserId != null ? "pointer" : "default" }}
-                            onMouseEnter={() => {
-                                const rect = chipRef.current?.getBoundingClientRect();
-                                if (rect) setTooltipPos({
-                                    top: rect.bottom + 8,
-                                    right: window.innerWidth - rect.right,
-                                });
-                                setShowTooltip(true);
-                            }}
-                            onMouseLeave={() => setShowTooltip(false)}>
-                            {currentUserId != null && <UserProfileAvatar userId={currentUserId} username={currentUsername} size={22} />}
-                            <span className="user-chip-name">{currentUsername}</span>
-                            <span className="role-badge" style={{ color: roleColor.color, background: roleColor.bg, marginLeft: 4 }}>
-                                {ROLE_LABELS[currentRole] ?? currentRole}
-                            </span>
-                            {showTooltip && (
-                                <span style={{
-                                    position: "fixed",
-                                    top: tooltipPos.top,
-                                    right: tooltipPos.right,
-                                    background: "var(--surface2)",
-                                    border: "1px solid var(--border)",
-                                    color: "var(--text)",
-                                    fontSize: 12,
-                                    padding: "5px 10px",
-                                    borderRadius: 25,
-                                    whiteSpace: "nowrap",
-                                    zIndex: 1000,
-                                }}>
-                                    {currentUsername}
-                                </span>
-                            )}
-                        </div>
-                        <NotificationBell
-                            token={token}
-                            onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
-                        />
-                        <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
-                            title="Переключить тему"
-                            style={{ fontSize: "0.85rem" }}
-                        >
-                            {theme === "dark" ? "☀️" : "🌙"}
-                        </button>
-                        {currentRole === "admin" && (
-                            <a
-                                href={import.meta.env.DEV ? "http://127.0.0.1:8000/admin/" : "https://spisoc-del.onrender.com/admin/"}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-ghost btn-sm"
-                            >
-                                <Icon d={ICONS.shield} /> Админка
-                            </a>
-                        )}
-                        <button className="btn btn-ghost btn-sm" onClick={logout}>
-                            <Icon d={ICONS.logout} /> Выйти
-                        </button>
-                    </div>
-                    {/* Нижний ряд — навигация */}
-                    <div className="header-row header-row-bottom">
-                        <div className="tab-bar">
-                            <button className={`tab-btn${tab === "home" ? " active" : ""}`} onClick={() => setTab("home")}>
-                                <Icon d={ICONS.home} /> Главная
-                            </button>
-                            <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => { setTab("dashboard"); loadDashboard(); }}>
-                                <Icon d={ICONS.chart} /> Статистика
-                            </button>
-                            <button className={`tab-btn${tab === "timeline" ? " active" : ""}`} onClick={() => setTab("timeline")}>
-                                <Icon d={ICONS.clock} /> Лента
-                            </button>
-                            <button className={`tab-btn${tab === "tasks" ? " active" : ""}`} onClick={() => setTab("tasks")}>
-                                Задачи <span className="count-badge" style={{ visibility: tasksTotal ? "visible" : "hidden" }}>{tasksTotal || 0}</span>
-                            </button>
-                            <button className={`tab-btn${tab === "projects" ? " active" : ""}`} onClick={() => setTab("projects")}>
-                                <Icon d={ICONS.folder} /> Проекты
-                            </button>
-                            <button className={`tab-btn${tab === "clients" ? " active" : ""}`} onClick={() => { setClientToOpen(null); setTab("clients"); }}>
-                                <Icon d={ICONS.user} /> Клиенты
-                            </button>
-                            <button className={`tab-btn${tab === "deals" ? " active" : ""}`} onClick={() => setTab("deals")}>
-                                <Icon d={ICONS.kanban} /> Воронка
-                            </button>
-                            <button className={`tab-btn${tab === "templates" ? " active" : ""}`} onClick={() => setTab("templates")}>
-                                <Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z" /> Шаблоны
-                            </button>
-                            <button className={`tab-btn${tab === "trash" ? " active" : ""}`} onClick={() => setTab("trash")}>
-                                <Icon d={ICONS.trash} /> Корзина
-                                <span className="count-badge" style={{ visibility: trashTotal ? "visible" : "hidden" }}>{trashTotal || 0}</span>
-                            </button>
-                            <button className={`tab-btn${tab === "kanban" ? " active" : ""}`} onClick={() => setTab("kanban")}>
-                                <Icon d={ICONS.kanban ?? "M3 3h7v7H3zm0 11h7v7H3zm11-11h7v7h-7zm0 11h7v7h-7z"} /> Канбан
-                            </button>
-                            <button className={`tab-btn${tab === "calendar" ? " active" : ""}`} onClick={() => setTab("calendar")}>
-                                <Icon d={ICONS.calendar} /> Календарь
-                            </button>
-                            <button className={`tab-btn${tab === "groups" ? " active" : ""}`} onClick={() => setTab("groups")}>
-                                <Icon d={ICONS.group} /> Группы
-                            </button>
-                            <button className={`tab-btn${tab === "team" ? " active" : ""}`} onClick={() => setTab("team")}>
-                                <Icon d={ICONS.user} /> Команда
-                            </button>
-                            <button className={`tab-btn${tab === "tokens" || tab === "webhooks" || tab === "ical" || tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
-                                <Icon d={ICONS.shield} /> Настройки
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <CommandPalette
-                open={paletteOpen}
-                onClose={() => setPaletteOpen(false)}
+        <div className="app-layout">
+            <Sidebar
+                variant="side"
+                activeGroup={activeGroup}
+                tab={tab}
+                counts={{ tasks: tasksTotal || 0, trash: trashTotal || 0 }}
+                onNavigate={navigateTo}
+            />
+            <div className="app-main">
+            <TopBar
                 token={token}
-                setTab={setTab}
-                setSearchQuery={setSearchQuery}
-                setTheme={setTheme}
+                activeGroup={chipGroup}
+                onNavigate={navigateTo}
+                onOpenPalette={() => setPaletteOpen(true)}
+                onOpenMenu={() => setNavOpen(true)}
+                theme={theme}
+                onToggleTheme={() => setTheme(t => t === "dark" ? "light" : "dark")}
+                chatUnread={chatUnread}
+                onToggleChat={() => setChatToggleKey(k => k + 1)}
+                currentUserId={currentUserId}
+                currentUsername={currentUsername}
+                currentRole={currentRole}
+                onOpenProfile={setProfileUserId}
+                adminUrl={import.meta.env.DEV ? "http://127.0.0.1:8000/admin/" : "https://spisoc-del.onrender.com/admin/"}
                 onLogout={logout}
+                onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
             />
-
-            <ChatBubble token={token} currentUserId={currentUserId} wsEvent={chatWsEvent} />
-            <AIPanel
-                token={token}
-                clientId={tab === "clients" ? aiClientId : null}
-                onChanged={() => { setAiRefreshKey(k => k + 1); setHomeRefreshKey(k => k + 1); }}
-                onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
-            />
-
+        <div className="page-shell">
             {show2faNudge && (
                 <div className="alert" style={{
                     margin: "12px 16px 0", display: "flex", justifyContent: "space-between",
@@ -1000,255 +936,187 @@ function App() {
 
             {/* ── TASKS TAB ── */}
             {tab === "tasks" && (
-                <div>
-                    <div className="content-grid">
-                        <aside className="sidebar-col">
-                            <div className="card">
-                                <div className="section-header">
-                                    <div>
-                                        <div className="section-title">Статистика</div>
-                                        <div className="section-sub">Текущая страница</div>
-                                    </div>
+                <div className="cl-page">
+                    <div className="cl-head">
+                        <div>
+                            <h1 className="cl-title">Задачи</h1>
+                            <div className="cl-sub">
+                                {taskView === "board" ? "Перетаскивайте карточки между колонками, чтобы менять статус" : tasksTotal == null
+                                    ? "Загрузка…"
+                                    : tasksTotal > 0
+                                        ? `${tasksTotal} задач${searchQuery.trim() ? " (по запросу)" : ""} · стр. ${tasksPage}/${tasksTotalPages}`
+                                        : "Нет задач"}
+                            </div>
+                        </div>
+                        <div className="cl-actions">
+                            <div className="seg" role="group" aria-label="Режим просмотра">
+                                <button type="button" className={`seg-btn${taskView === "list" ? " active" : ""}`} aria-pressed={taskView === "list"} onClick={() => setTaskView("list")}>Список</button>
+                                <button type="button" className={`seg-btn${taskView === "board" ? " active" : ""}`} aria-pressed={taskView === "board"} onClick={() => setTaskView("board")}>Канбан</button>
+                            </div>
+                            {taskView === "list" && (
+                                <>
+                            <button className="btn btn-ghost" onClick={handleExportCsv} disabled={exporting}>{exporting ? "Экспорт…" : "Экспорт"}</button>
+                            <input ref={importInputRef} type="file" accept=".csv,.xlsx" style={{ display: "none" }} onChange={handleImportFile} />
+                            <button className="btn btn-ghost" onClick={() => importInputRef.current?.click()} disabled={importing}>{importing ? "Импорт…" : "Импорт"}</button>
+                            <button className="btn btn-ghost" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
+                                <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
+                            </button>
+                                </>
+                            )}
+                            <button className="btn btn-primary" onClick={() => setShowCreate(v => !v)} aria-expanded={showCreate}>
+                                <Icon d={ICONS.plus} /> Новая задача
+                            </button>
+                        </div>
+                    </div>
+
+                    {showCreate && (
+                        <div className="card">
+                        <div className="section-header">
+                            <div>
+                                <div className="section-title">Новая задача</div>
+                                <div className="section-sub">Создайте задачу и назначьте исполнителя</div>
+                            </div>
+                        </div>
+                        <form className="form" onSubmit={handleCreateTask}>
+                            <div className="form-group">
+                                <label className="form-label">Заголовок *</label>
+                                <input value={form.title}
+                                    onChange={e => setForm({ ...form, title: e.target.value })}
+                                    placeholder="Например, проверить почту" required />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Описание</label>
+                                <textarea value={form.description}
+                                    onChange={e => setForm({ ...form, description: e.target.value })}
+                                    placeholder="Дополнительные детали (необязательно)" />
+                            </div>
+                            <div className="form-two-col">
+                                <div className="form-group">
+                                    <label className="form-label">Дедлайн</label>
+                                    <input type="datetime-local" value={form.deadline}
+                                        onChange={e => setForm({ ...form, deadline: e.target.value })} />
                                 </div>
-                                <div className="stats-grid">
-                                    <div className="stat-box">
-                                        <div className="stat-value">{tasksTotal ?? "–"}</div>
-                                        <div className="stat-label">Всего</div>
-                                    </div>
-                                    <div className="stat-box">
-                                        <div className="stat-value" style={{ color: "var(--green)" }}>{stats.done}</div>
-                                        <div className="stat-label">Готово</div>
-                                    </div>
-                                    <div className="stat-box">
-                                        <div className="stat-value" style={{ color: "var(--accent-light)" }}>{stats.pending}</div>
-                                        <div className="stat-label">В работе</div>
-                                    </div>
-                                </div>
-                                <div className="progress-wrap">
-                                    <div className="progress-track">
-                                        <div className="progress-fill" style={{ width: `${stats.percent}%` }} />
-                                    </div>
-                                    <div className="progress-caption">{stats.percent}% выполнено</div>
+                                <div className="form-group">
+                                    <label className="form-label">Статус</label>
+                                    <select value={form.status || "todo"}
+                                        onChange={e => setForm({ ...form, status: e.target.value })}>
+                                        {STATUS_LIST.map(s => (
+                                            <option key={s.key} value={s.key}>{s.icon} {s.label}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
+                            <div className="form-group">
+                                <label className="form-label">Приоритет</label>
+                                <select value={form.priority || "medium"} onChange={e => setForm({ ...form, priority: e.target.value })}>
+                                    <option value="low">⚪ Низкий</option>
+                                    <option value="medium">🔵 Средний</option>
+                                    <option value="high">🟠 Высокий</option>
+                                    <option value="critical">🔴 Критический</option>
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Повторение</label>
+                                <select value={form.recurrence_rule || "none"} onChange={e => setForm({ ...form, recurrence_rule: e.target.value })}>
+                                    <option value="none">Не повторяется</option>
+                                    <option value="daily">🔁 Каждый день</option>
+                                    <option value="weekly">🔁 Каждую неделю</option>
+                                    <option value="monthly">🔁 Каждый месяц</option>
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Проект</label>
+                                <select value={form.project_id || ""} onChange={e => setForm({ ...form, project_id: e.target.value })}>
+                                    <option value="">— Без проекта —</option>
+                                    {appProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Клиент</label>
+                                <ClientPicker
+                                    token={token} value={form.client_id ? Number(form.client_id) : null} name={form.client_name}
+                                    onChange={(id, name) => setForm({ ...form, client_id: id ?? "", client_name: name })}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Назначить</label>
+                                <select value={assignType} onChange={e => setAssignType(e.target.value)}>
+                                    <option value="self">Себе</option>
+                                    <option value="user">Пользователю</option>
+                                    <option value="group">Группе</option>
+                                    <option value="none">Никому</option>
+                                </select>
+                            </div>
+                            {assignType === "group" && (
+                                <div className="form-group">
+                                    <label className="form-label">Группа</label>
+                                    <select value={selectedGroupId} onChange={e => setSelectedGroupId(e.target.value)}>
+                                        <option value="">Выберите группу</option>
+                                        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                            {assignType === "user" && (
+                                <div className="form-group">
+                                    <label className="form-label">Пользователь</label>
+                                    <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
+                                        <option value="">Выберите пользователя</option>
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                            {error && <div className="alert">{error}</div>}
+                            <button type="submit" className="btn btn-primary">
+                                <Icon d={ICONS.plus} /> Создать задачу
+                            </button>
+                        </form>
+                    </div>
+                    )}
 
-                            <div className="card">
-                                <div className="section-header">
-                                    <div className="section-title"><Icon d={ICONS.filter} size={13} /> Фильтры</div>
-                                </div>
-                                <div className="view-mode-row">
-                                    <button
-                                        className={`btn btn-sm ${viewMode === "user" ? "btn-primary" : "btn-ghost"}`}
-                                        onClick={() => setViewMode("user")}>
-                                        Мои задачи
-                                    </button>
-                                    <button
-                                        className={`btn btn-sm ${viewMode === "author" ? "btn-primary" : "btn-ghost"}`}
-                                        onClick={() => setViewMode("author")}>
-                                        Я автор
-                                    </button>
-                                </div>
-                                <div className="divider" />
-                                <div className="filter-row">
-                                    <div className="form-group">
-                                        <label className="form-label">Приоритет</label>
-                                        <select value={filterPriority || ""} onChange={e => setFilterPriority(e.target.value || null)}>
-                                            <option value="">Все</option>
-                                            <option value="critical">🔴 Критический</option>
-                                            <option value="high">🟠 Высокий</option>
-                                            <option value="medium">🔵 Средний</option>
-                                            <option value="low">⚪ Низкий</option>
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Тип задачи</label>
-                                        <select value={filterType} onChange={e => setFilterType(e.target.value)}>
-                                            <option value="">Все</option>
-                                            <option value="today">На сегодня</option>
-                                            <option value="overdue">Просроченные</option>
-                                            <option value="planned">Запланированные</option>
-                                            <option value="deadline_null">Без дедлайна</option>
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Статус</label>
-                                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                                            <option value="">Все</option>
-                                            <option value="backlog">Очередь</option>
-                                            <option value="todo">Новые</option>
-                                            <option value="in_progress">В работе</option>
-                                            <option value="review">На проверке</option>
-                                            <option value="done">Готово</option>
-                                        </select>
-                                    </div>
-                                </div>
+                    {taskView === "board" ? (
+                        <KanbanTab token={token} embedded refreshKey={boardKey} />
+                    ) : (
+                    <div className="tk-layout">
+                        <div className="tk-main">
+                            <div className="cl-tabs" role="tablist" aria-label="Чьи задачи">
+                                {[{ key: "user", label: "Мои задачи" }, { key: "author", label: "Я автор" }].map(opt => (
+                                    <button key={opt.key} type="button" role="tab" aria-selected={viewMode === opt.key}
+                                        className={`cl-tab${viewMode === opt.key ? " active" : ""}`} onClick={() => setViewMode(opt.key)}>{opt.label}</button>
+                                ))}
                             </div>
 
-                            <SidebarDeadlineWidget
-                                token={token}
-                                onOpenTask={(title) => { setSearchQuery(title); }}
-                                onOpenFullCalendar={() => setTab("calendar")}
-                            />
-                        </aside>
-
-                        <main className="main-column">
-                            <div className="card">
-                                <div className="section-header">
-                                    <div>
-                                        <div className="section-title">Новая задача</div>
-                                        <div className="section-sub">Создайте задачу и назначьте исполнителя</div>
-                                    </div>
-                                </div>
-                                <form className="form" onSubmit={handleCreateTask}>
-                                    <div className="form-group">
-                                        <label className="form-label">Заголовок *</label>
-                                        <input value={form.title}
-                                            onChange={e => setForm({ ...form, title: e.target.value })}
-                                            placeholder="Например, проверить почту" required />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Описание</label>
-                                        <textarea value={form.description}
-                                            onChange={e => setForm({ ...form, description: e.target.value })}
-                                            placeholder="Дополнительные детали (необязательно)" />
-                                    </div>
-                                    <div className="form-two-col">
-                                        <div className="form-group">
-                                            <label className="form-label">Дедлайн</label>
-                                            <input type="datetime-local" value={form.deadline}
-                                                onChange={e => setForm({ ...form, deadline: e.target.value })} />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Статус</label>
-                                            <select value={form.status || "todo"}
-                                                onChange={e => setForm({ ...form, status: e.target.value })}>
-                                                {STATUS_LIST.map(s => (
-                                                    <option key={s.key} value={s.key}>{s.icon} {s.label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Приоритет</label>
-                                        <select value={form.priority || "medium"} onChange={e => setForm({ ...form, priority: e.target.value })}>
-                                            <option value="low">⚪ Низкий</option>
-                                            <option value="medium">🔵 Средний</option>
-                                            <option value="high">🟠 Высокий</option>
-                                            <option value="critical">🔴 Критический</option>
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Повторение</label>
-                                        <select value={form.recurrence_rule || "none"} onChange={e => setForm({ ...form, recurrence_rule: e.target.value })}>
-                                            <option value="none">Не повторяется</option>
-                                            <option value="daily">🔁 Каждый день</option>
-                                            <option value="weekly">🔁 Каждую неделю</option>
-                                            <option value="monthly">🔁 Каждый месяц</option>
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Проект</label>
-                                        <select value={form.project_id || ""} onChange={e => setForm({ ...form, project_id: e.target.value })}>
-                                            <option value="">— Без проекта —</option>
-                                            {appProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Клиент</label>
-                                        <ClientPicker
-                                            token={token} value={form.client_id ? Number(form.client_id) : null} name={form.client_name}
-                                            onChange={(id, name) => setForm({ ...form, client_id: id ?? "", client_name: name })}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Назначить</label>
-                                        <select value={assignType} onChange={e => setAssignType(e.target.value)}>
-                                            <option value="self">Себе</option>
-                                            <option value="user">Пользователю</option>
-                                            <option value="group">Группе</option>
-                                            <option value="none">Никому</option>
-                                        </select>
-                                    </div>
-                                    {assignType === "group" && (
-                                        <div className="form-group">
-                                            <label className="form-label">Группа</label>
-                                            <select value={selectedGroupId} onChange={e => setSelectedGroupId(e.target.value)}>
-                                                <option value="">Выберите группу</option>
-                                                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                            </select>
-                                        </div>
-                                    )}
-                                    {assignType === "user" && (
-                                        <div className="form-group">
-                                            <label className="form-label">Пользователь</label>
-                                            <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
-                                                <option value="">Выберите пользователя</option>
-                                                {users.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
-                                            </select>
-                                        </div>
-                                    )}
-                                    {error && <div className="alert">{error}</div>}
-                                    <button type="submit" className="btn btn-primary">
-                                        <Icon d={ICONS.plus} /> Создать задачу
-                                    </button>
-                                </form>
+                            <div className="cl-filters">
+                                <input className="form-input cl-search" type="text" aria-label="Поиск по задачам" value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)} placeholder="Поиск по названию и описанию…" />
+                                <select className="form-input dl-select" aria-label="Статус" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                                    <option value="">Статус: все</option>
+                                    <option value="backlog">Очередь</option>
+                                    <option value="todo">Новые</option>
+                                    <option value="in_progress">В работе</option>
+                                    <option value="review">На проверке</option>
+                                    <option value="done">Готово</option>
+                                </select>
+                                <select className="form-input dl-select" aria-label="Приоритет" value={filterPriority || ""} onChange={e => setFilterPriority(e.target.value || null)}>
+                                    <option value="">Приоритет: все</option>
+                                    <option value="critical">🔴 Критический</option>
+                                    <option value="high">🟠 Высокий</option>
+                                    <option value="medium">🔵 Средний</option>
+                                    <option value="low">⚪ Низкий</option>
+                                </select>
+                                <select className="form-input dl-select" aria-label="Срок" value={filterType} onChange={e => setFilterType(e.target.value)}>
+                                    <option value="">Срок: любой</option>
+                                    <option value="today">На сегодня</option>
+                                    <option value="overdue">Просроченные</option>
+                                    <option value="planned">Запланированные</option>
+                                    <option value="deadline_null">Без дедлайна</option>
+                                </select>
+                                <select className="form-input dl-select" aria-label="Тег" value={tagFilter} onChange={e => setTagFilter(e.target.value)}>
+                                    <option value="">Тег: все</option>
+                                    {allTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                </select>
                             </div>
 
-                            <div className="card">
-                                <div className="section-header">
-                                    <div>
-                                        <div className="section-title">Задачи</div>
-                                        <div className="section-sub">
-                                            {tasksTotal == null
-                                                ? "Загрузка…"
-                                                : tasksTotal > 0
-                                                    ? `${tasksTotal} задач${searchQuery.trim() ? " (по запросу)" : ""} · стр. ${tasksPage}/${tasksTotalPages}`
-                                                    : "Нет задач"}
-                                        </div>
-                                    </div>
-                                    <div style={{ display: "flex", gap: 8 }}>
-                                        <button className="btn btn-ghost btn-sm" onClick={handleExportCsv} disabled={exporting}>
-                                            📄 {exporting ? "Экспорт…" : "Экспорт в CSV"}
-                                        </button>
-                                        <input
-                                            ref={importInputRef}
-                                            type="file"
-                                            accept=".csv,.xlsx"
-                                            style={{ display: "none" }}
-                                            onChange={handleImportFile}
-                                        />
-                                        <button
-                                            className="btn btn-ghost btn-sm"
-                                            onClick={() => importInputRef.current?.click()}
-                                            disabled={importing}
-                                        >
-                                            📥 {importing ? "Импорт…" : "Импорт из CSV/Excel"}
-                                        </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => loadTasks(tasksPage, viewMode)} disabled={loading}>
-                                            <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="form-two-col" style={{ marginBottom: 12 }}>
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <input
-                                            type="text"
-                                            value={searchQuery}
-                                            onChange={e => setSearchQuery(e.target.value)}
-                                            placeholder="Поиск по названию и описанию…"
-                                        />
-                                    </div>
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <select value={tagFilter} onChange={e => setTagFilter(e.target.value)}>
-                                            <option value="">Все теги</option>
-                                            {allTags.map(t => (
-                                                <option key={t.id} value={t.id}>{t.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
                                     {filterPresets.map(preset => (
                                         <span key={preset.id} style={{
                                             display: "inline-flex", alignItems: "center", gap: 4,
@@ -1286,6 +1154,7 @@ function App() {
                                     </button>
                                 </div>
 
+                            <div className="card tr-card">
                                 {loading ? (
                                     <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка задач…</div>
                                 ) : tasks.length === 0 ? (
@@ -1295,17 +1164,6 @@ function App() {
                                     </div>
                                 ) : (
                                     <>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                                            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={visibleTasks.length > 0 && visibleTasks.every(t => selectedTaskIds.has(t.id))}
-                                                    onChange={toggleSelectAllVisible}
-                                                />
-                                                Выбрать все на странице
-                                            </label>
-                                        </div>
-
                                         {selectedTaskIds.size > 0 && (
                                             <div style={{
                                                 display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
@@ -1350,22 +1208,37 @@ function App() {
                                             </div>
                                         )}
 
-                                        <div className="task-list">
+                                        <div className="tr-table" role="table" aria-label="Список задач">
+                                            <div className="tr-head" role="row">
+                                                <input
+                                                    type="checkbox" className="tr-check" aria-label="Выбрать все задачи на странице"
+                                                    checked={visibleTasks.length > 0 && visibleTasks.every(t => selectedTaskIds.has(t.id))}
+                                                    onChange={toggleSelectAllVisible}
+                                                />
+                                                <span>Задача</span><span>Срок</span><span>Статус</span><span>Исп.</span>
+                                            </div>
                                             {visibleTasks.map(task => (
-                                                <TaskCard key={task.id} task={task}
-                                                    groups={groups} users={users} token={token}
-                                                    onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
-                                                    allTags={allTags}
-                                                    onTagsCreated={loadTags}
-                                                    onTagsUpdated={handleTaskTagsUpdated}
-                                                    onToggle={handleToggleTask}
-                                                    onDelete={handleDeleteTask}
-                                                    onUpdate={handleUpdateTask}
-                                                    onReassign={handleReassignTask}
-                                                    currentUserId={currentUserId}
-                                                    currentRole={currentRole}
-                                                    selected={selectedTaskIds.has(task.id)}
-                                                    onToggleSelect={toggleTaskSelection} />
+                                                <TaskRow
+                                                    key={task.id} task={task}
+                                                    projectName={projectNames.get(task.project_id)}
+                                                    selected={selectedTaskIds.has(task.id)} onToggleSelect={toggleTaskSelection}
+                                                    expanded={expandedTaskId === task.id}
+                                                    onToggleExpand={() => setExpandedTaskId(id => id === task.id ? null : task.id)}
+                                                    onToggleStatus={handleToggleTask}
+                                                >
+                                                    <TaskCard task={task} embedded
+                                                        groups={groups} users={users} token={token}
+                                                        onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
+                                                        allTags={allTags}
+                                                        onTagsCreated={loadTags}
+                                                        onTagsUpdated={handleTaskTagsUpdated}
+                                                        onToggle={handleToggleTask}
+                                                        onDelete={handleDeleteTask}
+                                                        onUpdate={handleUpdateTask}
+                                                        onReassign={handleReassignTask}
+                                                        currentUserId={currentUserId}
+                                                        currentRole={currentRole} />
+                                                </TaskRow>
                                             ))}
                                         </div>
                                         <Pagination page={tasksPage} totalPages={tasksTotalPages}
@@ -1419,8 +1292,45 @@ function App() {
                                     </div>
                                 </div>
                             )}
-                        </main>
+                        </div>
+
+                        <aside className="tk-rail">
+                            <div className="card">
+                                <div className="section-header">
+                                    <div>
+                                        <div className="section-title">Статистика</div>
+                                        <div className="section-sub">Текущая страница</div>
+                                    </div>
+                                </div>
+                                <div className="stats-grid">
+                                    <div className="stat-box">
+                                        <div className="stat-value">{tasksTotal ?? "–"}</div>
+                                        <div className="stat-label">Всего</div>
+                                    </div>
+                                    <div className="stat-box">
+                                        <div className="stat-value" style={{ color: "var(--green)" }}>{stats.done}</div>
+                                        <div className="stat-label">Готово</div>
+                                    </div>
+                                    <div className="stat-box">
+                                        <div className="stat-value" style={{ color: "var(--accent-light)" }}>{stats.pending}</div>
+                                        <div className="stat-label">В работе</div>
+                                    </div>
+                                </div>
+                                <div className="progress-wrap">
+                                    <div className="progress-track">
+                                        <div className="progress-fill" style={{ width: `${stats.percent}%` }} />
+                                    </div>
+                                    <div className="progress-caption">{stats.percent}% выполнено</div>
+                                </div>
+                            </div>
+                            <SidebarDeadlineWidget
+                                token={token}
+                                onOpenTask={(title) => { setSearchQuery(title); }}
+                                onOpenFullCalendar={() => setTab("calendar")}
+                            />
+                        </aside>
                     </div>
+                    )}
                 </div>
             )}
             {profileUserId != null ? (
@@ -1435,7 +1345,7 @@ function App() {
                 <>
                     {/* ── HOME TAB: что делать сегодня ── */}
                     {tab === "home" && (
-                        <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                        <div>
                             <HomeTab
                                 token={token}
                                 username={currentUsername}
@@ -1451,7 +1361,7 @@ function App() {
                     )}
                     {/* ── DASHBOARD TAB (статистика задач) ── */}
                     {tab === "dashboard" && (
-                        <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                        <div>
                             <DashboardTab
                                 stats={dashStats}
                                 loading={dashLoading}
@@ -1463,7 +1373,7 @@ function App() {
                     )}
                     {/* ── TIMELINE TAB ── */}
                     {tab === "timeline" && (
-                        <div style={{ maxWidth: 720, margin: "0 auto", padding: "16px 16px 0" }}>
+                        <div>
                             <TimelineTab token={token} />
                         </div>
                     )}
@@ -1494,12 +1404,6 @@ function App() {
                             <DealsBoard token={token} canManage={canManage} currentUserId={currentUserId} isAdmin={currentRole === "admin"} />
                         </div>
                     )}
-                    {/* ── KANBAN TAB ── */}
-                    {tab === "kanban" && (
-                        <div>
-                            <KanbanTab token={token} />
-                        </div>
-                    )}
                     {/* ── CALENDAR TAB (визуальный календарь дедлайнов) ── */}
                     {tab === "calendar" && (
                         <div>
@@ -1520,9 +1424,9 @@ function App() {
                     )}
                     {/* ── TEAM TAB ── */}
                     {tab === "team" && (
-                        <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
-                            {currentRole === "admin" && <InvitesPanel token={token} />}
+                        <div className="cl-page">
                             <TeamTab token={token} currentUserId={currentUserId} />
+                            {currentRole === "admin" && <InvitesPanel token={token} />}
                         </div>
                     )}
                     {tab === "templates" && (
@@ -1531,66 +1435,92 @@ function App() {
                         </div>
                     )}
                     {/* ── SETTINGS (Токены / Вебхуки / Календарь / 2FA) ── */}
-                    {(tab === "tokens" || tab === "webhooks" || tab === "ical" || tab === "2fa") && (
-                        <div style={{ maxWidth: 860, margin: "0 auto", padding: "16px 16px 0" }}>
-                            <div className="tab-bar" style={{ marginBottom: 16, display: "inline-flex" }}>
-                                <button className={`tab-btn${tab === "2fa" ? " active" : ""}`} onClick={() => setTab("2fa")}>
-                                    🔒 Профиль и 2FA
-                                </button>
-                                <button className={`tab-btn${tab === "tokens" ? " active" : ""}`} onClick={() => setTab("tokens")}>
-                                    🔑 Токены
-                                </button>
-                                <button className={`tab-btn${tab === "webhooks" ? " active" : ""}`} onClick={() => setTab("webhooks")}>
-                                    <Icon d={ICONS.link} /> Вебхуки
-                                </button>
-                                <button className={`tab-btn${tab === "ical" ? " active" : ""}`} onClick={() => setTab("ical")}>
-                                    <Icon d={ICONS.calendar} /> Экспорт (iCal)
-                                </button>
-                            </div>
-                            {tab === "2fa" && (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                                    <TwoFactorTab token={token} />
-                                    <ChangePasswordCard token={token} />
+                    {tab === "2fa" && (
+                        <div className="cl-page">
+                            <div className="cl-head">
+                                <div>
+                                    <h1 className="cl-title">Настройки</h1>
+                                    <div className="cl-sub">Безопасность аккаунта и уведомления</div>
                                 </div>
-                            )}
-                            {tab === "tokens" && <TokensTab token={token} />}
-                            {tab === "webhooks" && <WebhooksTab token={token} />}
-                            {tab === "ical" && <CalendarTab token={token} />}
+                            </div>
+                            <div className="st-cols">
+                                <TwoFactorTab token={token} />
+                                <div className="st-col">
+                                    <ChangePasswordCard token={token} />
+                                    <PushNotificationsCard token={token} />
+                                </div>
+                            </div>
                         </div>
                     )}
+                    {/* Инструменты: каждая страница самостоятельная (раньше — вкладки внутри «Настроек») */}
+                    {tab === "tokens" && <TokensTab token={token} />}
+                    {tab === "webhooks" && <WebhooksTab token={token} />}
+                    {tab === "ical" && <CalendarTab token={token} />}
                     {/* ── TRASH TAB ── */}
                     {tab === "trash" && (
-                        <div>
-                            <div className="card" style={{ marginTop: 0 }}>
-                                <div className="section-header">
-                                    <div>
-                                        <div className="section-title">Корзина</div>
-                                        <div className="section-sub">Мягко удалённые задачи — можно восстановить</div>
-                                    </div>
-                                    <button className="btn btn-ghost btn-sm" onClick={() => loadTrash(1)} disabled={loading}>
+                        <div className="cl-page">
+                            <div className="cl-head">
+                                <div>
+                                    <h1 className="cl-title">Корзина</h1>
+                                    <div className="cl-sub">Мягко удалённые задачи — можно восстановить</div>
+                                </div>
+                                <div className="cl-actions">
+                                    <button className="btn btn-ghost" onClick={() => loadTrash(1)} disabled={loading}>
                                         <Icon d={ICONS.refresh} /> Обновить
                                     </button>
                                 </div>
-                                {loading ? (
-                                    <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
-                                ) : trashTasks.length === 0 ? (
-                                    <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
-                                ) : (
-                                    <>
-                                        <div className="task-list">
-                                            {trashTasks.map(task => (
-                                                <TrashCard key={task.id} task={task}
-                                                    onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
-                                            ))}
-                                        </div>
-                                        <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
-                                    </>
-                                )}
                             </div>
+                            {loading ? (
+                                <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+                            ) : trashTasks.length === 0 ? (
+                                <div className="empty-state"><div className="empty-icon">🗑️</div>Корзина пуста</div>
+                            ) : (
+                                <div className="card tr-card">
+                                    <div className="tr-table">
+                                        {trashTasks.map(task => (
+                                            <TrashCard key={task.id} task={task}
+                                                onRestore={handleRestoreTask} onHardDelete={handleHardDelete} />
+                                        ))}
+                                    </div>
+                                    <Pagination page={trashPage} totalPages={trashTotalPages} onPage={p => loadTrash(p)} />
+                                </div>
+                            )}
                         </div>
                     )}
                 </>
             )}
+        </div>
+            </div>
+            {navOpen && (
+                <Sidebar
+                    variant="drawer"
+                    activeGroup={activeGroup}
+                    tab={tab}
+                    counts={{ tasks: tasksTotal || 0, trash: trashTotal || 0 }}
+                    onNavigate={navigateTo}
+                    onClose={() => setNavOpen(false)}
+                    theme={theme}
+                    onToggleTheme={() => setTheme(t => t === "dark" ? "light" : "dark")}
+                />
+            )}
+            <CommandPalette
+                open={paletteOpen}
+                onClose={() => setPaletteOpen(false)}
+                token={token}
+                setTab={setTab}
+                setSearchQuery={setSearchQuery}
+                setTheme={setTheme}
+                onLogout={logout}
+            />
+
+            <ChatBubble token={token} currentUserId={currentUserId} wsEvent={chatWsEvent} hideLauncher toggleKey={chatToggleKey} onUnreadChange={setChatUnread} />
+            <AIPanel
+                token={token}
+                clientId={tab === "clients" ? aiClientId : null}
+                onChanged={() => { setAiRefreshKey(k => k + 1); setHomeRefreshKey(k => k + 1); }}
+                onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }}
+            />
+
         </div>
     );
 }

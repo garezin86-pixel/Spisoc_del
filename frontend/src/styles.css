@@ -2,51 +2,64 @@
    начинает их качать сразу при парсинге HTML, а не после применения CSS) */
 
 :root {
-  --bg: #0c0e14;
-  --surface: #13161f;
-  --surface2: #1a1e2a;
-  --border: rgba(255, 255, 255, 0.07);
-  --border-hover: rgba(255, 255, 255, 0.14);
-  --text: #e8eaf0;
-  --text-muted: #6b7280;
-  --text-dim: #9ca3af;
-  --accent: #7c6af0;
-  --accent-light: #a89bf5;
-  --accent-glow: rgba(124, 106, 240, 0.25);
-  --green: #22c55e;
-  --green-dim: rgba(34, 197, 94, 0.12);
-  --red: #ef4444;
-  --red-dim: rgba(239, 68, 68, 0.12);
-  --amber: #f59e0b;
-  --amber-dim: rgba(245, 158, 11, 0.12);
+  --bg: #0e0f1f;
+  --surface: #171930;
+  --surface2: #1d2040;
+  --border: rgba(160, 168, 255, 0.14);
+  --border-hover: rgba(160, 168, 255, 0.28);
+  --text: #eef0ff;
+  /* Вторичный текст: ≥ 7:1 на --surface (раньше #6b7280 давал ~3.7:1) */
+  --text-muted: #a3a9cf;
+  --text-dim: #bfc4e6;
+  --accent: #5b4de8;
+  --accent-light: #b3aaff;
+  --accent-dim: rgba(124, 106, 240, 0.2);
+  --accent-glow: rgba(91, 77, 232, 0.35);
+  --green: #6ee7a8;
+  --green-dim: rgba(110, 231, 168, 0.14);
+  --red: #ff9bb0;
+  --red-dim: rgba(255, 155, 176, 0.14);
+  --amber: #ffd37a;
+  --amber-dim: rgba(255, 211, 122, 0.14);
   --radius: 16px;
   --radius-sm: 10px;
   --radius-lg: 22px;
   --shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
   --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.3);
+  /* Алиасы: эти переменные использовались в компонентах, но нигде не были объявлены */
+  --bg-card: var(--surface);
+  --bg-card2: var(--surface2);
+  --bg-hover: var(--surface2);
+  --border-color: var(--border);
+  --text-secondary: var(--text-muted);
+  --card-bg: var(--surface2);
+  --card-bg-hover: var(--border);
 }
 
 /* ─── Light theme ─── */
 [data-theme="light"] {
-  --bg: #f0f2f5;
+  --bg: #f3f4fb;
   --surface: #ffffff;
-  --surface2: #f8f9fb;
-  --border: #e2e6ea;
-  --border-hover: #c5cdd8;
-  --text: #111827;
-  --text2: #4b5563;
-  --text3: #9ca3af;
-  --accent: #5b47e0;
-  --accent-light: #7c6af0;
-  --accent-dim: rgba(91, 71, 224, 0.1);
-  --green: #16a34a;
-  --green-dim: rgba(22, 163, 74, 0.1);
-  --red: #dc2626;
-  --red-dim: rgba(220, 38, 38, 0.1);
-  --amber: #d97706;
-  --amber-dim: rgba(217, 119, 6, 0.1);
-  --shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
-  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --surface2: #f8f9fe;
+  --border: #dcdff0;
+  --border-hover: #bfc4e0;
+  --text: #1a1c33;
+  --text-muted: #565b80;
+  --text-dim: #454a6a;
+  --text2: #565b80;
+  --text3: #7a7fa3;
+  --accent: #4f41d9;
+  --accent-light: #3d30b8;
+  --accent-dim: rgba(79, 65, 217, 0.1);
+  --accent-glow: rgba(79, 65, 217, 0.22);
+  --green: #0b6b3d;
+  --green-dim: #dcf5e8;
+  --red: #a3173a;
+  --red-dim: #fde3ea;
+  --amber: #7a4b00;
+  --amber-dim: #fdf0d4;
+  --shadow: 0 8px 40px rgba(26, 28, 51, 0.1);
+  --shadow-sm: 0 2px 12px rgba(26, 28, 51, 0.07);
 }
 
 * {
@@ -66,7 +79,7 @@ body,
   width: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 15px;
   line-height: 1.6;
 }
@@ -119,7 +132,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 
 /* ─── Layout ─── */
@@ -132,32 +145,6 @@ h4 {
   min-height: 100vh;
 }
 
-.content-grid {
-  display: grid;
-  grid-template-columns: 290px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.main-column {
-  display: grid;
-  gap: 20px;
-}
-
-.sidebar-col {
-  display: grid;
-  gap: 16px;
-}
-
-@media (min-width: 901px) {
-  .sidebar-col {
-    position: sticky;
-    top: 28px;
-  }
-}
-
-.main-column,
-.sidebar-col,
 .card,
 .task-card,
 .group-card {
@@ -165,29 +152,6 @@ h4 {
 }
 
 /* ─── Header ─── */
-
-.app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: stretch;
-  gap: 0;
-  padding: 0;
-  margin-bottom: 24px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-
-.app-header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 20px 24px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-}
 
 .logo-mark {
   width: 54px;
@@ -197,7 +161,7 @@ h4 {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Syne', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-weight: 800;
   font-size: 28px;
   color: #fff;
@@ -206,7 +170,7 @@ h4 {
 }
 
 .brand-name {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-weight: 800;
   font-size: 1.2rem;
   letter-spacing: 0.02em;
@@ -217,59 +181,6 @@ h4 {
   font-size: 0.8rem;
   color: var(--text-muted);
   margin-top: 1px;
-}
-
-.header-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-
-.header-row {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-}
-
-.header-row-top {
-  padding: 12px 20px 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-.header-row-bottom {
-  padding: 4px 20px 8px;
-  justify-content: flex-start;
-}
-
-.user-chip {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-/* .user-chip:hover {
-  max-width: 400px;
-} */
-
-.user-chip::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green);
 }
 
 
@@ -301,7 +212,7 @@ h4 {
 }
 
 .auth-title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 2rem;
   font-weight: 800;
   margin-bottom: 6px;
@@ -483,7 +394,7 @@ textarea {
 }
 
 .stat-value {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 1.8rem;
   font-weight: 800;
   line-height: 1;
@@ -520,19 +431,7 @@ textarea {
   margin-top: 6px;
 }
 
-/* ─── Filters ─── */
-
-.filter-row {
-  display: grid;
-  gap: 10px;
-}
-
 /* ─── Task list ─── */
-
-.task-list {
-  display: grid;
-  gap: 12px;
-}
 
 .task-card {
   background: var(--surface2);
@@ -686,47 +585,7 @@ textarea {
   color: var(--accent-light);
 }
 
-.task-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-
 @media (max-width: 520px) {
-  .task-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: 8px;
-  }
-
-  /* Для случая с одной кнопкой (хотя в корзине две) – растягиваем на всю ширину */
-  .task-actions .btn:only-child {
-    grid-column: 1 / -1;
-  }
-
-  /* Кнопка "удалить" на всю ширину */
-  .task-actions .btn-danger:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-  }
-
-  .task-actions .btn {
-    white-space: normal;
-    word-break: break-word;
-    text-align: center;
-    padding: 8px 10px;
-  }
-
-  .task-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    width: 100%;
-    overflow-x: hidden;
-    /* Предотвращает горизонтальный микродёрг экрана */
-  }
 
   .task-card {
     padding: 14px 16px !important;
@@ -828,56 +687,10 @@ textarea {
 }
 
 /* ─── Responsive ─── */
-@media (max-width: 900px) {
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar-col {
-    position: static;
-  }
-}
 
 @media (max-width: 760px) {
   .page-shell {
     padding: 16px 14px 40px;
-  }
-
-  .app-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-    padding: 0;
-    height: auto;
-    overflow: visible;
-    margin-bottom: 12px;
-  }
-
-  .app-header-left {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 10px 12px;
-  }
-
-  .header-row-top {
-    padding: 8px 12px 6px;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .header-row-bottom {
-    padding: 6px 12px 8px;
-  }
-
-  .header-right {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-    width: 100%;
-  }
-
-  .header-row {
-    width: 100%;
   }
 
   .tab-bar {
@@ -903,21 +716,6 @@ textarea {
     min-width: 12px !important;
     flex-shrink: 0;
   }
-
-
-
-  .user-chip {
-    order: 2;
-    flex: 0 0 auto;
-    justify-content: center;
-    max-width: 160px;
-    /* убрать transition и :hover { max-width: 400px } */
-  }
-
-  .header-right>.btn {
-    order: 3;
-    flex: 1 1 120px;
-  }
 }
 
 @media (max-width: 600px) {
@@ -934,10 +732,6 @@ textarea {
 
   .card {
     padding: 18px;
-    border-radius: var(--radius);
-  }
-
-  .app-header {
     border-radius: var(--radius);
   }
 
@@ -972,13 +766,11 @@ textarea {
     align-self: flex-start;
   }
 
-  .task-actions,
   .edit-actions {
     display: grid;
     grid-template-columns: 1fr;
   }
 
-  .task-actions .btn,
   .edit-actions .btn,
   .comment-form .btn {
     width: 100%;
@@ -1089,14 +881,6 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px;
-}
-
-/* Текст имени пользователя в чипе — обрезаем с многоточием */
-.user-chip-name {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 .tab-btn {
@@ -1254,11 +1038,6 @@ textarea {
 
 /* ─── Groups ─── */
 
-.group-list {
-  display: grid;
-  gap: 10px;
-}
-
 .group-card {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -1338,7 +1117,7 @@ textarea {
   border-radius: 10px;
   background: linear-gradient(135deg, var(--accent), #5b4fd4);
   color: #fff;
-  font-family: 'Syne', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-weight: 700;
   font-size: 0.9rem;
   display: flex;
@@ -1396,18 +1175,6 @@ textarea {
   flex: 1;
 }
 
-/* ─── View mode toggle ─── */
-.view-mode-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.view-mode-row .btn {
-  justify-content: center;
-}
-
 /* ─── Task ID badge ─── */
 .task-title {
   display: block;
@@ -1448,10 +1215,6 @@ textarea {
 @media (max-width: 530px) {
   .page-shell {
     padding-inline: 10px;
-  }
-
-  .app-header {
-    padding: 14px;
   }
 
   .brand-name {
@@ -1518,35 +1281,12 @@ textarea {
     display: inline-flex;
   }
 
-  /* Безопасный контейнер для текста */
-  .task-text-block {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .task-actions {
-    width: 100% !important;
-    justify-content: flex-end !important;
-    margin-top: 4px !important;
-    border-top: 1px solid var(--border);
-    padding-top: 12px;
-  }
-
   .task-meta-row {
     display: flex !important;
     flex-direction: row !important;
     flex-wrap: wrap !important;
     gap: 8px !important;
     width: 100% !important;
-  }
-
-  .task-meta-item {
-    font-size: 0.78rem !important;
-    white-space: nowrap !important;
-    /* Запрещаем тексту внутри чипа рваться некрасиво */
   }
 }
 
@@ -1555,7 +1295,6 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .view-mode-row,
   .stats-grid {
     grid-template-columns: 1fr;
   }
@@ -1583,172 +1322,10 @@ textarea {
   text-align: center;
 }
 
-/* Для мобильных экранов: если кнопки все еще накладываются,
-   мы изолируем их структуру */
-@media (max-width: 420px) {
-
-  .task-card .task-actions,
-  .done-card .task-actions {
-    display: flex !important;
-    flex-direction: column !important;
-    /* Ставим кнопки в столбик, чтобы им хватало места */
-    align-items: stretch !important;
-    gap: 8px !important;
-    margin-top: 12px !important;
-  }
-
-  .task-card .task-actions .btn,
-  .done-card .task-actions .btn {
-    width: 100% !important;
-    min-height: 38px !important;
-    white-space: nowrap !important;
-    /* Текст кнопки не переносится и не пухнет по вертикали */
-  }
-}
-
 /* Скрываем имя исполнителя в свёрнутой строке задачи на мобильных */
 @media (max-width: 600px) {
   .task-row-user {
     display: none !important;
-  }
-}
-
-/* ─── Kanban ──────────────────────────────────────────────────────────────── */
-
-.kanban-board {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  min-height: 500px;
-  padding-bottom: 12px;
-  align-items: flex-start;
-  /* Плавный горизонтальный скролл на мобильных */
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-.kanban-board::-webkit-scrollbar {
-  height: 6px;
-}
-
-.kanban-board::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.kanban-board::-webkit-scrollbar-thumb {
-  background: var(--border-hover);
-  border-radius: 3px;
-}
-
-.kanban-column {
-  min-width: 260px;
-  max-width: 300px;
-  flex-shrink: 0;
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  transition: border-color 0.15s, background 0.15s;
-  overflow: hidden;
-}
-
-.kanban-column.drag-over {
-  border-color: var(--accent);
-  background: rgba(124, 106, 240, 0.06);
-}
-
-.kanban-col-header {
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.kanban-col-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.kanban-col-title {
-  font-family: 'Syne', sans-serif;
-  font-weight: 700;
-  font-size: 13px;
-}
-
-.kanban-col-count {
-  margin-left: auto;
-  background: var(--surface2);
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 20px;
-  padding: 1px 8px;
-}
-
-.kanban-cards {
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-height: 60px;
-}
-
-.kanban-card {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  cursor: grab;
-  transition: opacity 0.15s, box-shadow 0.15s, transform 0.1s;
-  box-shadow: var(--shadow-sm);
-  user-select: none;
-}
-
-.kanban-card:active {
-  cursor: grabbing;
-}
-
-.kanban-card:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  transform: translateY(-1px);
-}
-
-.kanban-card.is-dragging {
-  opacity: 0.35;
-  transform: scale(0.97);
-  box-shadow: none;
-}
-
-.kanban-card.is-moving {
-  opacity: 0.6;
-}
-
-.kanban-empty {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 24px 0;
-  transition: opacity 0.15s;
-}
-
-.kanban-filters {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-/* Мобильный канбан — чуть у́же колонки */
-@media (max-width: 600px) {
-  .kanban-column {
-    min-width: 220px;
-    max-width: 240px;
   }
 }
 
@@ -1855,34 +1432,6 @@ textarea {
 }
 
 /* ─── Command Palette (Ctrl/Cmd+K) ─── */
-.cmdk-trigger {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  color: var(--text-dim);
-  font-size: 12px;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.cmdk-trigger:hover {
-  border-color: var(--border-hover);
-  color: var(--text);
-}
-
-.cmdk-trigger kbd {
-  font-family: inherit;
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
 
 .cmdk-overlay {
   position: fixed;
@@ -2037,11 +1586,6 @@ textarea {
 .home-row-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; color: var(--text-muted); }
 .home-row-right { flex: 0 0 auto; font-size: 0.82rem; color: var(--text-dim); white-space: nowrap; }
 .home-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-.home-stages { display: flex; flex-wrap: wrap; gap: 10px; }
-.home-stage { flex: 1 1 140px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface2); }
-.home-stage-name { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
-.home-stage-count { font-size: 1.3rem; font-weight: 700; }
-.home-stage-sum { font-size: 0.78rem; color: var(--text-dim); margin-top: 2px; }
 
 /* ── Панель вкладок на широких экранах ────────────────────────────────────────
    Вкладок больше дюжины: раньше кнопки сжимались ниже ширины своего содержимого, и подписи с иконками налезали друг на

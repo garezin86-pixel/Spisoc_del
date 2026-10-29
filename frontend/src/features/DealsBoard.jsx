@@ -7,7 +7,7 @@ import { Modal } from "../components/Modal";
 import { PipelineSettings } from "../components/PipelineSettings";
 import { PipelineSummary } from "../components/PipelineSummary";
 import { ICONS } from "../constants/icons";
-import { CLIENT_TYPES, CURRENCIES, DEFAULT_CURRENCY, clientTypeInfo, formatDate, formatMoney, formatTotals, plural, stageColor, sumByCurrency } from "../constants/crm";
+import { CURRENCIES, DEFAULT_CURRENCY, clientTypeInfo, formatDate, formatMoney, formatTotals, plural, stageColor, sumByCurrency } from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 
 const byPosition = (a, b) => a.position - b.position || a.id - b.id;
@@ -51,7 +51,11 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
     const [showCreate, setShowCreate] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
-    const [typeFilter, setTypeFilter] = useState(""); // только общая доска: "" — все, "company" — B2B, "person" — B2C
+    // Создание воронки прямо рядом с выбором воронки (только admin, общая доска)
+    const [addingPipeline, setAddingPipeline] = useState(false);
+    const [newPipelineName, setNewPipelineName] = useState("");
+    const [copyStages, setCopyStages] = useState(true);
+    const [pipelineBusy, setPipelineBusy] = useState(false);
     const [newDeal, setNewDeal] = useState({ title: "", amount: "", currency: DEFAULT_CURRENCY, expected_close_date: "" });
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState(null);
@@ -95,7 +99,6 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
         try {
             const qs = new URLSearchParams();
             if (clientId) qs.set("client_id", clientId);
-            if (typeFilter) qs.set("client_type", typeFilter);
             await downloadFile({ path: `/deals/export?${qs}`, token, fallbackName: "deals_export.csv" });
         } catch (e) {
             setMoveError(e.message);
@@ -107,14 +110,58 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
     // сделки выбранной воронки (стадии разных воронок не пересекаются)
     const pipelineDeals = useMemo(() => {
         const ids = new Set(stages.map(s => s.id));
-        return deals.filter(d => ids.has(d.stage_id) && (!typeFilter || d.client_type === typeFilter));
-    }, [deals, stages, typeFilter]);
+        return deals.filter(d => ids.has(d.stage_id));
+    }, [deals, stages]);
     const dealsCountOf = p => deals.filter(d => p.stages.some(s => s.id === d.stage_id)).length;
 
     const selectPipeline = id => {
         setSelectedId(id);
         if (!clientId) localStorage.setItem(PIPELINE_KEY, String(id));
     };
+
+    const createPipeline = async (e) => {
+        e.preventDefault();
+        const name = newPipelineName.trim();
+        if (!name) return;
+        setPipelineBusy(true);
+        try {
+            const body = { name };
+            if (copyStages && pipeline) body.copy_from_id = pipeline.id;
+            const created = await apiRequest({ path: "/pipelines", method: "POST", token, body });
+            await load(true);
+            if (created?.id) selectPipeline(created.id);
+            setAddingPipeline(false);
+            setNewPipelineName("");
+            if (!copyStages) setShowSettings(true); // пустую воронку сразу открываем для настройки стадий
+        } catch (err) {
+            setMoveError(err.message);
+        } finally {
+            setPipelineBusy(false);
+        }
+    };
+
+    const addPipelineControl = isAdmin && !clientId && (addingPipeline ? (
+        <form className="dl-addpipe" onSubmit={createPipeline}>
+            <input
+                className="form-input" autoFocus maxLength={100} required aria-label="Название новой воронки"
+                placeholder="Название новой воронки" value={newPipelineName} onChange={e => setNewPipelineName(e.target.value)}
+            />
+            {pipeline && (
+                <label className="cl-check">
+                    <input type="checkbox" checked={copyStages} onChange={e => setCopyStages(e.target.checked)} />
+                    Скопировать стадии из «{pipeline.name}»
+                </label>
+            )}
+            <button type="submit" className="btn btn-primary" disabled={pipelineBusy || !newPipelineName.trim()}>
+                {pipelineBusy ? "Создаю…" : "Создать"}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => { setAddingPipeline(false); setNewPipelineName(""); }}>Отмена</button>
+        </form>
+    ) : (
+        <button type="button" className="btn btn-ghost" onClick={() => setAddingPipeline(true)} title="Создать новую воронку">
+            <Icon d={ICONS.plus} /> Воронка
+        </button>
+    ));
 
     const columns = useMemo(
         () => stages.map(s => ({ key: s.id, label: s.name, color: stageColor(s), kind: s.kind })),
@@ -207,7 +254,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
     if (error) return <div style={{ padding: 40, textAlign: "center", color: "var(--red)" }}>Ошибка: {error}</div>;
 
     return (
-        <div>
+        <div className={clientId ? undefined : "cl-page"}>
             {moveError && (
                 <div className="alert" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 12 }}>
                     <span>{moveError}</span>
@@ -215,6 +262,39 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                 </div>
             )}
 
+            {!clientId ? (
+                <>
+                    <div className="cl-head">
+                        <div>
+                            <h1 className="cl-title">Воронка сделок</h1>
+                            <div className="cl-sub">
+                                {pipelineDeals.length} {plural(pipelineDeals.length, "сделка", "сделки", "сделок")}{openTotals && <> · в работе на {openTotals}</>}
+                            </div>
+                        </div>
+                        <div className="cl-actions">
+                            <button className="btn btn-ghost" onClick={() => load()}><Icon d={ICONS.refresh} /> Обновить</button>
+                            {canManage && (
+                                <button className="btn btn-ghost" onClick={exportCsv} title="Выгрузить сделки в CSV">Экспорт</button>
+                            )}
+                            <button className="btn btn-ghost" onClick={() => setShowSummary(v => !v)} aria-pressed={showSummary}>Сводка</button>
+                            {isAdmin && (
+                                <button className="btn btn-ghost" onClick={() => setShowSettings(v => !v)} aria-pressed={showSettings}>Воронки</button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="cl-filters">
+                        {pipelines.length > 1 && (
+                            <select
+                                className="form-input dl-select" value={selectedId ?? ""} aria-label="Воронка"
+                                onChange={e => selectPipeline(Number(e.target.value))}
+                            >
+                                {pipelines.map(p => <option key={p.id} value={p.id}>{p.name} ({dealsCountOf(p)})</option>)}
+                            </select>
+                        )}
+                        {addPipelineControl}
+                    </div>
+                </>
+            ) : (
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
                 {clientId && (
                     <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(v => !v)}>
@@ -225,7 +305,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                     <Icon d={ICONS.refresh} /> Обновить
                 </button>
                 {canManage && (
-                    <button className="btn btn-ghost btn-sm" onClick={exportCsv} title="Выгрузить сделки в CSV (для общей доски — с выбранным типом клиентов)">
+                    <button className="btn btn-ghost btn-sm" onClick={exportCsv} title="Выгрузить сделки в CSV">
                         Экспорт
                     </button>
                 )}
@@ -236,17 +316,6 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                     >
                         {pipelines.map(p => <option key={p.id} value={p.id}>{p.name} ({dealsCountOf(p)})</option>)}
                     </select>
-                )}
-                {!clientId && (
-                    <span style={{ display: "inline-flex", gap: 4 }}>
-                        {[{ key: "", label: "Все" }, ...CLIENT_TYPES.map(t => ({ key: t.key, label: `${t.icon} ${t.short}` }))].map(opt => (
-                            <button
-                                key={opt.key} type="button" title={opt.key ? clientTypeInfo(opt.key).label : "Клиенты любого типа"}
-                                className={`btn btn-sm ${typeFilter === opt.key ? "btn-primary" : "btn-ghost"}`}
-                                onClick={() => setTypeFilter(opt.key)}
-                            >{opt.label}</button>
-                        ))}
-                    </span>
                 )}
                 {!clientId && (
                     <button className="btn btn-ghost btn-sm" onClick={() => setShowSummary(v => !v)}>
@@ -262,6 +331,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                     {pipelineDeals.length} {plural(pipelineDeals.length, "сделка", "сделки", "сделок")}{openTotals && <> · в работе на {openTotals}</>}
                 </span>
             </div>
+            )}
 
             {showSummary && !clientId && (
                 <PipelineSummary token={token} users={users} pipelineId={selectedId} refreshKey={dealsSignature} onClose={() => setShowSummary(false)} />
@@ -319,7 +389,7 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
                 onMove={onMove}
                 renderColumnExtra={(col, list) => {
                     const totals = formatTotals(sumByCurrency(list)); // по валютам: «15 000 ₴ · 2 500 $»
-                    return totals ? <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 600, textAlign: "right" }}>{totals}</span> : null;
+                    return totals ? <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>{totals}</span> : null;
                 }}
                 renderCard={({ item, col, onDragStart, onDragEnd, isDragging }) => (
                     <DealCard
@@ -370,41 +440,33 @@ export function DealsBoard({ token, clientId = null, canManage, currentUserId, i
 
 function DealCard({ deal, col, kind, ownerName, showClient, onOpen, onDragStart, onDragEnd, isDragging, isMoving }) {
     const overdue = kind === "open" && deal.expected_close_date && new Date(`${deal.expected_close_date}T23:59:59`) < new Date();
+    const cls = `dl-card${isDragging ? " is-dragging" : ""}${isMoving ? " is-moving" : ""}`;
     return (
         <div
+            className={cls}
             draggable
             onDragStart={e => onDragStart(e, deal.id, col)}
             onDragEnd={onDragEnd}
             onClick={onOpen}
-            style={{
-                background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
-                padding: "10px 12px", cursor: isDragging ? "grabbing" : "grab", userSelect: "none",
-                opacity: isDragging ? 0.4 : isMoving ? 0.7 : 1, boxShadow: isDragging ? "none" : "var(--shadow-sm)",
-                transition: "opacity 0.15s, box-shadow 0.15s",
-            }}
         >
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>#{deal.id}</span>
-                {deal.amount != null && (
-                    <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{formatMoney(deal.amount, deal.currency)}</span>
-                )}
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, wordBreak: "break-word", marginBottom: 6 }}>{deal.title}</div>
+            <div className="dl-card-title">{deal.title}</div>
             {showClient && deal.client_name && (
-                <div title={clientTypeInfo(deal.client_type).label} style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6, wordBreak: "break-word" }}>
+                <div className="dl-card-client" title={clientTypeInfo(deal.client_type).label}>
                     {clientTypeInfo(deal.client_type).icon} {deal.client_name}
                 </div>
             )}
-            {deal.lost_reason && (
-                <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 6 }}>Отказ: {deal.lost_reason}</div>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+            {deal.lost_reason && <div className="dl-card-lost">Отказ: {deal.lost_reason}</div>}
+            <div className="dl-card-foot">
+                <span className="dl-card-amount">{deal.amount != null ? formatMoney(deal.amount, deal.currency) : "Без суммы"}</span>
+                <span className="dl-card-owner" title={ownerName}>{(ownerName || "?").trim().charAt(0).toUpperCase()}</span>
+            </div>
+            <div className="dl-card-meta">
+                <span>#{deal.id}</span>
                 {deal.expected_close_date && (
-                    <span style={{ color: overdue ? "var(--red)" : "var(--text-muted)", display: "flex", alignItems: "center", gap: 3 }}>
-                        <Icon d={ICONS.clock} size={11} />{formatDate(deal.expected_close_date)}
+                    <span className={overdue ? "dl-overdue" : undefined}>
+                        <Icon d={ICONS.clock} size={11} /> {formatDate(deal.expected_close_date)}
                     </span>
                 )}
-                <span style={{ marginLeft: "auto", color: "var(--text-dim)" }}>{ownerName}</span>
             </div>
         </div>
     );

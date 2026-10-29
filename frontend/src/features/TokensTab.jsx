@@ -73,17 +73,14 @@ export function TokensTab({ token }) {
     }
 
     return (
-        <div>
-            <div className="card" style={{ marginTop: 0 }}>
-                <div className="section-header">
-                    <div>
-                        <div className="section-title">🔑 Персональные API-токены</div>
-                        <div className="section-sub">
-                            Для скриптов и интеграций (Zapier-подобные сценарии), которым неудобно
-                            перелогиниваться каждые 30 минут, как обычной веб-сессии.
-                        </div>
-                    </div>
+        <div className="cl-page">
+            <div className="cl-head">
+                <div>
+                    <h1 className="cl-title">🔑 Персональные API-токены</h1>
+                    <div className="cl-sub">Для скриптов и интеграций (Zapier-подобные сценарии), которым неудобно перелогиниваться каждые 30 минут, как обычной веб-сессии.</div>
                 </div>
+            </div>
+            <div className="card">
 
                 {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
 

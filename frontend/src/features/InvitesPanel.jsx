@@ -75,10 +75,10 @@ export function InvitesPanel({ token }) {
     }
 
     return (
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card">
             <div className="section-header">
                 <div>
-                    <div className="section-title">✉️ Приглашения</div>
+                    <div className="section-title">Приглашения</div>
                     <div className="section-sub">
                         Отправьте ссылку сотруднику — он зарегистрируется сам и попадёт в вашу компанию.
                         Ссылка действует 7 дней, пока вы её не отзовёте.
@@ -94,7 +94,7 @@ export function InvitesPanel({ token }) {
             {loading ? (
                 <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
             ) : invites.length === 0 ? (
-                <div className="empty-state"><div className="empty-icon">✉️</div>Действующих приглашений нет</div>
+                <div className="cl-muted">Действующих приглашений нет</div>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {invites.map(inv => {

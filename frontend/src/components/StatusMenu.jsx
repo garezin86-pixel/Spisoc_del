@@ -11,8 +11,13 @@ export function StatusMenu({ status, onChange, disabled }) {
         function handleClickOutside(e) {
             if (ref.current && !ref.current.contains(e.target)) setOpen(false);
         }
+        const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
         document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        document.addEventListener("keydown", onKey);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("keydown", onKey);
+        };
     }, [open]);
 
     return (
@@ -20,6 +25,8 @@ export function StatusMenu({ status, onChange, disabled }) {
             <button
                 type="button"
                 className="btn btn-sm"
+                aria-haspopup="listbox"
+                aria-expanded={open}
                 disabled={disabled}
                 onClick={() => setOpen(v => !v)}
                 style={{

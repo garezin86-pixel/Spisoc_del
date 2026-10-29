@@ -269,26 +269,26 @@ export function TemplatesTab({ token }) {
 
     return (
         <>
-            <div className="card" style={{ marginTop: 0 }}>
-                <div className="section-header">
+            <div className="cl-page">
+                <div className="cl-head">
                     <div>
-                        <div className="section-title">Шаблоны задач</div>
-                        <div className="section-sub">
+                        <h1 className="cl-title">Шаблоны задач</h1>
+                        <div className="cl-sub">
                             {templates.length > 0
-                                ? `${templates.length} шаблон${templates.length === 1 ? "" : templates.length < 5 ? "а" : "ов"}`
-                                : "Создайте шаблон и применяйте его к проектам"}
+                                ? `${templates.length} шаблон${templates.length === 1 ? "" : templates.length < 5 ? "а" : "ов"} · `
+                                : ""}Создайте шаблон и применяйте его к проектам
                         </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={loadTemplates} disabled={loading}>
+                    <div className="cl-actions">
+                        <button className="btn btn-ghost" onClick={loadTemplates} disabled={loading}>
                             <Icon d={ICONS.refresh} /> Обновить
                         </button>
-                        <button className="btn btn-primary btn-sm" onClick={openCreate}>
+                        <button className="btn btn-primary" onClick={openCreate}>
                             <Icon d={ICONS.plus} /> Новый шаблон
                         </button>
                     </div>
                 </div>
-                {error && <div style={{ color: "var(--red)", marginBottom: 12, fontSize: 13 }}>{error}</div>}
+                {error && <div className="alert">{error}</div>}
                 {loading ? (
                     <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
                 ) : templates.length === 0 ? (
@@ -300,58 +300,49 @@ export function TemplatesTab({ token }) {
                         </button>
                     </div>
                 ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
-                        {templates.map(tpl => (
-                            <div key={tpl.id} style={{
-                                background: "var(--bg-card2)", border: "1px solid var(--border)",
-                                borderRadius: 12, padding: "14px 16px",
-                            }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                            <Icon d={TEMPLATE_ICON} size={16} />
-                                            <span style={{ fontWeight: 600, fontSize: 15 }}>{tpl.title}</span>
-                                        </div>
-                                        {tpl.description && (
-                                            <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 8 }}>
-                                                {tpl.description}
-                                            </div>
-                                        )}
-                                        {tpl.items && tpl.items.length > 0 ? (
-                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                                                {[...tpl.items].sort((a, b) => a.order_index - b.order_index).map(item => (
-                                                    <span key={item.id} className="meta-chip" style={{
-                                                        background: PRIORITY_COLORS[item.priority] + "18",
-                                                        color: PRIORITY_COLORS[item.priority],
-                                                        border: `1px solid ${PRIORITY_COLORS[item.priority]}33`,
-                                                    }}>
-                                                        {PRIORITY_ICONS[item.priority]} {item.title}
-                                                        {item.deadline_offset_days != null && ` · ⏰${item.deadline_offset_days}д`}
-                                                        {item.tags && item.tags.length > 0 && ` · 🏷${item.tags.length}`}
-                                                        {item.checklist && item.checklist.length > 0 && ` · ☑${item.checklist.length}`}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Нет задач</span>
-                                        )}
+                    <div className="pj-grid">
+                        {templates.map(tpl => {
+                            const items = [...(tpl.items || [])].sort((a, b) => a.order_index - b.order_index);
+                            return (
+                                <div key={tpl.id} className="card pj-card">
+                                    <div>
+                                        <div className="tpl-title"><Icon d={TEMPLATE_ICON} size={16} /> {tpl.title}</div>
+                                        {tpl.description && <div className="cl-sub">{tpl.description}</div>}
                                     </div>
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
-                                        <button className="btn btn-primary btn-sm" onClick={() => openApply(tpl)}
-                                            disabled={!tpl.items || tpl.items.length === 0}>
+                                    {items.length > 0 ? (
+                                        <ul className="tpl-items">
+                                            {items.slice(0, 5).map(item => (
+                                                <li key={item.id}>
+                                                    <span className="tpl-dot" style={{ background: PRIORITY_COLORS[item.priority] }} title={PRIORITY_ICONS[item.priority]} />
+                                                    <span className="tpl-item-title">{item.title}</span>
+                                                    <span className="cl-muted">
+                                                        {item.deadline_offset_days != null && `⏰${item.deadline_offset_days}д `}
+                                                        {item.tags && item.tags.length > 0 && `🏷${item.tags.length} `}
+                                                        {item.checklist && item.checklist.length > 0 && `☑${item.checklist.length}`}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                            {items.length > 5 && <li className="cl-muted">и ещё {items.length - 5}</li>}
+                                        </ul>
+                                    ) : (
+                                        <span className="cl-muted">Нет задач</span>
+                                    )}
+                                    <div className="pj-foot">
+                                        <button className="btn btn-primary btn-sm" onClick={() => openApply(tpl)} disabled={items.length === 0}>
                                             ▶ Использовать
                                         </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(tpl)}>
-                                            <Icon d={ICONS.edit} /> Изменить
-                                        </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(tpl.id)}
-                                            style={{ color: "var(--red)" }}>
-                                            <Icon d={ICONS.trash} /> Удалить
-                                        </button>
+                                        <span className="tpl-actions">
+                                            <button className="btn btn-ghost btn-sm" onClick={() => openEdit(tpl)}>
+                                                <Icon d={ICONS.edit} /> Изменить
+                                            </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(tpl.id)} style={{ color: "var(--red)" }}>
+                                                <Icon d={ICONS.trash} /> Удалить
+                                            </button>
+                                        </span>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

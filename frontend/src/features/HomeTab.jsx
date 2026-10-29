@@ -59,6 +59,20 @@ function Section({ title, total, shown, tone, empty, children }) {
     );
 }
 
+function Kpi({ label, value, sub, tone, onClick }) {
+    const color = tone === "danger" ? "var(--red)" : tone === "warn" ? "var(--amber)" : undefined;
+    const body = (
+        <>
+            <span className="home-kpi-label">{label}</span>
+            <span className="home-kpi-value" style={color ? { color } : undefined}>{value}</span>
+            {sub && <span className="home-kpi-sub">{sub}</span>}
+        </>
+    );
+    return onClick
+        ? <button type="button" className="card home-kpi home-kpi--link" onClick={onClick}>{body}</button>
+        : <div className="card home-kpi">{body}</div>;
+}
+
 function Row({ onClick, left, title, sub, right, rightTone }) {
     return (
         <button type="button" className="home-row" onClick={onClick}>
@@ -154,87 +168,104 @@ export function HomeTab({ token, username, refreshKey, onOpenTask, onOpenClient,
         />
     );
 
+    // Суммы открытых сделок по валютам (разные валюты не складываются)
+    const dealTotals = {};
+    openStages.forEach(st => st.totals.forEach(t => { dealTotals[t.currency] = (dealTotals[t.currency] ?? 0) + t.amount; }));
+    const maxStageCount = Math.max(1, ...openStages.map(st => st.count));
+    const hour = new Date().getHours();
+    const greeting = hour < 5 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
+
     return (
         <div className="home">
             {error && <div className="home-banner">Не удалось обновить данные: {error}</div>}
 
-            <div className="card" style={{ background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%)", border: "none" }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                    <div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>
-                            {foreign ? `Дашборд сотрудника ${viewedName}` : `Привет, ${username}!`}
-                        </div>
-                        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", marginTop: 4 }}>
-                            {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })} · {summary}
-                        </div>
+            <div className="home-head">
+                <div>
+                    <h1 className="home-title">{foreign ? `Дашборд сотрудника ${viewedName}` : `${greeting}, ${username}`}</h1>
+                    <div className="home-subtitle">
+                        {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })} · {summary}
                     </div>
-                    {canManage && users.length > 1 && (
-                        <select
-                            className="form-input" style={{ width: "auto", minWidth: 150 }} aria-label="Чей дашборд"
-                            value={foreign ? viewUserId : ""} onChange={switchUser}
-                        >
-                            <option value="">Мой дашборд</option>
-                            {users.filter(u => u.id !== currentUserId).map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
-                        </select>
-                    )}
                 </div>
+                {canManage && users.length > 1 && (
+                    <select
+                        className="form-input" style={{ width: "auto", minWidth: 150 }} aria-label="Чей дашборд"
+                        value={foreign ? viewUserId : ""} onChange={switchUser}
+                    >
+                        <option value="">Мой дашборд</option>
+                        {users.filter(u => u.id !== currentUserId).map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                    </select>
+                )}
             </div>
 
-            {overdue.total > 0 && (
-                <Section title="Просрочено" tone="danger" total={overdue.total} shown={overdue.items.length}>
-                    {overdue.items.map(t => taskRow(t, true))}
-                </Section>
-            )}
+            <div className="home-kpis">
+                <Kpi label="Задачи на сегодня" value={today.total} />
+                <Kpi label="Просрочено" value={overdue.total} tone={overdue.total > 0 ? "danger" : undefined} />
+                <Kpi label="Сделки в работе" value={dealsTotal} sub={dealsTotal > 0 ? totalsText(Object.entries(dealTotals).map(([currency, amount]) => ({ currency, amount }))) : "открытых нет"} onClick={onOpenDeals} />
+                <Kpi label={`Без контакта > ${data.stale_days} ${plural(data.stale_days, "дня", "дней", "дней")}`} value={stale.total} tone={stale.total > 0 ? "warn" : undefined} />
+            </div>
 
-            <Section title="Задачи на сегодня" total={today.total} shown={today.items.length} empty="На сегодня задач нет">
-                {today.items.map(t => taskRow(t, false))}
-            </Section>
+            <div className="home-cols">
+                <div className="home-col">
+                    {overdue.total > 0 && (
+                        <Section title="Просрочено" tone="danger" total={overdue.total} shown={overdue.items.length}>
+                            {overdue.items.map(t => taskRow(t, true))}
+                        </Section>
+                    )}
 
-            <Section title="Ближайшие встречи и звонки" total={events.total} shown={events.items.length} empty="Запланированных событий нет">
-                {events.items.map(e => (
-                    <Row
-                        key={e.id}
-                        onClick={() => onOpenClient(e.client_id)}
-                        left={<span>{INTERACTION_LABELS[e.type]?.icon ?? "📅"}</span>}
-                        title={e.title || INTERACTION_LABELS[e.type]?.label || "Событие"}
-                        sub={e.client_name}
-                        right={whenText(e.starts_at)}
-                    />
-                ))}
-            </Section>
+                    <Section title="Задачи на сегодня" total={today.total} shown={today.items.length} empty="На сегодня задач нет">
+                        {today.items.map(t => taskRow(t, false))}
+                    </Section>
 
-            <Section
-                title={`Клиенты без контакта более ${data.stale_days} ${plural(data.stale_days, "дня", "дней", "дней")}`}
-                total={stale.total} shown={stale.items.length} empty="Со всеми клиентами недавно общались"
-            >
-                {stale.items.map(c => (
-                    <Row
-                        key={c.id}
-                        onClick={() => onOpenClient(c.id)}
-                        left={<span>👤</span>}
-                        title={c.name}
-                        sub={c.last_contact_at ? "Последний контакт был" : "Контактов ещё не было"}
-                        right={`${c.days_since_contact} ${plural(c.days_since_contact, "день", "дня", "дней")}`}
-                    />
-                ))}
-            </Section>
-
-            <div className="card home-section">
-                <div className="section-header">
-                    <div className="section-title">{foreign ? "Сделки в работе" : "Мои сделки в работе"}{dealsTotal > 0 && <span className="home-count">{dealsTotal}</span>}</div>
-                    <button className="btn-ghost" onClick={onOpenDeals}>Воронка</button>
-                </div>
-                {dealsTotal === 0 ? <div className="home-empty">Открытых сделок нет</div> : (
-                    <div className="home-stages">
-                        {openStages.map(s => (
-                            <div key={s.stage_id} className="home-stage">
-                                <div className="home-stage-name"><span className="home-dot" style={{ background: stageColor(s) }} />{s.name}</div>
-                                <div className="home-stage-count">{s.count}</div>
-                                <div className="home-stage-sum">{totalsText(s.totals)}</div>
-                            </div>
+                    <Section
+                        title={`Клиенты без контакта более ${data.stale_days} ${plural(data.stale_days, "дня", "дней", "дней")}`}
+                        total={stale.total} shown={stale.items.length} empty="Со всеми клиентами недавно общались"
+                    >
+                        {stale.items.map(c => (
+                            <Row
+                                key={c.id}
+                                onClick={() => onOpenClient(c.id)}
+                                left={<span>👤</span>}
+                                title={c.name}
+                                sub={c.last_contact_at ? "Последний контакт был" : "Контактов ещё не было"}
+                                right={`${c.days_since_contact} ${plural(c.days_since_contact, "день", "дня", "дней")}`}
+                            />
                         ))}
+                    </Section>
+                </div>
+
+                <div className="home-col">
+                    <Section title="Ближайшие встречи и звонки" total={events.total} shown={events.items.length} empty="Запланированных событий нет">
+                        {events.items.map(e => (
+                            <Row
+                                key={e.id}
+                                onClick={() => onOpenClient(e.client_id)}
+                                left={<span>{INTERACTION_LABELS[e.type]?.icon ?? "📅"}</span>}
+                                title={e.title || INTERACTION_LABELS[e.type]?.label || "Событие"}
+                                sub={e.client_name}
+                                right={whenText(e.starts_at)}
+                            />
+                        ))}
+                    </Section>
+
+                    <div className="card home-section">
+                        <div className="section-header">
+                            <div className="section-title">{foreign ? "Сделки в работе" : "Мои сделки в работе"}{dealsTotal > 0 && <span className="home-count">{dealsTotal}</span>}</div>
+                            <button className="btn-ghost" onClick={onOpenDeals}>Воронка</button>
+                        </div>
+                        {dealsTotal === 0 ? <div className="home-empty">Открытых сделок нет</div> : (
+                            <div className="home-funnel">
+                                {openStages.map(st => (
+                                    <button key={st.stage_id} type="button" className="home-funnel-row" onClick={onOpenDeals}>
+                                        <span className="home-funnel-name"><span className="home-dot" style={{ background: stageColor(st) }} />{st.name}</span>
+                                        <span className="home-funnel-count">{st.count}</span>
+                                        <span className="home-funnel-bar"><span style={{ width: `${(st.count / maxStageCount) * 100}%`, background: stageColor(st) }} /></span>
+                                        <span className="home-funnel-sum">{totalsText(st.totals)}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );

@@ -110,17 +110,14 @@ export function WebhooksTab({ token }) {
     }
 
     return (
-        <div>
-            <div className="card" style={{ marginTop: 0 }}>
-                <div className="section-header">
-                    <div>
-                        <div className="section-title"><Icon d={ICONS.link} /> Исходящие вебхуки</div>
-                        <div className="section-sub">
-                            Противоположность API-токенам: не вы стучитесь к нам, а мы — POST-запросом —
-                            уведомляем ваш URL, когда что-то произошло (задача готова, новый комментарий и т.д.).
-                        </div>
-                    </div>
+        <div className="cl-page">
+            <div className="cl-head">
+                <div>
+                    <h1 className="cl-title"><Icon d={ICONS.link} /> Исходящие вебхуки</h1>
+                    <div className="cl-sub">Противоположность API-токенам: не вы стучитесь к нам, а мы — POST-запросом — уведомляем ваш URL, когда что-то произошло (задача готова, новый комментарий и т.д.).</div>
                 </div>
+            </div>
+            <div className="card">
 
                 {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
 
@@ -165,7 +162,7 @@ export function WebhooksTab({ token }) {
                         <label className="form-label">На какие события отправлять</label>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                             {WEBHOOK_EVENTS.map(ev => (
-                                <label key={ev} style={{
+                                <label key={ev} className="wh-event" style={{
                                     display: "flex", alignItems: "center", gap: 6,
                                     padding: "6px 10px", borderRadius: 8, cursor: "pointer",
                                     background: newEvents.includes(ev) ? "#22c55e22" : "var(--surface2)",

@@ -78,7 +78,7 @@ export function KanbanBoard({
 
     return (
         <div style={{
-            display: "flex", gap: 12, overflowX: "auto", overflowY: "hidden",
+            display: "flex", gap: 12, overflowX: "auto", overflowY: "hidden", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch",
             ...(fit ? { maxHeight: maxBoardHeight, minHeight: 200 } : { height }), paddingBottom: 8, paddingRight: 16, alignItems: "flex-start",
         }}>
             {columns.map(col => {
@@ -94,8 +94,8 @@ export function KanbanBoard({
                         onDrop={e => onDrop(e, col.key)}
                         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
                         style={{
-                            minWidth: 260, maxWidth: 300, flexShrink: 0,
-                            background: isOver ? "rgba(124,106,240,0.08)" : "var(--surface)",
+                            flex: "1 0 230px", minWidth: 230, maxWidth: 440, scrollSnapAlign: "start",
+                            background: isOver ? "var(--accent-dim)" : "var(--surface)",
                             border: `1.5px solid ${isOver ? "var(--accent)" : "var(--border)"}`,
                             borderRadius: "var(--radius)",
                             ...(colorBar ? { borderTop: `3px solid ${col.color}` } : {}),
@@ -103,16 +103,16 @@ export function KanbanBoard({
                             overflowY: "auto", maxHeight: fit ? maxBoardHeight : "100%",
                         }}
                     >
-                        {/* Шапка колонки */}
-                        <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: col.color, flexShrink: 0 }} />
-                            <span style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 13 }}>{col.label}</span>
-                            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                                {renderColumnExtra?.(col, list)}
-                                <span style={{ background: "var(--surface2)", color: "var(--text-muted)", fontSize: 11, fontWeight: 600, borderRadius: 20, padding: "1px 8px" }}>
+                        {/* Шапка колонки: название и счётчик, под ними итог (если есть) */}
+                        <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid var(--border)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: col.color, flexShrink: 0 }} />
+                                <span style={{ fontWeight: 700, fontSize: 14, minWidth: 0, overflowWrap: "anywhere" }}>{col.label}</span>
+                                <span style={{ marginLeft: "auto", background: "var(--accent-dim)", color: "var(--accent-light)", fontSize: 12, fontWeight: 700, borderRadius: 20, padding: "1px 9px" }}>
                                     {list.length}
                                 </span>
-                            </span>
+                            </div>
+                            {renderColumnExtra && <div style={{ marginTop: 4, paddingLeft: 18, overflowWrap: "anywhere" }}>{renderColumnExtra(col, list)}</div>}
                         </div>
 
                         {/* Карточки */}

@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { apiRequest } from "../api";
 import { ChatPanel } from "../features/ChatPanel";
 
-export function ChatBubble({ token, currentUserId, wsEvent }) {
+// hideLauncher — плавающий пузырь скрыт, чат открывается кнопкой в верхней панели
+// (toggleKey: каждое изменение значения переключает панель; onUnreadChange — счётчик для бейджа).
+export function ChatBubble({ token, currentUserId, wsEvent, hideLauncher = false, toggleKey = 0, onUnreadChange }) {
     const [open, setOpen] = useState(false);
     const [pos, setPos] = useState(() => {
         try {
@@ -16,6 +18,13 @@ export function ChatBubble({ token, currentUserId, wsEvent }) {
     const [dmConversations, setDmConversations] = useState([]);
     const [activeDm, setActiveDm] = useState(null);
     const [unread, setUnread] = useState(0);
+
+    useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
+    const firstToggle = useRef(true);
+    useEffect(() => {
+        if (firstToggle.current) { firstToggle.current = false; return; }
+        setOpen(o => { if (!o) setUnread(0); return !o; });
+    }, [toggleKey]);
 
     const draggingRef = useRef(false);
     const movedRef = useRef(false);
@@ -127,15 +136,17 @@ export function ChatBubble({ token, currentUserId, wsEvent }) {
 
     const openLeft = pos.x > window.innerWidth / 2;
     const openTop = pos.y > window.innerHeight / 2;
-    const popupStyle = {
-        position: "fixed",
-        ...(openLeft ? { right: window.innerWidth - pos.x + 16 } : { left: pos.x }),
-        ...(openTop ? { bottom: window.innerHeight - pos.y + 16 } : { top: pos.y + 60 }),
-    };
+    const popupStyle = hideLauncher
+        ? { position: "fixed", top: 72, right: 12 }
+        : {
+            position: "fixed",
+            ...(openLeft ? { right: window.innerWidth - pos.x + 16 } : { left: pos.x }),
+            ...(openTop ? { bottom: window.innerHeight - pos.y + 16 } : { top: pos.y + 60 }),
+        };
 
     return (
         <>
-            <div
+            {!hideLauncher && <div
                 ref={bubbleRef}
                 className="chat-bubble"
                 style={{ left: pos.x, top: pos.y }}
@@ -146,7 +157,7 @@ export function ChatBubble({ token, currentUserId, wsEvent }) {
             >
                 💬
                 {unread > 0 && <span className="notif-badge">{unread > 99 ? "99+" : unread}</span>}
-            </div>
+            </div>}
             {open && (
                 <div className="chat-popup" style={popupStyle}>
                     <ChatPanel

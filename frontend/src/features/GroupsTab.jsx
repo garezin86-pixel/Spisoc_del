@@ -46,29 +46,28 @@ export function GroupsTab({ token, currentRole }) {
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
-        <div className="content-grid" style={{ gridTemplateColumns: "1fr" }}>
-            <div className="card">
-                <div className="section-header">
-                    <div>
-                        <div className="section-title">
-                            <Icon d={ICONS.group} size={15} /> Группы
-                        </div>
-                        <div className="section-sub">
-                            {groups.length > 0 ? `${groups.length} групп` : "Нет групп"}
-                            {canManage && " · вы можете управлять участниками"}
-                        </div>
+        <div className="cl-page">
+            <div className="cl-head">
+                <div>
+                    <h1 className="cl-title">Группы</h1>
+                    <div className="cl-sub">
+                        {groups.length > 0 ? `${groups.length} групп` : "Нет групп"}
+                        {canManage && " · вы можете управлять участниками"}
                     </div>
-                    <button className="btn btn-ghost btn-sm" onClick={loadGroups} disabled={loading}>
+                </div>
+                <div className="cl-actions">
+                    <button className="btn btn-ghost" onClick={loadGroups} disabled={loading}>
                         <Icon d={ICONS.refresh} /> Обновить
                     </button>
                 </div>
+            </div>
 
                 {loading ? (
                     <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
                 ) : groups.length === 0 ? (
                     <div className="empty-state"><div className="empty-icon">👥</div>Групп нет</div>
                 ) : (
-                    <div className="group-list">
+                    <div className="pj-grid">
                         {groups.map(g => (
                             <GroupPanel
                                 key={g.id}
@@ -81,7 +80,6 @@ export function GroupsTab({ token, currentRole }) {
                         ))}
                     </div>
                 )}
-            </div>
         </div>
     );
 }

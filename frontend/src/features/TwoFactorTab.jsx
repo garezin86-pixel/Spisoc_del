@@ -97,7 +97,7 @@ export function TwoFactorTab({ token }) {
     }
 
     return (
-        <div className="card" style={{ marginTop: 0, maxWidth: 520 }}>
+        <div className="card">
             <div className="section-header">
                 <div>
                     <div className="section-title">🔒 Двухфакторная аутентификация</div>

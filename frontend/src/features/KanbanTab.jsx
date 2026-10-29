@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiRequest } from "../api";
 import { Icon } from "../components/Icon";
 import { KanbanBoard } from "../components/KanbanBoard";
@@ -6,7 +6,9 @@ import { KanbanCard } from "../components/KanbanCard";
 import { ICONS } from "../constants/icons";
 import { KANBAN_COLUMNS } from "../constants/kanban";
 
-export function KanbanTab({ token }) {
+// embedded — доска показывается внутри вкладки «Задачи» (режим «Канбан»); refreshKey — внешний сигнал
+// «обновить» (создание задачи, событие WebSocket): перезагрузка без экрана «Загрузка…».
+export function KanbanTab({ token, embedded = false, refreshKey = 0 }) {
     const [board, setBoard] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -20,8 +22,8 @@ export function KanbanTab({ token }) {
     // const API = (path) => `/api${path}`;
     // const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
-    const loadBoard = useCallback(async (pid, mine, author) => {
-        setLoading(true);
+    const loadBoard = useCallback(async (pid, mine, author, silent = false) => {
+        if (!silent) setLoading(true);
         setError(null);
         try {
             const params = new URLSearchParams();
@@ -48,6 +50,12 @@ export function KanbanTab({ token }) {
         if (!token) return;
         loadBoard(projectId, onlyMine, onlyAuthor);
     }, [projectId, onlyMine, onlyAuthor, loadBoard]);
+
+    const firstRefresh = useRef(true);
+    useEffect(() => {
+        if (firstRefresh.current) { firstRefresh.current = false; return; }
+        if (token) loadBoard(projectId, onlyMine, onlyAuthor, true);
+    }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (!moveError) return;
@@ -106,7 +114,7 @@ export function KanbanTab({ token }) {
     const totalTasks = board ? Object.values(board).reduce((s, arr) => s + arr.length, 0) : 0;
 
     return (
-        <div style={{ padding: "16px 16px 32px" }}>
+        <div style={{ padding: embedded ? 0 : "16px 16px 32px" }}>
             {moveError && (
                 <div className="alert" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 12 }}>
                     <span>{moveError}</span>
@@ -114,10 +122,10 @@ export function KanbanTab({ token }) {
                 </div>
             )}
             {/* Фильтры */}
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+            <div className="cl-filters" style={{ marginBottom: 16 }}>
                 <select
-                    className="form-control"
-                    style={{ minWidth: 180, maxWidth: 260 }}
+                    className="form-input dl-select"
+                    aria-label="Проект"
                     value={projectId}
                     onChange={e => setProjectId(e.target.value)}
                 >
@@ -126,33 +134,27 @@ export function KanbanTab({ token }) {
                         <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                 </select>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "var(--text-dim)", fontSize: 13 }}>
+                <label className="cl-check">
                     <input
                         type="checkbox"
                         checked={onlyMine}
                         onChange={e => { setOnlyMine(e.target.checked); if (e.target.checked) setOnlyAuthor(false); }}
-                        style={{ accentColor: "var(--accent)" }}
                     />
                     Только мои
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "var(--text-dim)", fontSize: 13 }}>
+                <label className="cl-check">
                     <input
                         type="checkbox"
                         checked={onlyAuthor}
                         onChange={e => { setOnlyAuthor(e.target.checked); if (e.target.checked) setOnlyMine(false); }}
-                        style={{ accentColor: "var(--accent)" }}
                     />
                     Я автор
                 </label>
-                <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => loadBoard(projectId, onlyMine, onlyAuthor)}
-                    style={{ marginLeft: "auto" }}
-                >
-                    <Icon d={ICONS.refresh} /> Обновить
-                </button>
-                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                    {totalTasks} задач
+                <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 12 }}>
+                    <span className="cl-muted">{totalTasks} задач</span>
+                    <button className="btn btn-ghost" onClick={() => loadBoard(projectId, onlyMine, onlyAuthor)}>
+                        <Icon d={ICONS.refresh} /> Обновить
+                    </button>
                 </span>
             </div>
 

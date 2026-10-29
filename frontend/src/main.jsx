@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { APP_NAME } from "./constants/branding";
 import "./styles.css";
+import "./shell.css";
 
 // <title> в index.html — статичный дефолт "Spisoc": Vite-плейсхолдер
 // %VITE_APP_NAME% тут не подходит — он не умеет fallback на дефолт, если

@@ -29,7 +29,7 @@ export function ChangePasswordCard({ token }) {
     }
 
     return (
-        <div className="card" style={{ maxWidth: 520 }}>
+        <div className="card">
             <div className="section-header">
                 <div className="section-title">🔑 Сменить пароль</div>
             </div>

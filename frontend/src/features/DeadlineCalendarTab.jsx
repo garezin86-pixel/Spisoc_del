@@ -156,9 +156,12 @@ export function DeadlineCalendarTab({ token, onOpenTask, onOpenClient, currentUs
     const monthLabel = cursor.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
 
     return (
-        <div style={{ padding: "16px 16px 32px" }}>
-            <div className="card" style={{ marginTop: 0 }}>
-                <div className="section-header" style={{ flexWrap: "wrap", gap: 12 }}>
+        <div className="cl-page">
+            <div className="cl-head">
+                <div>
+                    <h1 className="cl-title">Календарь</h1>
+                    <div className="cl-sub">Сроки задач, встречи и звонки</div>
+                </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))}>
                             <Icon d={ICONS.chevronL} />
@@ -173,39 +176,39 @@ export function DeadlineCalendarTab({ token, onOpenTask, onOpenClient, currentUs
                             Сегодня
                         </button>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <select className="input input-sm" style={{ width: 160 }} value={projectId} onChange={e => setProjectId(e.target.value)}>
+            </div>
+                    <div className="cl-filters">
+                        <select className="form-input dl-select" aria-label="Проект" value={projectId} onChange={e => setProjectId(e.target.value)}>
                             <option value="">Все проекты</option>
                             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
-                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                        <label className="cl-check">
                             <input type="checkbox" checked={showTasks} onChange={e => setShowTasks(e.target.checked)} />
                             Задачи
                         </label>
-                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                        <label className="cl-check">
                             <input type="checkbox" checked={showEvents} onChange={e => setShowEvents(e.target.checked)} />
                             Встречи и звонки
                         </label>
                         {showEvents && (
-                            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                            <label className="cl-check">
                                 <input type="checkbox" checked={onlyMyEvents} onChange={e => setOnlyMyEvents(e.target.checked)} />
                                 Только мои
                             </label>
                         )}
-                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                        <label className="cl-check">
                             <input type="checkbox" checked={onlyMine} onChange={e => { setOnlyMine(e.target.checked); if (e.target.checked) setOnlyAuthor(false); }} />
                             Я исполнитель
                         </label>
-                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+                        <label className="cl-check">
                             <input type="checkbox" checked={onlyAuthor} onChange={e => { setOnlyAuthor(e.target.checked); if (e.target.checked) setOnlyMine(false); }} />
                             Я автор
                         </label>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { loadTasks(gridStart, gridEnd, projectId, onlyMine, onlyAuthor); if (showEvents) loadEvents(gridStart, gridEnd, onlyMyEvents); }} disabled={loading}>
+                        <button className="btn btn-ghost" onClick={() => { loadTasks(gridStart, gridEnd, projectId, onlyMine, onlyAuthor); if (showEvents) loadEvents(gridStart, gridEnd, onlyMyEvents); }} disabled={loading}>
                             <Icon d={ICONS.refresh} /> {loading ? "…" : "Обновить"}
                         </button>
                     </div>
-                </div>
-
+            <div className="card cal-card">
                 {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6, marginBottom: 6 }}>
@@ -234,10 +237,10 @@ export function DeadlineCalendarTab({ token, onOpenTask, onOpenClient, currentUs
                             return (
                                 <div
                                     key={key}
+                                    className="cal-cell"
                                     onClick={() => setSelectedDay(isSelected ? null : key)}
                                     style={{
-                                        minHeight: 68,
-                                        borderRadius: 8,
+                                                                                borderRadius: 8,
                                         padding: "6px 6px 8px",
                                         background: isSelected ? "var(--surface2)" : "var(--surface)",
                                         border: isToday ? "1.5px solid var(--accent)" : "1px solid var(--border)",

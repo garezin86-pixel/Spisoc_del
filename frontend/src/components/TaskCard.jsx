@@ -13,7 +13,7 @@ import { ICONS } from "../constants/icons";
 import { PRIORITY_COLORS, PRIORITY_LABELS, PRIORITY_ICONS } from "../constants/priority";
 import { formatDeadline } from "../utils/date";
 
-export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole, selected, onToggleSelect, onOpenClient }) {
+export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, onTagsUpdated, onToggle, onDelete, onUpdate, onReassign, hideReassign, collapsible, currentUserId, currentRole, selected, onToggleSelect, onOpenClient, embedded = false }) {
     const [expanded, setExpanded] = useState(!collapsible);
     const [editing, setEditing] = useState(false);
     const [showComments, setShowComments] = useState(false);
@@ -134,6 +134,7 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
             <div className="task-main-info"> {/* НОВЫЙ ИЗОЛИРУЮЩИЙ КОНТЕЙНЕР ДЛЯ ВЕРХНЕЙ ЧАСТИ */}
                 <div className="task-top">
                     <div style={{ flex: 1, minWidth: 0 }}>
+                        {!embedded && (
                         <div className="task-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             {onToggleSelect && (
                                 <input
@@ -154,9 +155,10 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
                                 {task.title}
                             </span>
                         </div>
+                        )}
                         {task.description && <div className="task-desc">{task.description}</div>}
                         <div className="task-meta-row">
-                            {dl && (
+                            {dl && !embedded && (
                                 <span className={`meta-chip${dl.isOverdue && !task.is_done ? " overdue" : dl.isToday && !task.is_done ? " today" : ""}`}>
                                     <Icon d={ICONS.clock} />
                                     {dl.isOverdue && !task.is_done ? "Просрочено: " : dl.isToday && !task.is_done ? "Сегодня: " : ""}
@@ -209,18 +211,23 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
                             ))}
                         </div>
                     </div>
-                    <span className={`badge ${task.status === "done" ? "badge-done" : "badge-active"}`}>
-                        {{ "backlog": "Очередь", "todo": "Новые", "in_progress": "В работе", "review": "На проверке", "done": "Готово" }[task.status]}
-                    </span>
-                    {task.priority && (
-                        <span style={{
-                            fontSize: 11, padding: "2px 7px", borderRadius: 4,
-                            background: PRIORITY_COLORS[task.priority] + "22",
-                            color: PRIORITY_COLORS[task.priority], fontWeight: 600, whiteSpace: "nowrap"
-                        }}>
-                            {PRIORITY_ICONS[task.priority]} {PRIORITY_LABELS[task.priority]}
-                        </span>
-                    )}
+                    <div className="tk-top-right">
+                        {!embedded && (
+                            <StatusMenu
+                                status={task.status || (task.is_done ? "done" : "todo")}
+                                onChange={(newStatus) => onToggle(task, newStatus)}
+                            />
+                        )}
+                        {task.priority && (
+                            <span style={{
+                                fontSize: 11, padding: "3px 8px", borderRadius: 6,
+                                background: PRIORITY_COLORS[task.priority] + "22",
+                                color: PRIORITY_COLORS[task.priority], fontWeight: 600, whiteSpace: "nowrap"
+                            }}>
+                                {PRIORITY_ICONS[task.priority]} {PRIORITY_LABELS[task.priority]}
+                            </span>
+                        )}
+                    </div>
                     {collapsible && (
                         <button
                             className="btn btn-ghost btn-sm"
@@ -321,40 +328,31 @@ export function TaskCard({ task, groups, users, token, allTags, onTagsCreated, o
                 </div>
             )}
 
-            <div className="task-actions">
-                <StatusMenu
-                    status={task.status || (task.is_done ? "done" : "todo")}
-                    onChange={(newStatus) => onToggle(task, newStatus)}
-                />
+            <div className="tk-actions">
                 {!editing && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(true); setShowReassign(false); }}>
+                    <button type="button" className="tk-chip" onClick={() => { setEditing(true); setShowReassign(false); }}>
                         <Icon d={ICONS.edit} /> Изменить
                     </button>
                 )}
                 {!hideReassign && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowReassign(v => !v); setEditing(false); }}>
+                    <button type="button" className="tk-chip" onClick={() => { setShowReassign(v => !v); setEditing(false); }}>
                         <Icon d={ICONS.reassign} /> Переназначить
                     </button>
                 )}
-                <button className="btn btn-ghost btn-sm" onClick={() => { setShowComments(v => !v); setShowAudit(false); }}>
-                    <Icon d={ICONS.comment} /> {showComments ? "Скрыть" : "Комментарии"}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowAttachments(v => !v)}>
-                    📎 {showAttachments ? "Скрыть" : "Вложения"}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowChecklist(v => !v)}>
-                    ☑️ {showChecklist ? "Скрыть" : "Чек-лист"}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowDependencies(v => !v)}>
-                    <Icon d={ICONS.link} /> {showDependencies ? "Скрыть" : "Зависимости"}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowTags(v => !v)}>
-                    🏷️ {showTags ? "Скрыть" : "Теги"}
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setShowAudit(v => !v); setShowComments(false); }}>
-                    📋 {showAudit ? "Скрыть" : "История"}
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => onDelete(task)}>
+                {[
+                    { label: "Комментарии", icon: <Icon d={ICONS.comment} />, on: showComments, toggle: () => { setShowComments(v => !v); setShowAudit(false); } },
+                    { label: "Вложения", icon: "📎", on: showAttachments, toggle: () => setShowAttachments(v => !v) },
+                    { label: "Чек-лист", icon: "☑️", on: showChecklist, toggle: () => setShowChecklist(v => !v) },
+                    { label: "Зависимости", icon: <Icon d={ICONS.link} />, on: showDependencies, toggle: () => setShowDependencies(v => !v) },
+                    { label: "Теги", icon: "🏷️", on: showTags, toggle: () => setShowTags(v => !v) },
+                    { label: "История", icon: "📋", on: showAudit, toggle: () => { setShowAudit(v => !v); setShowComments(false); } },
+                ].map(b => (
+                    <button key={b.label} type="button" className={`tk-chip${b.on ? " on" : ""}`} aria-pressed={b.on} onClick={b.toggle}>
+                        {b.icon} {b.label}
+                    </button>
+                ))}
+                <span className="tk-spacer" />
+                <button type="button" className="tk-chip tk-chip--danger" onClick={() => onDelete(task)} aria-label={`Удалить задачу «${task.title}»`}>
                     <Icon d={ICONS.trash} /> Удалить
                 </button>
             </div>
