@@ -2,11 +2,10 @@
 
 Полнофункциональная система управления задачами: REST API, Telegram-бот и веб-интерфейс в одном проекте. Разрабатывается как pet-проект, но с продакшн-подходом к архитектуре, тестам и CI.
 
-![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/garezin86-pixel/Spisoc_del/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> Замени `OWNER/REPO` в бейдже CI на свой `<пользователь>/<репозиторий>` после публикации.
 
 ## ✨ Возможности
 
