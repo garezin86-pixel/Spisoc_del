@@ -1,49 +1,59 @@
 """
-Скрипт для назначения роли admin существующему пользователю в БД.
+Скрипт для выдачи пользователю доступа в SQLAdmin (is_platform_admin=True).
 
 Использование:
-    python make_admin.py <username>
+    python -m src.admin.make_admin <login>
+    python -m src.admin.make_admin <login> --revoke     # забрать доступ
 
-Пример:
-    python make_admin.py john
+Ищет по login (он уникален во всём сервисе), а не по username: username теперь уникален
+только внутри компании, и прежний UPDATE ... WHERE username = ? мог затронуть
+одноимённых пользователей из других компаний.
+
+Важно: role="admin" означает «админ своей компании» и в SQLAdmin НЕ пускает —
+для входа нужен именно флаг is_platform_admin (см. UserRepository.get_admin_by_username).
 """
 
 import asyncio
 import sys
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import get_session_maker
 from src.db.unit_of_work import UnitOfWork
+from src.models.user import UserModel
 from src.repositories.users_repository import UserRepository
 
 
-async def make_admin(username: str, session: AsyncSession):
-    repo = UserRepository(session)
-
-    user = await repo.get_by_username(username)
+async def set_platform_admin(login: str, session: AsyncSession, value: bool = True) -> None:
+    user = await UserRepository(session).get_by_login(login)
 
     if not user:
-        print(f"❌ Пользователь '{username}' не найден в БД")
+        print(f"❌ Пользователь с login '{login}' не найден в БД")
         return
 
-    if user.role == "admin":
-        print(f"ℹ️  Пользователь '{username}' уже является администратором")
+    if bool(user.is_platform_admin) == value:
+        state = "уже имеет" if value else "и так не имеет"
+        print(f"ℹ️  Пользователь '{login}' {state} доступ в SQLAdmin")
         return
 
-    await repo.set_role(username, "admin")
-    print(f"✅ Пользователю '{username}' (id={user.id}) назначена роль admin")
+    await session.execute(update(UserModel).where(UserModel.id == user.id).values(is_platform_admin=value))
+    await session.commit()
+    action = "выдан" if value else "отозван"
+    print(f"✅ Пользователю '{login}' (id={user.id}, компания id={user.workspace_id}) {action} доступ в SQLAdmin")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Использование: python make_admin.py <username>")
+    args = [a for a in sys.argv[1:] if a != "--revoke"]
+    if len(args) != 1:
+        print("Использование: python -m src.admin.make_admin <login> [--revoke]")
         sys.exit(1)
 
-    username = sys.argv[1]
+    login = args[0]
+    grant = "--revoke" not in sys.argv
 
-    async def run_make_admin():
+    async def run() -> None:
         async with UnitOfWork(get_session_maker()) as uow:
-            await make_admin(username, uow.session)
+            await set_platform_admin(login, uow.session, grant)
 
-    asyncio.run(run_make_admin())
+    asyncio.run(run())

@@ -14,8 +14,10 @@ class ProjectAdmin(ModelView, model=ProjectModel):
 
     column_list = [
         ProjectModel.id,
+        ProjectModel.workspace_id,
         ProjectModel.name,
         ProjectModel.owner,
+        ProjectModel.client_id,
         ProjectModel.created_at,
     ]
     column_searchable_list = [ProjectModel.name]
@@ -28,8 +30,10 @@ class ProjectAdmin(ModelView, model=ProjectModel):
 
     column_details_list = [
         ProjectModel.id,
+        ProjectModel.workspace_id,
         ProjectModel.name,
         ProjectModel.description,
+        ProjectModel.client_id,
         ProjectModel.tasks,
         ProjectModel.owner,
         ProjectModel.created_at,
@@ -46,6 +50,8 @@ class ProjectAdmin(ModelView, model=ProjectModel):
     ]
     column_labels = {
         "id": "ID",
+        "workspace_id": "Компания (ID)",
+        "client_id": "Клиент (ID)",
         "name": "Название",
         "description": "Описание",
         "tasks": "Задачи",

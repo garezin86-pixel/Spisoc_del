@@ -38,8 +38,11 @@ class UserAdmin(ModelView, model=UserModel):
 
     column_list = [
         UserModel.id,
+        UserModel.workspace_id,
         UserModel.username,
+        UserModel.login,
         UserModel.role,
+        UserModel.is_platform_admin,
         UserModel.is_active,
         "toggle_btn",
         "stats_btn",
@@ -47,6 +50,7 @@ class UserAdmin(ModelView, model=UserModel):
     column_searchable_list = [UserModel.username, UserModel.role]
     column_sortable_list = [
         UserModel.id,
+        UserModel.workspace_id,
         UserModel.username,
         UserModel.role,
         UserModel.is_active,
@@ -55,8 +59,10 @@ class UserAdmin(ModelView, model=UserModel):
 
     column_details_list = [
         UserModel.id,
+        UserModel.workspace_id,
         UserModel.username,
         UserModel.role,
+        UserModel.is_platform_admin,
         UserModel.is_active,
         UserModel.login,
         UserModel.must_change_password,
@@ -105,6 +111,8 @@ class UserAdmin(ModelView, model=UserModel):
         "role": "Роль",
         "is_active": "Активен",
         "login": "Логин",
+        "workspace_id": "Компания (ID)",
+        "is_platform_admin": "Админ платформы",
         "telegram_id": "Telegram ID",
         "must_change_password": "Сменить пароль",
         "totp_enabled": "Двухфакторная аутентификация включена",

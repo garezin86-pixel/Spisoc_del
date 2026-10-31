@@ -238,12 +238,14 @@ class TaskAdmin(ModelView, model=SpisokModel):
 
     column_list = [
         SpisokModel.id,
+        SpisokModel.workspace_id,
         SpisokModel.title,
         SpisokModel.status,
         SpisokModel.priority,
         SpisokModel.user,
         SpisokModel.group,
         SpisokModel.project,
+        SpisokModel.client,
         SpisokModel.author,
         SpisokModel.deadline,
     ]
@@ -285,12 +287,14 @@ class TaskAdmin(ModelView, model=SpisokModel):
 
     column_details_list = [
         SpisokModel.id,
+        SpisokModel.workspace_id,
         SpisokModel.title,
         SpisokModel.description,
         SpisokModel.status,
         SpisokModel.user,
         SpisokModel.group,
         SpisokModel.project,
+        SpisokModel.client,
         SpisokModel.author,
         SpisokModel.priority,
         SpisokModel.checklist_items,
@@ -314,6 +318,8 @@ class TaskAdmin(ModelView, model=SpisokModel):
         "user": "Пользователь",
         "group": "Группа",
         "project": "Проект",
+        "client": "Клиент",
+        "workspace_id": "Компания (ID)",
         "author": "Автор",
         "deadline": "Дедлайн",
         "priority": "Приоритет",

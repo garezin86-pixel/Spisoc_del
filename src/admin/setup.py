@@ -5,6 +5,16 @@ from starlette.middleware.sessions import SessionMiddleware
 from src.admin.views.admin_auth import AdminAuth
 from src.admin.views.attachment_admin import AttachmentAdmin
 from src.admin.views.comment_admin import CommentAdmin
+from src.admin.views.crm_admin import (
+    ClientAdmin,
+    ContactAdmin,
+    DealAdmin,
+    InteractionAdmin,
+    PipelineAdmin,
+    ScheduledEventAdmin,
+    StageAdmin,
+    WorkspaceInviteAdmin,
+)
 from src.admin.views.group_admin import GroupAdmin
 from src.admin.views.notification_stats_view import NotificationStatsView
 from src.admin.views.notification_view import NotificationLogAdmin
@@ -45,6 +55,7 @@ def setup_admin(app, engine):
     UserAdmin._session_maker = session_maker  # ← до регистрации
     TaskTemplateAdmin._session_maker = session_maker
     admin.add_view(WorkspaceAdmin)
+    admin.add_view(WorkspaceInviteAdmin)
     admin.add_view(UserAdmin)
     admin.add_view(GroupAdmin)
     admin.add_view(TaskAdmin)
@@ -59,6 +70,15 @@ def setup_admin(app, engine):
     admin.add_view(WebhookAdmin)
     admin.add_view(TagAdmin)
 
+    # CRM (только чтение — см. crm_admin.py)
+    admin.add_view(ClientAdmin)
+    admin.add_view(ContactAdmin)
+    admin.add_view(DealAdmin)
+    admin.add_view(PipelineAdmin)
+    admin.add_view(StageAdmin)
+    admin.add_view(InteractionAdmin)
+    admin.add_view(ScheduledEventAdmin)
+
     StatsView._session_maker = session_maker
     StatusView._session_maker = session_maker
     NotificationStatsView._session_maker = session_maker
@@ -66,3 +86,5 @@ def setup_admin(app, engine):
     admin.add_base_view(NotificationStatsView)
     admin.add_base_view(StatsView)
     admin.add_base_view(StatusView)
+
+    return admin
