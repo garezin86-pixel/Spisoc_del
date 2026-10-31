@@ -74,6 +74,7 @@ class ClientService:
         client = ClientModel(
             name=data.name,
             client_type=data.client_type,
+            status=data.status,
             birth_date=data.birth_date,
             gender=data.gender,
             phone=data.phone,
@@ -95,8 +96,18 @@ class ClientService:
         contact_due: bool = False,
         owner_id: int | None = None,
         client_type: str | None = None,
+        status: str | None = None,
     ) -> tuple[list[ClientModel], int]:
-        return await self.client_repo.list_clients(search, offset, limit, contact_due, owner_id, client_type)
+        return await self.client_repo.list_clients(search, offset, limit, contact_due, owner_id, client_type, status)
+
+    async def get_status_counts(
+        self,
+        search: str | None = None,
+        contact_due: bool = False,
+        owner_id: int | None = None,
+        client_type: str | None = None,
+    ) -> dict[str, int]:
+        return await self.client_repo.status_counts(search, contact_due, owner_id, client_type)
 
     async def get_client(self, client_id: int) -> ClientModel:
         return await self._get_client_or_404(client_id)

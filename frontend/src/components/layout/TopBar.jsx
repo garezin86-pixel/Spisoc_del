@@ -49,7 +49,7 @@ function GroupChip({ group, active, onNavigate }) {
 export function TopBar({
     token, activeGroup, onNavigate, onOpenPalette, onOpenMenu, theme, onToggleTheme,
     chatUnread, onToggleChat, currentUserId, currentUsername, currentRole,
-    onOpenProfile, adminUrl, onLogout, onOpenTask,
+    onOpenProfile, isPlatformAdmin, adminUrl, onLogout, onOpenTask,
 }) {
     const [userMenu, setUserMenu] = useState(false);
     const userRef = useDismiss(userMenu, () => setUserMenu(false));
@@ -93,7 +93,7 @@ export function TopBar({
                             <button type="button" role="menuitem" className="sh-menu-item"
                                 onClick={() => { setUserMenu(false); onOpenProfile(currentUserId); }}>Мой профиль</button>
                         )}
-                        {currentRole === "admin" && (
+                        {isPlatformAdmin && (
                             <a role="menuitem" className="sh-menu-item" href={adminUrl} target="_blank" rel="noopener noreferrer">Админка</a>
                         )}
                         <button type="button" role="menuitem" className="sh-menu-item" onClick={() => { setUserMenu(false); onLogout(); }}>Выйти</button>

@@ -27,6 +27,7 @@ from src.repositories.client_repository import ClientRepository
 from src.repositories.deal_repository import DealRepository
 from src.repositories.users_repository import UserRepository
 
+_STATUS_LABEL = {"active": "Активный", "inactive": "Неактивный", "blacklisted": "Чёрный список"}
 CLIENT_HEADER = [
     "ID",
     "Название",
@@ -40,6 +41,7 @@ CLIENT_HEADER = [
     "Пол",
     "Связаться снова",
     "Создан",
+    "Статус",
 ]
 DEAL_HEADER = [
     "ID",
@@ -142,11 +144,12 @@ class CrmExportService:
         owner_id: int | None = None,
         client_type: str | None = None,
         contact_due: bool = False,
+        status: str | None = None,
     ) -> bytes:
         self._require_manager(current_user)
         clients = await _fetch_all(
             lambda offset, limit: self.client_repo.list_clients(
-                search, offset, limit, contact_due, owner_id, client_type
+                search, offset, limit, contact_due, owner_id, client_type, status
             )
         )
         users = await self._usernames()
@@ -164,6 +167,7 @@ class CrmExportService:
                 _GENDER_LABEL.get(c.gender or "", ""),
                 _date(c.next_contact_at),
                 _date(c.created_at),
+                _STATUS_LABEL.get(c.status, c.status),
             ]
             for c in clients
         ]

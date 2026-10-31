@@ -60,6 +60,7 @@ class ProjectSchema(BaseModel):
     group: ProjectGroupSchema | None = None
     group_id: Optional[int] = None
     client_id: Optional[int] = None
+    client_name: Optional[str] = None  # название привязанного клиента (None — нет клиента или он удалён)
     members: list[ProjectMemberSchema] = []
     task_count: int = 0
     done_count: int = 0
@@ -69,7 +70,7 @@ class ProjectSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_model(cls, project) -> "ProjectSchema":
+    def from_model(cls, project, client_names: dict[int, str] | None = None) -> "ProjectSchema":
         tasks = project.tasks or []
         return cls(
             id=project.id,
@@ -80,6 +81,7 @@ class ProjectSchema(BaseModel):
             group=(ProjectGroupSchema(id=project.group.id, name=project.group.name) if project.group else None),
             group_id=project.group_id,
             client_id=project.client_id,
+            client_name=(client_names or {}).get(project.client_id) if project.client_id else None,
             task_count=len(tasks),
             done_count=sum(1 for t in tasks if t.status and t.status.value == "done"),
             created_at=_fmt_dt(project.created_at),

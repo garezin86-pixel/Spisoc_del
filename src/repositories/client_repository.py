@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.client import ClientModel, ContactModel
+from src.models.client import CLIENT_STATUSES, ClientModel, ContactModel
 from src.models.deal import DealModel
 from src.models.interaction import InteractionModel
 from src.models.user import UserModel
@@ -37,16 +37,9 @@ class ClientRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_clients(
-        self,
-        search: str | None,
-        offset: int,
-        limit: int,
-        contact_due: bool = False,
-        owner_id: int | None = None,
-        client_type: str | None = None,
-    ) -> tuple[list[ClientModel], int]:
-        query = select(ClientModel).where(ClientModel.not_deleted_filter())
+    @staticmethod
+    def _apply_filters(query, search, contact_due, owner_id, client_type):
+        """Общие фильтры списка и счётчиков статусов (всё, кроме самого статуса)."""
         if client_type is not None:
             query = query.where(ClientModel.client_type == client_type)
         if owner_id is not None:
@@ -63,6 +56,41 @@ class ClientRepository:
                     ClientModel.email.ilike(pattern, escape="\\"),
                 )
             )
+        return query
+
+    async def status_counts(
+        self,
+        search: str | None = None,
+        contact_due: bool = False,
+        owner_id: int | None = None,
+        client_type: str | None = None,
+    ) -> dict[str, int]:
+        """Сколько клиентов в каждом статусе при остальных фильтрах списка. Ключ "all" — всего."""
+        query = self._apply_filters(
+            select(ClientModel.status, func.count()).where(ClientModel.not_deleted_filter()),
+            search,
+            contact_due,
+            owner_id,
+            client_type,
+        ).group_by(ClientModel.status)
+        counts = {status: count for status, count in (await self.session.execute(query)).all()}
+        return {"all": sum(counts.values()), **{s: counts.get(s, 0) for s in CLIENT_STATUSES}}
+
+    async def list_clients(
+        self,
+        search: str | None,
+        offset: int,
+        limit: int,
+        contact_due: bool = False,
+        owner_id: int | None = None,
+        client_type: str | None = None,
+        status: str | None = None,
+    ) -> tuple[list[ClientModel], int]:
+        query = self._apply_filters(
+            select(ClientModel).where(ClientModel.not_deleted_filter()), search, contact_due, owner_id, client_type
+        )
+        if status is not None:
+            query = query.where(ClientModel.status == status)
         total = await self.session.scalar(select(func.count()).select_from(query.subquery()))
         order = (
             (ClientModel.next_contact_at, func.lower(ClientModel.name), ClientModel.id)
@@ -94,6 +122,7 @@ class ClientRepository:
                 ClientModel.next_contact_at.is_not(None),
                 ClientModel.next_contact_at <= today,
                 ClientModel.next_contact_notified_at.is_(None),
+                ClientModel.status != "blacklisted",  # с чёрным списком не работаем — не напоминаем
             )
             .order_by(ClientModel.next_contact_at, ClientModel.id)
         )

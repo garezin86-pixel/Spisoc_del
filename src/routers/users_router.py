@@ -17,7 +17,7 @@ from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.pagination import PaginatedResponse, PaginationParams
-from src.schemas.user import ChangePasswordRequest, UserRegister, UserSchema, UserUpdate
+from src.schemas.user import ChangePasswordRequest, UserMeSchema, UserRegister, UserSchema, UserUpdate
 from src.services.active_storage import storage
 from src.services.task_service import TaskService
 from src.services.user_service import UserService
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get(
     "/me",
-    response_model=UserSchema,
+    response_model=UserMeSchema,
     summary="Текущий пользователь",
     description="Возвращает данные авторизованного пользователя. "
     "Удобный способ получить свой профиль без знания user_id.",

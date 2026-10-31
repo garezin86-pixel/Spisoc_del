@@ -4,7 +4,9 @@ import { Icon } from "../components/Icon";
 import { Pagination } from "../components/Pagination";
 import { ICONS } from "../constants/icons";
 import { PersonFields } from "../components/PersonFields";
-import { CLIENT_TYPES, clientTypeInfo, emptyToNull, formatDate, isContactDue, plural } from "../constants/crm";
+import {
+    CLIENT_STATUSES, CLIENT_TYPES, INTERACTION_LABELS, clientStatusInfo, clientTypeInfo, emptyToNull, formatDate, formatRelative, isContactDue, plural,
+} from "../constants/crm";
 import { userName, useUsersMap } from "../hooks/useUsersMap";
 import { ClientCard } from "./ClientCard";
 import { ClientImportModal } from "../components/ClientImportModal";
@@ -34,6 +36,8 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
     const [onlyDue, setOnlyDue] = useState(false);
     const [onlyMine, setOnlyMine] = useState(false);
     const [typeFilter, setTypeFilter] = useState(""); // "" — все, "company" — B2B, "person" — B2C
+    const [statusFilter, setStatusFilter] = useState(""); // "" — все, иначе active / inactive / blacklisted
+    const [statusCounts, setStatusCounts] = useState({ all: 0, active: 0, inactive: 0, blacklisted: 0 });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showCreate, setShowCreate] = useState(false);
@@ -59,6 +63,7 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
             if (onlyDue) qs.set("contact_due", "true");
             if (onlyMine && currentUserId) qs.set("owner_id", currentUserId);
             if (typeFilter) qs.set("client_type", typeFilter);
+            if (statusFilter) qs.set("status", statusFilter);
             await downloadFile({ path: `/clients/export?${qs}`, token, fallbackName: "clients_export.csv" });
             setError(null);
         } catch (e) {
@@ -99,15 +104,24 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
             if (onlyDue) qs.set("contact_due", "true");
             if (onlyMine && currentUserId) qs.set("owner_id", currentUserId);
             if (typeFilter) qs.set("client_type", typeFilter);
-            const res = await apiRequest({ path: `/clients?${qs}`, token });
+            // счётчики вкладок считаются при тех же поиске и фильтрах, но без выбранного статуса
+            const countQs = new URLSearchParams(qs);
+            countQs.delete("page");
+            countQs.delete("size");
+            if (statusFilter) qs.set("status", statusFilter);
+            const [res, counts] = await Promise.all([
+                apiRequest({ path: `/clients?${qs}`, token }),
+                apiRequest({ path: `/clients/status-counts?${countQs}`, token }).catch(() => null), // счётчики не критичны
+            ]);
             setData({ items: res?.items ?? [], total: res?.total ?? 0, pages: res?.pages ?? 1 });
+            if (counts) setStatusCounts(counts);
             setError(null);
         } catch (e) {
             setError(e.message);
         } finally {
             setLoading(false);
         }
-    }, [token, page, query, onlyDue, onlyMine, typeFilter, currentUserId]);
+    }, [token, page, query, onlyDue, onlyMine, typeFilter, statusFilter, currentUserId]);
 
     useEffect(() => { if (token) load(); }, [token, load]);
 
@@ -230,13 +244,13 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                 </form>
             )}
 
-            <div className="cl-tabs" role="tablist" aria-label="Тип клиента">
-                {[{ key: "", label: "Все" }, ...CLIENT_TYPES.map(t => ({ key: t.key, label: t.short === "B2B" ? "Компании" : "Люди" }))].map(opt => (
+            <div className="cl-tabs" role="tablist" aria-label="Статус клиента">
+                {[{ key: "", label: "Все", count: statusCounts.all }, ...CLIENT_STATUSES.map(st => ({ key: st.key, label: st.plural, count: statusCounts[st.key] }))].map(opt => (
                     <button
-                        key={opt.key} type="button" role="tab" aria-selected={typeFilter === opt.key}
-                        onClick={() => { setTypeFilter(opt.key); setPage(1); }}
-                        className={`cl-tab${typeFilter === opt.key ? " active" : ""}`}
-                    >{opt.label}{typeFilter === opt.key && data.total > 0 && <span className="cl-tab-count">{data.total}</span>}</button>
+                        key={opt.key} type="button" role="tab" aria-selected={statusFilter === opt.key}
+                        onClick={() => { setStatusFilter(opt.key); setPage(1); }}
+                        className={`cl-tab${statusFilter === opt.key ? " active" : ""}`}
+                    >{opt.label}<span className="cl-tab-count">{opt.count ?? 0}</span></button>
                 ))}
             </div>
             <div className="cl-filters">
@@ -244,6 +258,13 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                     className="form-input cl-search" placeholder="Поиск по названию, телефону, email…" aria-label="Поиск клиентов"
                     value={search} onChange={e => setSearch(e.target.value)}
                 />
+                <select
+                    className="form-input dl-select" aria-label="Тип клиента" value={typeFilter}
+                    onChange={e => { setTypeFilter(e.target.value); setPage(1); }}
+                >
+                    <option value="">Все типы</option>
+                    {CLIENT_TYPES.map(t => <option key={t.key} value={t.key}>{t.icon} {t.label}</option>)}
+                </select>
                 <label className="cl-check">
                     <input type="checkbox" checked={onlyDue} onChange={e => { setOnlyDue(e.target.checked); setPage(1); }} />
                     Пора связаться
@@ -288,8 +309,9 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                     <div className="cl-row cl-row--head" role="row">
                         <span role="columnheader">Клиент</span>
                         <span role="columnheader">Контакты</span>
-                        <span role="columnheader">Связаться снова</span>
+                        <span role="columnheader">Статус</span>
                         <span role="columnheader">Ответственный</span>
+                        <span role="columnheader">Последняя активность</span>
                     </div>
                     {data.items.map(c => {
                         const info = clientTypeInfo(c.client_type);
@@ -309,11 +331,24 @@ export function ClientsTab({ token, canManage, currentUserId, initialClientId = 
                                     {c.email && <span className="cl-muted">{c.email}</span>}
                                 </span>
                                 <span role="cell">
-                                    {c.next_contact_at
-                                        ? <span className={`cl-pill${due ? " cl-pill--due" : ""}`} title={due ? "Пора связаться" : "Связаться снова"}>{formatDate(c.next_contact_at)}{due ? " · пора" : ""}</span>
-                                        : <span className="cl-muted">—</span>}
+                                    <span className={`cl-status cl-status--${c.status || "active"}`}>{clientStatusInfo(c.status).label}</span>
                                 </span>
                                 <span className="cl-cell-owner" role="cell">{owner}</span>
+                                <span className="cl-cell-activity" role="cell">
+                                    {c.last_interaction_at ? (
+                                        <>
+                                            <span title={formatDate(c.last_interaction_at)}>{formatRelative(c.last_interaction_at)}</span>
+                                            {INTERACTION_LABELS[c.last_interaction_type] && (
+                                                <span className="cl-muted">{INTERACTION_LABELS[c.last_interaction_type].icon} {INTERACTION_LABELS[c.last_interaction_type].label}</span>
+                                            )}
+                                        </>
+                                    ) : <span className="cl-muted">Контактов не было</span>}
+                                    {c.next_contact_at && (
+                                        <span className={`cl-pill${due ? " cl-pill--due" : ""}`} title="Связаться снова">
+                                            {due ? "Пора связаться" : `Связаться: ${formatDate(c.next_contact_at)}`}
+                                        </span>
+                                    )}
+                                </span>
                             </button>
                         );
                     })}

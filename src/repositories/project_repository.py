@@ -59,12 +59,14 @@ class ProjectRepository:
         )
 
     async def get_all_for_user(
-        self, user_id: int, is_admin: bool, offset: int, limit: int
+        self, user_id: int, is_admin: bool, offset: int, limit: int, client_id: int | None = None
     ) -> tuple[list[ProjectModel], int]:
-        """Возвращает (projects, total) с учётом прав доступа."""
+        """Возвращает (projects, total) с учётом прав доступа. client_id — только проекты этого клиента."""
         query = self._base_query()
         if not is_admin:
             query = self._visible_for_user(query, user_id)
+        if client_id is not None:
+            query = query.where(ProjectModel.client_id == client_id)
 
         total = await self.session.scalar(select(func.count()).select_from(query.subquery()))
         projects = list((await self.session.execute(query.offset(offset).limit(limit))).scalars().all())

@@ -252,6 +252,17 @@ function App() {
 
     // Оболочка: мобильное меню, чат из верхней панели, последняя активная группа
     const [navOpen, setNavOpen] = useState(false);
+    // Админ платформы (доступ в SQLAdmin) — не то же самое, что role="admin" (админ своей компании).
+    // Признак приходит только в GET /users/me, ссылка «Админка» в меню пользователя зависит от него.
+    const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+    useEffect(() => {
+        if (!token) { setIsPlatformAdmin(false); return undefined; }
+        let cancelled = false;
+        apiRequest({ path: "/users/me", token })
+            .then(me => { if (!cancelled) setIsPlatformAdmin(!!me?.is_platform_admin); })
+            .catch(() => { if (!cancelled) setIsPlatformAdmin(false); });
+        return () => { cancelled = true; };
+    }, [token]);
     const [showCreate, setShowCreate] = useState(false);       // форма «Новая задача» (по кнопке)
     const [expandedTaskId, setExpandedTaskId] = useState(null); // раскрытая строка списка задач
     const [chatUnread, setChatUnread] = useState(0);
@@ -912,6 +923,7 @@ function App() {
                 currentUsername={currentUsername}
                 currentRole={currentRole}
                 onOpenProfile={setProfileUserId}
+                isPlatformAdmin={isPlatformAdmin}
                 adminUrl={import.meta.env.DEV ? "http://127.0.0.1:8000/admin/" : "https://spisoc-del.onrender.com/admin/"}
                 onLogout={logout}
                 onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
@@ -1381,7 +1393,8 @@ function App() {
                     {tab === "projects" && (
                         <div>
                             <ProjectsTab token={token} canManage={canManage}
-                                currentUserId={currentUserId} currentRole={currentRole} />
+                                currentUserId={currentUserId} currentRole={currentRole}
+                                onOpenClient={(id) => { setClientToOpen(id); setTab("clients"); }} />
                         </div>
                     )}
                     {/* ── CLIENTS TAB (lite CRM) ── */}

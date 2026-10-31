@@ -25,6 +25,14 @@ export const CLIENT_TYPES = [
 ];
 export const clientTypeInfo = key => CLIENT_TYPES.find(t => t.key === key) ?? CLIENT_TYPES[0];
 
+// Статус клиента: работаем / неактивный (спящий) / чёрный список. Ключи совпадают с бэкендом.
+export const CLIENT_STATUSES = [
+    { key: "active", label: "Активный", plural: "Активные" },
+    { key: "inactive", label: "Неактивный", plural: "Неактивные" },
+    { key: "blacklisted", label: "Чёрный список", plural: "Чёрный список" },
+];
+export const clientStatusInfo = key => CLIENT_STATUSES.find(s => s.key === key) ?? CLIENT_STATUSES[0];
+
 export const GENDERS = [
     { key: "male", label: "Мужской" },
     { key: "female", label: "Женский" },
@@ -102,6 +110,23 @@ export function formatTotals(totals) {
 export function formatDateTime(value) {
     if (!value) return "—";
     return new Date(value).toLocaleString("ru-RU", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// «2 часа назад», «вчера», «3 дн. назад»; старше месяца — обычная дата. Пусто → «—».
+export function formatRelative(value, now = Date.now()) {
+    if (!value) return "—";
+    const diff = now - new Date(value).getTime();
+    if (Number.isNaN(diff)) return "—";
+    if (diff < 0) return formatDateTime(value); // событие в будущем — точное время
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return "только что";
+    if (minutes < 60) return `${minutes} мин назад`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} ${plural(hours, "час", "часа", "часов")} назад`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return "вчера";
+    if (days < 30) return `${days} ${plural(days, "день", "дня", "дней")} назад`;
+    return formatDate(value);
 }
 
 export function formatDate(value) {

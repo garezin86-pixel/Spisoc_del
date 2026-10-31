@@ -21,6 +21,11 @@ from src.models.mixins import TenantMixin
 CLIENT_TYPES = ("company", "person")
 DEFAULT_CLIENT_TYPE = "company"
 
+# Статус клиента: active — работаем; inactive — «спящий» (давно не покупает, но не потерян);
+# blacklisted — чёрный список (с ним не работаем: напоминания и «давно без контакта» его не затрагивают).
+CLIENT_STATUSES = ("active", "inactive", "blacklisted")
+DEFAULT_CLIENT_STATUS = "active"
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -35,6 +40,9 @@ class ClientModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     client_type: Mapped[str] = mapped_column(
         String(10), nullable=False, default=DEFAULT_CLIENT_TYPE, server_default=DEFAULT_CLIENT_TYPE
+    )
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, default=DEFAULT_CLIENT_STATUS, server_default=DEFAULT_CLIENT_STATUS
     )
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -60,7 +68,11 @@ class ClientModel(AuditMixin, SoftDeleteMixin, TenantMixin, Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
-    __table_args__ = (Index("ix_clients_owner_id", "owner_id"), Index("ix_clients_next_contact_at", "next_contact_at"))
+    __table_args__ = (
+        Index("ix_clients_owner_id", "owner_id"),
+        Index("ix_clients_next_contact_at", "next_contact_at"),
+        Index("ix_clients_status", "status"),
+    )
 
     def __str__(self):
         return f"{self.name} (id={self.id})"

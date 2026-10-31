@@ -71,14 +71,17 @@ class ProjectService:
         await logger.ainfo("project_created", project_id=created.id, owner_id=current_user.id)
         return created
 
-    async def get_projects(self, current_user: UserModel, offset: int, limit: int) -> tuple[list[ProjectModel], int]:
-        """Возвращает проекты доступные пользователю."""
+    async def get_projects(
+        self, current_user: UserModel, offset: int, limit: int, client_id: int | None = None
+    ) -> tuple[list[ProjectModel], int]:
+        """Возвращает проекты доступные пользователю (client_id — только проекты этого клиента)."""
         is_admin = current_user.role in (UserRole.admin, UserRole.manager)
         return await self.project_repo.get_all_for_user(
             user_id=current_user.id,
             is_admin=is_admin,
             offset=offset,
             limit=limit,
+            client_id=client_id,
         )
 
     async def get_project(self, project_id: int, current_user: UserModel) -> ProjectModel:

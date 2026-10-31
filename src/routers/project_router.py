@@ -1,5 +1,5 @@
 # src/routers/project_router.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from src.core.dependencies import get_current_user
 from src.db import SessionDep
@@ -11,6 +11,13 @@ from src.repositories.users_repository import UserRepository
 from src.schemas.pagination import PaginatedResponse, PaginationParams
 from src.schemas.schemas_project import ProjectClientUpdate, ProjectCreate, ProjectSchema, ProjectUpdate
 from src.services.project_service import ProjectService
+
+
+async def _schemas(session, projects) -> list[ProjectSchema]:
+    """Схемы проектов с названием клиента (названия всех клиентов страницы — одним запросом)."""
+    names = await ClientRepository(session).get_names({p.client_id for p in projects if p.client_id})
+    return [ProjectSchema.from_model(p, names) for p in projects]
+
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -41,7 +48,7 @@ async def create_project(
     current_user: UserModel = Depends(get_current_user),
 ):
     project = await get_project_service(session).create_project(data, current_user)
-    return ProjectSchema.from_model(project)
+    return (await _schemas(session, [project]))[0]
 
 
 @router.get(
@@ -61,13 +68,14 @@ Admin и manager видят все проекты.
 )
 async def get_projects(
     session: SessionDep,
+    client_id: int | None = Query(None, description="Только проекты этого клиента"),
     pagination: PaginationParams = Depends(),
     current_user: UserModel = Depends(get_current_user),
 ):
     projects, total = await get_project_service(session).get_projects(
-        current_user, offset=pagination.offset, limit=pagination.size
+        current_user, offset=pagination.offset, limit=pagination.size, client_id=client_id
     )
-    items = [ProjectSchema.from_model(p) for p in projects]
+    items = await _schemas(session, projects)
     return PaginatedResponse.create(items=items, total=total, page=pagination.page, size=pagination.size)
 
 
@@ -87,7 +95,7 @@ async def get_project(
     current_user: UserModel = Depends(get_current_user),
 ):
     project = await get_project_service(session).get_project(project_id, current_user)
-    return ProjectSchema.from_model(project)
+    return (await _schemas(session, [project]))[0]
 
 
 @router.patch(
@@ -108,7 +116,7 @@ async def update_project(
     current_user: UserModel = Depends(get_current_user),
 ):
     project = await get_project_service(session).update_project(project_id, data, current_user)
-    return ProjectSchema.from_model(project)
+    return (await _schemas(session, [project]))[0]
 
 
 @router.delete(
@@ -192,7 +200,7 @@ async def set_project_group(
     current_user: UserModel = Depends(get_current_user),
 ):
     project = await get_project_service(session).set_project_group(project_id, data.group_id, current_user)
-    return ProjectSchema.from_model(project)
+    return (await _schemas(session, [project]))[0]
 
 
 @router.patch(
@@ -215,4 +223,4 @@ async def set_project_client(
     current_user: UserModel = Depends(get_current_user),
 ):
     project = await get_project_service(session).set_project_client(project_id, data.client_id, current_user)
-    return ProjectSchema.from_model(project)
+    return (await _schemas(session, [project]))[0]

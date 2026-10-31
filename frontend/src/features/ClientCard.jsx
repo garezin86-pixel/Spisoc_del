@@ -8,7 +8,7 @@ import { ScheduledEventsPanel } from "../components/ScheduledEventsPanel";
 import { ICONS } from "../constants/icons";
 import { PersonFields } from "../components/PersonFields";
 import {
-    CLIENT_TYPES, ageFromDate, clientTypeInfo, emptyToNull, formatDate, formatDateTime, genderLabel, isContactDue, plural, todayInput,
+    CLIENT_STATUSES, CLIENT_TYPES, ageFromDate, clientStatusInfo, clientTypeInfo, emptyToNull, formatDate, formatDateTime, genderLabel, isContactDue, plural, todayInput,
 } from "../constants/crm";
 import { userName } from "../hooks/useUsersMap";
 import { DealsBoard } from "./DealsBoard";
@@ -63,7 +63,7 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
 
     const startEdit = () => {
         setForm({
-            name: client.name, client_type: client.client_type ?? "company", birth_date: client.birth_date ?? "", gender: client.gender ?? "", phone: client.phone ?? "", email: client.email ?? "", address: client.address ?? "",
+            name: client.name, client_type: client.client_type ?? "company", status: client.status ?? "active", birth_date: client.birth_date ?? "", gender: client.gender ?? "", phone: client.phone ?? "", email: client.email ?? "", address: client.address ?? "",
             notes: client.notes ?? "", owner_id: client.owner_id ?? "", next_contact_at: client.next_contact_at ?? "",
         });
         setFormError(null);
@@ -78,6 +78,7 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
             const body = {
                 name: form.name.trim(),
                 client_type: form.client_type,
+                status: form.status,
                 ...(form.client_type === "person" ? { birth_date: form.birth_date || null, gender: form.gender || null } : {}),
                 phone: emptyToNull(form.phone),
                 email: emptyToNull(form.email),
@@ -140,7 +141,7 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
                     <div className="cl-avatar cl-avatar--lg" title={typeInfo.label}>{(client.name || "?").trim().charAt(0).toUpperCase()}</div>
                     <div>
                         <h1 className="cl-title">{client.name}</h1>
-                        <div className="cl-sub">{typeInfo.icon} {typeInfo.label} · Ответственный: {userName(usersById, client.owner_id)}{due && <span className="cl-pill cl-pill--due" style={{ marginLeft: 8 }}>пора связаться</span>}</div>
+                        <div className="cl-sub"><span className={`cl-status cl-status--${client.status || "active"}`} style={{ marginRight: 8 }}>{clientStatusInfo(client.status).label}</span>{typeInfo.icon} {typeInfo.label} · Ответственный: {userName(usersById, client.owner_id)}{due && <span className="cl-pill cl-pill--due" style={{ marginLeft: 8 }}>пора связаться</span>}</div>
                     </div>
                 </div>
                 <div className="cl-actions">
@@ -168,6 +169,18 @@ export function ClientCard({ token, clientId, canManage, currentUserId, users, u
                                     key={t.key} type="button" onClick={() => setForm(f => ({ ...f, client_type: t.key }))}
                                     className={`btn btn-sm ${form.client_type === t.key ? "btn-primary" : "btn-ghost"}`}
                                 >{t.icon} {t.label}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Статус</label>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {CLIENT_STATUSES.map(st => (
+                                <button
+                                    key={st.key} type="button" onClick={() => setForm(f => ({ ...f, status: st.key }))}
+                                    aria-pressed={form.status === st.key}
+                                    className={`btn btn-sm ${form.status === st.key ? "btn-primary" : "btn-ghost"}`}
+                                >{st.label}</button>
                             ))}
                         </div>
                     </div>

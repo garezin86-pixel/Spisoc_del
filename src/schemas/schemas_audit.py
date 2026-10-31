@@ -40,6 +40,7 @@ FIELD_LABELS = {
     "group_id": "Группа",
     "priority": "Приоритет",
     "project_id": "Проект",
+    "client_id": "Клиент",
     "deleted_at": "Удалена",
 }
 
@@ -72,11 +73,13 @@ class AuditLogSchema(BaseModel):
     new_values: Optional[dict] = None
     changed_at: Optional[str] = None
     field_labels: dict = {}
+    # Имена для полей-ссылок: {"user_id": {"5": "admin1"}, "project_id": {...}} — чтобы показывать имя вместо «#5»
+    names: dict[str, dict[int, str]] = {}
 
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_model(cls, entry) -> "AuditLogSchema":
+    def from_model(cls, entry, names: dict[str, dict[int, str]] | None = None) -> "AuditLogSchema":
         # Человекочитаемые названия полей для changed fields
         fields = {}
         if entry.new_values:
@@ -95,4 +98,5 @@ class AuditLogSchema(BaseModel):
             new_values=entry.new_values,
             changed_at=_fmt_dt(entry.changed_at),
             field_labels=fields,
+            names=names or {},
         )

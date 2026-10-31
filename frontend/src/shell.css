@@ -365,7 +365,8 @@
 .cl-tab { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-muted); font-weight: 600; }
 .cl-tab:hover { color: var(--text); background: var(--surface2); }
 .cl-tab.active { background: var(--accent); color: #fff; }
-.cl-tab-count { padding: 0 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.22); font-size: 0.75rem; }
+.cl-tab-count { padding: 0 8px; border-radius: 999px; background: var(--accent-dim); color: var(--accent-light); font-size: 0.75rem; }
+.cl-tab.active .cl-tab-count { background: rgba(255, 255, 255, 0.22); color: #fff; }
 
 .cl-filters { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .cl-search { flex: 1 1 280px; width: auto; }
@@ -373,7 +374,7 @@
 .cl-check input { width: 18px; height: 18px; accent-color: var(--accent); }
 
 .cl-table { padding: 8px 20px; }
-.cl-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr) 170px minmax(0, 1fr); gap: 16px; align-items: center; width: 100%; padding: 12px 0; text-align: left; }
+.cl-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.3fr) 130px minmax(0, 0.9fr) minmax(0, 1.2fr); gap: 16px; align-items: center; width: 100%; padding: 12px 0; text-align: left; }
 .cl-row--head { color: var(--text-muted); font-size: 0.82rem; font-weight: 600; border-bottom: 1px solid var(--border); padding: 10px 0; }
 .cl-row--item { border: 0; border-top: 1px solid var(--border); background: none; color: var(--text); font: inherit; cursor: pointer; }
 .cl-row--head + .cl-row--item { border-top: 0; }
@@ -611,3 +612,15 @@
 
 .dl-addpipe { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dl-addpipe .form-input { width: 240px; max-width: 100%; }
+
+/* ─── Статус клиента и последняя активность ─── */
+.cl-status { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; background: var(--green-dim); color: var(--green); }
+.cl-status--inactive { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+.cl-status--blacklisted { background: var(--red-dim); color: var(--red); }
+.cl-cell-activity { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; font-size: 0.88rem; }
+@media (max-width: 900px) { .cl-cell-activity { grid-column: 1 / -1; } }
+
+/* ─── Клиент в проектах ─── */
+.pj-client { cursor: pointer; font: inherit; font-size: 0.78rem; }
+.pj-client:hover { border-color: var(--accent); color: var(--accent-light); }
+.pj-client:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }

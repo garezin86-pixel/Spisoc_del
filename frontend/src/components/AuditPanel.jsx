@@ -45,13 +45,13 @@ export function AuditPanel({ taskId, token }) {
                                             {e.old_values?.[field] !== undefined && (
                                                 <>
                                                     <span style={{ textDecoration: "line-through" }}>
-                                                        {formatAuditValue(field, e.old_values[field])}
+                                                        {formatAuditValue(field, e.old_values[field], e.names?.[field])}
                                                     </span>
                                                     <span aria-hidden="true" style={{ margin: "0 6px" }}>→</span>
                                                 </>
                                             )}
                                             <span style={{ color: "var(--accent-light)" }}>
-                                                {formatAuditValue(field, newVal)}
+                                                {formatAuditValue(field, newVal, e.names?.[field])}
                                             </span>
                                         </div>
                                     ))}

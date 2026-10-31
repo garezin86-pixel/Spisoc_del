@@ -46,6 +46,7 @@ from src.schemas.task import (
     TaskStatusUpdate,
 )
 from src.schemas.task_dependency import TaskDependenciesSchema, TaskDependencyCreate
+from src.services.audit_names import resolve_entity_names
 from src.services.notifications import notify_task_assigned
 from src.services.task_export_service import TaskExportService
 from src.services.task_service import TaskService
@@ -481,7 +482,8 @@ async def get_task_audit(
     current_user: UserModel = Depends(get_current_user),
 ):
     entries = await AuditRepository(session).get_task_audit_entries(task_id)
-    return [AuditLogSchema.from_model(e) for e in entries]
+    names = await resolve_entity_names(session, entries)
+    return [AuditLogSchema.from_model(e, names) for e in entries]
 
 
 @router.get(

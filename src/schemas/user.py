@@ -37,6 +37,13 @@ class UserSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserMeSchema(UserSchema):
+    """Профиль текущего пользователя (GET /users/me): плюс признак админа платформы (доступ в SQLAdmin).
+    Только здесь — в списках сотрудников и ответах по задачам этот признак не отдаётся."""
+
+    is_platform_admin: bool = False
+
+
 class UserSchemaForTask(BaseModel):
     id: int
     username: str

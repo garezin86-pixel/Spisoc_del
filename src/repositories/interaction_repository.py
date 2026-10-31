@@ -43,6 +43,31 @@ class InteractionRepository:
             )
         )
 
+    async def last_activity_many(self, client_ids: list[int]) -> dict[int, tuple[datetime, str]]:
+        """Последнее взаимодействие каждого клиента из списка: {client_id: (occurred_at, type)}.
+        Один запрос на всю страницу списка (оконная функция), клиенты без взаимодействий в результат не попадают."""
+        if not client_ids:
+            return {}
+        ranked = (
+            select(
+                InteractionModel.client_id.label("client_id"),
+                InteractionModel.occurred_at.label("occurred_at"),
+                InteractionModel.type.label("type"),
+                func.row_number()
+                .over(
+                    partition_by=InteractionModel.client_id,
+                    order_by=(InteractionModel.occurred_at.desc(), InteractionModel.id.desc()),
+                )
+                .label("rn"),
+            )
+            .where(InteractionModel.client_id.in_(client_ids), InteractionModel.not_deleted_filter())
+            .subquery()
+        )
+        result = await self.session.execute(
+            select(ranked.c.client_id, ranked.c.occurred_at, ranked.c.type).where(ranked.c.rn == 1)
+        )
+        return {row[0]: (row[1], row[2]) for row in result.all()}
+
     async def create(self, interaction: InteractionModel) -> InteractionModel:
         self.session.add(interaction)
         await self.session.commit()

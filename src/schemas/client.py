@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ClientType = Literal["company", "person"]  # B2B / B2C
 Gender = Literal["male", "female"]
+ClientStatus = Literal["active", "inactive", "blacklisted"]  # работаем / неактивный / чёрный список
 
 
 def _check_birth_date(value: Optional[date]) -> Optional[date]:
@@ -40,6 +41,7 @@ def _check_email(value: Optional[str]) -> Optional[str]:
 class ClientCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)  # название компании или ФИО частного лица
     client_type: ClientType = "company"
+    status: ClientStatus = "active"
     phone: Optional[str] = Field(default=None, max_length=50)
     email: Optional[str] = Field(default=None, max_length=255)
     address: Optional[str] = Field(default=None, max_length=500)
@@ -84,6 +86,7 @@ class ClientUpdate(BaseModel):
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     client_type: Optional[ClientType] = None
+    status: Optional[ClientStatus] = None
     phone: Optional[str] = Field(default=None, max_length=50)
     email: Optional[str] = Field(default=None, max_length=255)
     address: Optional[str] = Field(default=None, max_length=500)
@@ -125,6 +128,13 @@ class ClientUpdate(BaseModel):
             raise ValueError("Тип клиента нельзя очистить")
         return v
 
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v):
+        if v is None:
+            raise ValueError("Статус клиента нельзя очистить")
+        return v
+
     @field_validator("birth_date")
     @classmethod
     def _birth(cls, v):
@@ -135,6 +145,7 @@ class ClientSchema(BaseModel):
     id: int
     name: str
     client_type: str = "company"
+    status: str = "active"
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
@@ -150,10 +161,25 @@ class ClientSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ClientDetailSchema(ClientSchema):
-    """Карточка клиента: плюс дата последнего взаимодействия (None, если их не было)."""
+class ClientListSchema(ClientSchema):
+    """Строка списка клиентов: плюс последняя активность — дата и тип последнего взаимодействия
+    (звонок, встреча и т.д.); None, если взаимодействий не было."""
 
     last_interaction_at: Optional[datetime] = None
+    last_interaction_type: Optional[str] = None
+
+
+class ClientDetailSchema(ClientListSchema):
+    """Карточка клиента: плюс дата последнего взаимодействия (None, если их не было)."""
+
+
+class ClientStatusCounts(BaseModel):
+    """Сколько клиентов в каждом статусе (при тех же поиске и фильтрах, что у списка, но без фильтра по статусу)."""
+
+    all: int = 0
+    active: int = 0
+    inactive: int = 0
+    blacklisted: int = 0
 
 
 class ContactCreate(BaseModel):

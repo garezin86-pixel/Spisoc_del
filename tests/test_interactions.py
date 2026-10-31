@@ -218,9 +218,10 @@ async def test_last_interaction_at_in_client_card(client, world):
     await client.delete(f"/api/clients/{ids['ca']}/interactions/{new['id']}", headers=h)
     card = (await client.get(f"/api/clients/{ids['ca']}", headers=h)).json()
     assert card["last_interaction_at"].startswith(old["occurred_at"][:16])
-    # в списке клиентов поля нет — только в карточке
+    # в списке клиентов последняя активность тоже есть: дата и тип последнего взаимодействия
     listed = (await client.get("/api/clients", headers=h)).json()["items"][0]
-    assert "last_interaction_at" not in listed
+    assert listed["last_interaction_at"].startswith(old["occurred_at"][:16])
+    assert listed["last_interaction_type"] == old["type"]
 
 
 async def test_deleting_client_soft_deletes_interactions(client, world):

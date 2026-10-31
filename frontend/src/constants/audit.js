@@ -19,8 +19,10 @@ const RECURRENCE_LABELS = { none: "Не повторяется", daily: "Каж�
 
 // Человекочитаемое значение поля из журнала аудита: статусы и приоритеты — русскими названиями,
 // даты ISO — в местном формате, пустое — «—», ссылки на сущности — «#id».
-export function formatAuditValue(field, value) {
+// lookup — {id: имя} из ответа сервера для полей-ссылок (исполнитель, группа, проект, клиент); без него — «#id».
+export function formatAuditValue(field, value, lookup) {
     if (value === null || value === undefined || value === "") return "—";
+    if (lookup && lookup[String(value)] !== undefined) return lookup[String(value)];
     if (field === "status") return STATUS_META[value]?.label ?? String(value);
     if (field === "priority") return PRIORITY_LABELS[value] ?? String(value);
     if (field === "recurrence_rule") return RECURRENCE_LABELS[value] ?? String(value);

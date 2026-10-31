@@ -21,6 +21,7 @@ from src.models.deal import DealModel, StageModel
 from src.models.task import SpisokModel
 from src.models.user import UserModel
 from src.repositories.audit_repository import AuditRepository
+from src.services.audit_names import resolve_entity_names
 
 # Человекочитаемые названия полей — только для тех, что реально имеет смысл
 # показывать в ленте. Остальные изменившиеся поля просто выводятся как есть.
@@ -33,6 +34,7 @@ _FIELD_LABELS = {
     "user_id": "исполнитель",
     "project_id": "проект",
     "group_id": "группа",
+    "client_id": "клиент",
     "recurrence_rule": "повторение",
     # сделки
     "stage_id": "стадия",
@@ -128,6 +130,8 @@ class ActivityService:
             stage_names = {row[0]: row[1] for row in result.all()}
 
         names = {"stage_id": stage_names, **{field: user_names for field in _USER_FIELDS}}
+        # группа, проект и клиент — тоже именами, а не «#5»
+        names.update(await resolve_entity_names(self.session, entries, fields=("group_id", "project_id", "client_id")))
         feed = [self._build_item(entry, comments_by_id, titles_by_task_id, deal_titles, names) for entry in entries]
         return feed, total
 

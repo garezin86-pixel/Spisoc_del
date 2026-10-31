@@ -16,7 +16,10 @@ from src.schemas.client import (
     ClientDetailSchema,
     ClientImportColumns,
     ClientImportReport,
+    ClientListSchema,
     ClientSchema,
+    ClientStatus,
+    ClientStatusCounts,
     ClientType,
     ClientUpdate,
     ContactCreate,
@@ -62,11 +65,12 @@ async def export_clients(
     contact_due: bool = Query(False),
     owner_id: int | None = Query(None),
     client_type: ClientType | None = Query(None, description="company — B2B, person — B2C"),
+    status: ClientStatus | None = Query(None, description="active / inactive / blacklisted"),
     current_user: UserModel = Depends(get_current_user),
 ):
     service = CrmExportService(ClientRepository(session), DealRepository(session), UserRepository(session))
     content = await service.clients_csv(
-        current_user, search=search, owner_id=owner_id, client_type=client_type, contact_due=contact_due
+        current_user, search=search, owner_id=owner_id, client_type=client_type, contact_due=contact_due, status=status
     )
     return csv_response(content, "clients_export")
 
@@ -147,11 +151,30 @@ async def create_client(
 
 
 @router.get(
+    "/status-counts",
+    response_model=ClientStatusCounts,
+    summary="Сколько клиентов в каждом статусе",
+    description="Счётчики для вкладок списка: всего, active, inactive, blacklisted. Учитывают те же `search`, "
+    "`contact_due`, `owner_id` и `client_type`, что и список, но не фильтр по статусу. Читать могут все.",
+)
+async def get_client_status_counts(
+    session: SessionDep,
+    search: str | None = Query(None, max_length=100),
+    contact_due: bool = Query(False),
+    owner_id: int | None = Query(None),
+    client_type: ClientType | None = Query(None),
+    current_user: UserModel = Depends(get_current_user),
+):
+    return await get_client_service(session).get_status_counts(search, contact_due, owner_id, client_type)
+
+
+@router.get(
     "",
-    response_model=PaginatedResponse[ClientSchema],
+    response_model=PaginatedResponse[ClientListSchema],
     summary="Список клиентов",
     description="Клиенты компании (юрлица B2B и частные лица B2C). Читать могут все. "
-    "Поиск `search` — по названию, телефону и email (без учёта регистра).",
+    "Поиск `search` — по названию, телефону и email (без учёта регистра). Фильтр `status` — active, inactive или "
+    "blacklisted. В каждой строке — последняя активность (`last_interaction_at`, `last_interaction_type`).",
 )
 async def get_clients(
     session: SessionDep,
@@ -161,6 +184,9 @@ async def get_clients(
     ),
     owner_id: int | None = Query(None, description="Только клиенты этого ответственного"),
     client_type: ClientType | None = Query(None, description="company — компании (B2B), person — частные лица (B2C)"),
+    status: ClientStatus | None = Query(
+        None, description="active — работаем, inactive — неактивные, blacklisted — чёрный список"
+    ),
     pagination: PaginationParams = Depends(),
     current_user: UserModel = Depends(get_current_user),
 ):
@@ -171,8 +197,14 @@ async def get_clients(
         contact_due=contact_due,
         owner_id=owner_id,
         client_type=client_type,
+        status=status,
     )
-    items = [ClientSchema.model_validate(c) for c in clients]
+    activity = await InteractionRepository(session).last_activity_many([c.id for c in clients])
+    items = []
+    for c in clients:
+        item = ClientListSchema.model_validate(c)
+        item.last_interaction_at, item.last_interaction_type = activity.get(c.id, (None, None))
+        items.append(item)
     return PaginatedResponse.create(items=items, total=total, page=pagination.page, size=pagination.size)
 
 

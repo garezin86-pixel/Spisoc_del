@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiRequest } from "../api";
+import { ClientPicker } from "../components/ClientPicker";
 import { Icon } from "../components/Icon";
 import { TaskCard } from "../components/TaskCard";
 import { TaskRow } from "../components/TaskRow";
@@ -7,7 +8,7 @@ import { UserProfileAvatar } from "../components/UserProfileAvatar";
 import { ICONS } from "../constants/icons";
 import { extractItems } from "../utils/extractItems";
 
-export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
+export function ProjectsTab({ token, canManage, currentUserId, currentRole, onOpenClient }) {
     const [projects, setProjects] = useState([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -16,7 +17,8 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
     const [projectTasks, setProjectTasks] = useState([]);
     const [tasksLoading, setTasksLoading] = useState(false);
     const [showCreate, setShowCreate] = useState(false);
-    const [createForm, setCreateForm] = useState({ name: "", description: "", group_id: "" });
+    const [createForm, setCreateForm] = useState({ name: "", description: "", group_id: "", client_id: null, client_name: "" });
+    const [clientFilter, setClientFilter] = useState(""); // "" — все, "none" — без клиента, иначе id клиента
     const [creating, setCreating] = useState(false);
     const [groups, setGroups] = useState([]);
     // const [showGroupPicker, setShowGroupPicker] = useState(false);
@@ -25,7 +27,7 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
 
     // Редактирование проекта в списке
     const [editingProjectId, setEditingProjectId] = useState(null);
-    const [editForm, setEditForm] = useState({ name: "", description: "" });
+    const [editForm, setEditForm] = useState({ name: "", description: "", client_id: null, client_name: "" });
     const [saving, setSaving] = useState(false);
 
     // Управление участниками в списке
@@ -80,9 +82,10 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                     name: createForm.name.trim(),
                     description: createForm.description.trim() || null,
                     group_id: createForm.group_id ? Number(createForm.group_id) : null,
+                    client_id: createForm.client_id || null,
                 }
             });
-            setCreateForm({ name: "", description: "", group_id: "" });
+            setCreateForm({ name: "", description: "", group_id: "", client_id: null, client_name: "" });
             setShowCreate(false);
             await loadProjects();
         } catch (err) { setError(err.message); }
@@ -193,6 +196,14 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                 path: `/projects/${projectId}`, method: "PATCH", token,
                 body: { name: editForm.name.trim(), description: editForm.description.trim() || null },
             });
+            // клиент меняется отдельным запросом — только если его действительно сменили
+            const current = projects.find(x => x.id === projectId);
+            if ((editForm.client_id ?? null) !== (current?.client_id ?? null)) {
+                await apiRequest({
+                    path: `/projects/${projectId}/client`, method: "PATCH", token,
+                    body: { client_id: editForm.client_id ?? null },
+                });
+            }
             setEditingProjectId(null);
             await loadProjects();
         } catch (err) { setError(err.message); }
@@ -269,6 +280,14 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                             <h1 className="cl-title">{selectedProject.name}</h1>
                             {selectedProject.description && (
                                 <div className="cl-sub">{selectedProject.description}</div>
+                            )}
+                            {selectedProject.client_name && (
+                                <div style={{ marginTop: 8 }}>
+                                    <button type="button" className="meta-chip pj-client" title="Открыть клиента"
+                                        onClick={() => onOpenClient?.(selectedProject.client_id)}>
+                                        <Icon d={ICONS.user} size={12} /> {selectedProject.client_name}
+                                    </button>
+                                </div>
                             )}
                             {selectedProject.group?.name && (
                                 <div style={{ marginTop: 4 }}>
@@ -458,6 +477,12 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
     }
 
     // ── Список проектов ────────────────────────────────────
+    // Клиенты, у которых есть проекты (для фильтра), и список с учётом выбранного клиента
+    const clientOptions = [...new Map(projects.filter(p => p.client_id && p.client_name).map(p => [p.client_id, { id: p.client_id, name: p.client_name }])).values()]
+        .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    const shownProjects = projects.filter(p => (
+        !clientFilter || (clientFilter === "none" ? !p.client_id : String(p.client_id) === clientFilter)
+    ));
     return (
         <div className="cl-page">
             <div className="cl-head">
@@ -501,6 +526,11 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                             </select>
                         </div>
+                        <div className="form-group">
+                            <label className="form-label">Клиент</label>
+                            <ClientPicker token={token} value={createForm.client_id} name={createForm.client_name}
+                                onChange={(id, name) => setCreateForm(f => ({ ...f, client_id: id, client_name: name }))} />
+                        </div>
                         <div style={{ display: "flex", gap: 8 }}>
                             <button type="submit" className="btn btn-primary btn-sm"
                                 disabled={creating || !createForm.name.trim()}>
@@ -515,13 +545,26 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                 </div>
             )}
 
+            {clientOptions.length > 0 && (
+                <div className="cl-filters">
+                    <select className="form-input dl-select" aria-label="Клиент" value={clientFilter} onChange={e => setClientFilter(e.target.value)}>
+                        <option value="">Клиент: все</option>
+                        <option value="none">Без клиента</option>
+                        {clientOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    {clientFilter && <button type="button" className="btn btn-ghost" onClick={() => setClientFilter("")}>Сбросить</button>}
+                </div>
+            )}
+
             {loading ? (
                 <div className="empty-state"><div className="empty-icon">⏳</div>Загрузка…</div>
+            ) : shownProjects.length === 0 && projects.length > 0 ? (
+                <div className="empty-state"><div className="empty-icon">🔍</div>Нет проектов по выбранному клиенту</div>
             ) : projects.length === 0 ? (
                 <div className="empty-state"><div className="empty-icon">📁</div>Нет доступных проектов</div>
             ) : (
                 <div className="pj-grid">
-                    {projects.map(p => {
+                    {shownProjects.map(p => {
                         const isEditing = editingProjectId === p.id;
                         const isShowingMembers = membersProjectId === p.id;
                         const currentMembers = membersData[p.id] || p.members || [];
@@ -542,6 +585,8 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                                                 <textarea value={editForm.description}
                                                     onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
                                                     placeholder="Описание (необязательно)" rows={2} />
+                                                <ClientPicker token={token} value={editForm.client_id} name={editForm.client_name}
+                                                    onChange={(id, name) => setEditForm(f => ({ ...f, client_id: id, client_name: name }))} />
                                                 <div style={{ display: "flex", gap: 6 }}>
                                                     <button type="submit" className="btn btn-primary btn-sm"
                                                         disabled={saving || !editForm.name.trim()}>
@@ -577,6 +622,12 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                                 {!isEditing && (
                                     <div className="pj-foot">
                                         <span className="pj-chips">
+                                            {p.client_name && (
+                                                <button type="button" className="meta-chip pj-client" title="Открыть клиента"
+                                                    onClick={e => { e.stopPropagation(); onOpenClient?.(p.client_id); }}>
+                                                    <Icon d={ICONS.user} size={12} /> {p.client_name}
+                                                </button>
+                                            )}
                                             {p.group?.name && <span className="meta-chip">🏷 {p.group.name}</span>}
                                             {p.members?.length > 0 && <span className="meta-chip">👥 {p.members.length}</span>}
                                         </span>
@@ -586,7 +637,7 @@ export function ProjectsTab({ token, canManage, currentUserId, currentRole }) {
                                                     title="Редактировать проект"
                                                     onClick={e => {
                                                         e.stopPropagation();
-                                                        setEditForm({ name: p.name, description: p.description || "" });
+                                                        setEditForm({ name: p.name, description: p.description || "", client_id: p.client_id ?? null, client_name: p.client_name || "" });
                                                         setEditingProjectId(p.id);
                                                         setMembersProjectId(null);
                                                     }}>
