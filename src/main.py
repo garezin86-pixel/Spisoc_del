@@ -18,6 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from src.admin.setup import setup_admin
+from src.bot import setup as bot_setup
 from src.bot.setup import init_bot_username
 from src.core.config import (
     APP_NAME,
@@ -29,6 +30,7 @@ from src.core.config import (
     REDIS_HOST,
     REDIS_PASSWORD,
     REDIS_PORT,
+    RUN_BOT_IN_API,
 )
 from src.core.limiter import limiter
 from src.core.logging import setup_logging
@@ -52,6 +54,36 @@ setup_logging()
 logger = structlog.get_logger()
 
 scheduler = None
+
+
+async def _start_embedded_bot() -> bool:
+    """RUN_BOT_IN_API=true: polling Telegram-бота в процессе API (для хостинга без воркеров).
+
+    По умолчанию выключено — бот остаётся отдельным процессом (`python -m src.bot.runner`,
+    сервис `bot` в docker-compose). Возвращает True, если polling реально запущен
+    (start_bot сам ловит ошибки и логирует bot_start_failed, поэтому проверяем polling_task).
+    """
+    if not RUN_BOT_IN_API:
+        return False
+    if not BOT_TOKEN:
+        await logger.awarning("bot_in_api_skipped", reason="BOT_TOKEN not set")
+        return False
+    await bot_setup.start_bot()
+    if bot_setup.polling_task is None:
+        await logger.aerror("bot_in_api_start_failed")
+        return False
+    await logger.ainfo("bot_in_api_started")
+    return True
+
+
+async def _stop_embedded_bot(started: bool) -> None:
+    if not started:
+        return
+    try:
+        await bot_setup.stop_bot()
+        await logger.ainfo("bot_in_api_stopped")
+    except Exception as e:
+        await logger.aerror("bot_in_api_stop_error", error=str(e))
 
 
 @asynccontextmanager
@@ -100,6 +132,9 @@ async def lifespan(app: FastAPI):
             await logger.aerror("bot_username_init_failed", error=str(e))
     else:
         await logger.awarning("bot_username_init_skipped", reason="BOT_TOKEN not set")
+
+    # ── Бот внутри API (только при RUN_BOT_IN_API=true, см. _start_embedded_bot) ──
+    bot_in_api = await _start_embedded_bot()
 
     # ── AsyncIOScheduler ────────────────
     scheduler = AsyncIOScheduler(timezone="UTC")
@@ -153,6 +188,8 @@ async def lifespan(app: FastAPI):
             await logger.ainfo("scheduler_stopped")
         except Exception as e:
             await logger.aerror("scheduler_stop_error", error=str(e))
+
+    await _stop_embedded_bot(bot_in_api)
 
     try:
         await ws_manager.stop_redis_bridge()

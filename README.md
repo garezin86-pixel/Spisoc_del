@@ -235,6 +235,23 @@ python -m src.bot.runner
 > ⚠️ На free-tier Render сервисы засыпают через 15 минут бездействия.
 > Первый запрос после сна может занять ~30 секунд (cold start).
 
+### Telegram-бот на Render
+
+`uvicorn` запускает только API; бот по умолчанию — отдельный процесс (`python -m src.bot.runner`,
+сервис `bot` в docker-compose). Бесплатных Background Worker на Render нет, поэтому на free-плане
+бота запускают внутри веб-сервиса:
+
+1. В Environment Variables веб-сервиса добавь `RUN_BOT_IN_API=true` (и `BOT_TOKEN`).
+2. Держи **один** экземпляр сервиса и не запускай отдельный `src.bot.runner` — два polling
+   с одним токеном дают в Telegram ошибку 409 Conflict.
+3. Сервис засыпает через 15 минут без запросов, и бот засыпает вместе с ним. Чтобы бот отвечал
+   всегда, настрой внешний пингер (например UptimeRobot) на `https://<твой-сервис>.onrender.com/health`
+   каждые 5 минут.
+4. В логах после старта должны появиться `bot_polling_started` и `bot_in_api_started`;
+   `bot_start_failed` или `bot_in_api_start_failed` — бот не поднялся (проверь `BOT_TOKEN`).
+
+На платном плане лучше вынести бота в Background Worker с командой `python -m src.bot.runner`.
+
 ## Запуск тестов
 
 ```bash

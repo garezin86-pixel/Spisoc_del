@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # self-hosted установке любой, кто видит сервер, иначе мог бы заводить
     # компании. Вход по приглашению от этого флага не зависит.
     allow_company_registration: bool = Field(default=False, alias="ALLOW_COMPANY_REGISTRATION")
+    # true — запускать Telegram-бота (polling) внутри процесса API, без отдельного сервиса bot.
+    # Нужно для хостингов без воркеров (Render free). ТОЛЬКО при одном экземпляре API и если
+    # отдельный `python -m src.bot.runner` не запущен: два polling с одним токеном — ошибка 409.
+    run_bot_in_api: bool = Field(default=False, alias="RUN_BOT_IN_API")
 
     # AI
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
@@ -215,6 +219,7 @@ VOICE_RATE_LIMIT_WINDOW_SECONDS = settings.voice_rate_limit_window_seconds
 GEMINI_API_KEY = settings.gemini_api_key
 SUPER_ADMIN_TG_ID = settings.super_admin_tg_id
 ALLOW_COMPANY_REGISTRATION = settings.allow_company_registration
+RUN_BOT_IN_API = settings.run_bot_in_api
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
