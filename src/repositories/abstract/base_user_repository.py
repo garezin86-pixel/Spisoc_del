@@ -59,6 +59,16 @@ class AbstractUserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def count_active_admins(self, workspace_id: int) -> int:
+        """Сколько активных админов (role=admin) в компании."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def update_role(self, user: UserModel, new_role: str, actor_id: int) -> UserModel:
+        """Меняет роль и пишет запись в audit_log (одним коммитом)."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_admin_by_username(self, username: str) -> UserModel | None:
         raise NotImplementedError
 

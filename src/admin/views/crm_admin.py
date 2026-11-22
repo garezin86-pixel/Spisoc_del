@@ -12,6 +12,8 @@
   * В списках скрыты мягко удалённые строки (deleted_at IS NULL), включая счётчик страниц.
 """
 
+from typing import TYPE_CHECKING, Any
+
 from sqladmin import ModelView
 from sqladmin.filters import StaticValuesFilter
 from sqlalchemy import func, select
@@ -56,6 +58,13 @@ class _ReadOnlyCrmView:
     page_size = 50
     page_size_options = [25, 50, 100, 200]
 
+    if TYPE_CHECKING:
+        # Эти атрибуты приходят из sqladmin.ModelView (model — через model=... в объявлении класса,
+        # pk_columns — при создании view). Миксин сам их не определяет, поэтому типизатору говорим о них
+        # здесь. Внутри TYPE_CHECKING — на работу админки это не влияет.
+        model: Any
+        pk_columns: tuple[Any, ...]
+
     def list_query(self, request):
         return select(self.model).where(self.model.deleted_at.is_(None))
 
@@ -67,7 +76,11 @@ class _ReadOnlyCrmView:
 # 🏢 Клиенты
 # ─────────────────────────────────────────────
 _CLIENT_TYPE_LABELS = {"company": "Компания", "person": "Частное лицо"}
-_CLIENT_STATUS_LABELS = {"active": "Активный", "inactive": "Неактивный", "blacklisted": "Чёрный список"}
+_CLIENT_STATUS_LABELS = {
+    "active": "Активный",
+    "inactive": "Неактивный",
+    "blacklisted": "Чёрный список",
+}
 
 
 class ClientAdmin(_ReadOnlyCrmView, ModelView, model=ClientModel):
@@ -117,9 +130,21 @@ class ClientAdmin(_ReadOnlyCrmView, ModelView, model=ClientModel):
     ]
     column_default_sort = [(ClientModel.id, True)]
     column_filters = [
-        StaticValuesFilter(ClientModel.client_type, _choices(CLIENT_TYPES, _CLIENT_TYPE_LABELS), title="Тип"),
-        StaticValuesFilter(ClientModel.status, _choices(CLIENT_STATUSES, _CLIENT_STATUS_LABELS), title="Статус"),
-        StaticValuesFilter(ClientModel.is_demo, [("true", "Демо"), ("false", "Настоящие")], title="Демо-данные"),
+        StaticValuesFilter(
+            ClientModel.client_type,
+            _choices(CLIENT_TYPES, _CLIENT_TYPE_LABELS),
+            title="Тип",
+        ),
+        StaticValuesFilter(
+            ClientModel.status,
+            _choices(CLIENT_STATUSES, _CLIENT_STATUS_LABELS),
+            title="Статус",
+        ),
+        StaticValuesFilter(
+            ClientModel.is_demo,
+            [("true", "Демо"), ("false", "Настоящие")],
+            title="Демо-данные",
+        ),
     ]
     column_labels = {
         "id": "ID",
@@ -170,9 +195,18 @@ class ContactAdmin(_ReadOnlyCrmView, ModelView, model=ContactModel):
         ContactModel.phone,
         ContactModel.email,
     ]
-    column_details_list = column_list + [ContactModel.notes, ContactModel.created_at, ContactModel.updated_at]
+    column_details_list = column_list + [
+        ContactModel.notes,
+        ContactModel.created_at,
+        ContactModel.updated_at,
+    ]
     column_searchable_list = [ContactModel.name, ContactModel.phone, ContactModel.email]
-    column_sortable_list = [ContactModel.id, ContactModel.workspace_id, ContactModel.client_id, ContactModel.name]
+    column_sortable_list = [
+        ContactModel.id,
+        ContactModel.workspace_id,
+        ContactModel.client_id,
+        ContactModel.name,
+    ]
     column_default_sort = [(ContactModel.id, True)]
     column_labels = {
         "id": "ID",
@@ -186,7 +220,10 @@ class ContactAdmin(_ReadOnlyCrmView, ModelView, model=ContactModel):
         "created_at": "Создан",
         "updated_at": "Изменён",
     }
-    column_formatters_detail = {"created_at": _dt("created_at"), "updated_at": _dt("updated_at")}
+    column_formatters_detail = {
+        "created_at": _dt("created_at"),
+        "updated_at": _dt("updated_at"),
+    }
 
 
 # ─────────────────────────────────────────────
@@ -200,12 +237,26 @@ class PipelineAdmin(_ReadOnlyCrmView, ModelView, model=PipelineModel):
     name_plural = "Воронки"
     icon = "fa-solid fa-filter"
 
-    column_list = [PipelineModel.id, PipelineModel.workspace_id, PipelineModel.name, PipelineModel.created_at]
+    column_list = [
+        PipelineModel.id,
+        PipelineModel.workspace_id,
+        PipelineModel.name,
+        PipelineModel.created_at,
+    ]
     column_details_list = column_list
     column_searchable_list = [PipelineModel.name]
-    column_sortable_list = [PipelineModel.id, PipelineModel.workspace_id, PipelineModel.name]
+    column_sortable_list = [
+        PipelineModel.id,
+        PipelineModel.workspace_id,
+        PipelineModel.name,
+    ]
     column_default_sort = [(PipelineModel.id, False)]
-    column_labels = {"id": "ID", "workspace_id": "Компания (ID)", "name": "Название", "created_at": "Создана"}
+    column_labels = {
+        "id": "ID",
+        "workspace_id": "Компания (ID)",
+        "name": "Название",
+        "created_at": "Создана",
+    }
     column_formatters = {"created_at": _dt("created_at")}
     column_formatters_detail = column_formatters
 
@@ -226,10 +277,22 @@ class StageAdmin(_ReadOnlyCrmView, ModelView, model=StageModel):
     ]
     column_details_list = column_list + [StageModel.created_at]
     column_searchable_list = [StageModel.name]
-    column_sortable_list = [StageModel.id, StageModel.workspace_id, StageModel.pipeline_id, StageModel.position]
-    column_default_sort = [(StageModel.pipeline_id, False), (StageModel.position, False)]
+    column_sortable_list = [
+        StageModel.id,
+        StageModel.workspace_id,
+        StageModel.pipeline_id,
+        StageModel.position,
+    ]
+    column_default_sort = [
+        (StageModel.pipeline_id, False),
+        (StageModel.position, False),
+    ]
     column_filters = [
-        StaticValuesFilter(StageModel.kind, _choices([k.value for k in StageKind], _STAGE_KIND_LABELS), title="Вид")
+        StaticValuesFilter(
+            StageModel.kind,
+            _choices([k.value for k in StageKind], _STAGE_KIND_LABELS),
+            title="Вид",
+        )
     ]
     column_labels = {
         "id": "ID",
@@ -358,7 +421,9 @@ class InteractionAdmin(_ReadOnlyCrmView, ModelView, model=InteractionModel):
     column_default_sort = [(InteractionModel.occurred_at, True)]
     column_filters = [
         StaticValuesFilter(
-            InteractionModel.type, _choices([t.value for t in InteractionType], _INTERACTION_LABELS), title="Тип"
+            InteractionModel.type,
+            _choices([t.value for t in InteractionType], _INTERACTION_LABELS),
+            title="Тип",
         )
     ]
     column_labels = {
@@ -388,7 +453,11 @@ class InteractionAdmin(_ReadOnlyCrmView, ModelView, model=InteractionModel):
 # 📅 Запланированные встречи и звонки
 # ─────────────────────────────────────────────
 _EVENT_TYPE_LABELS = {"call": "Звонок", "meeting": "Встреча"}
-_EVENT_STATUS_LABELS = {"planned": "Запланировано", "done": "Состоялось", "cancelled": "Отменено"}
+_EVENT_STATUS_LABELS = {
+    "planned": "Запланировано",
+    "done": "Состоялось",
+    "cancelled": "Отменено",
+}
 
 
 class ScheduledEventAdmin(_ReadOnlyCrmView, ModelView, model=ScheduledEventModel):
@@ -427,7 +496,9 @@ class ScheduledEventAdmin(_ReadOnlyCrmView, ModelView, model=ScheduledEventModel
     column_default_sort = [(ScheduledEventModel.starts_at, True)]
     column_filters = [
         StaticValuesFilter(
-            ScheduledEventModel.type, _choices([t.value for t in EventType], _EVENT_TYPE_LABELS), title="Тип"
+            ScheduledEventModel.type,
+            _choices([t.value for t in EventType], _EVENT_TYPE_LABELS),
+            title="Тип",
         ),
         StaticValuesFilter(
             ScheduledEventModel.status,
@@ -522,7 +593,7 @@ class WorkspaceInviteAdmin(ModelView, model=WorkspaceInviteModel):
     }
 
     @staticmethod
-    def _state(m: WorkspaceInviteModel) -> str:
+    def _state(m: Any) -> str:
         from datetime import datetime, timezone
 
         if m.revoked_at is not None:

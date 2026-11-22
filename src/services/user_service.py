@@ -1,6 +1,7 @@
-from src.core.constants import NO_ACCESS, USER_ALREADY_EXISTS, USER_NOT_FOUND
+from src.core.constants import LAST_ADMIN_CANNOT_BE_DEMOTED, NO_ACCESS, USER_ALREADY_EXISTS, USER_NOT_FOUND
 from src.core.exceptions import (
     current_admin,
+    incorrect_request,
     invalid_credentials,
     no_access,
     user_already_exists,
@@ -110,6 +111,39 @@ class UserService:
             user.position = data.position or None
 
         return await self.user_repo.update(user)
+
+    async def change_role(self, user_id: int, new_role: str, current_user: UserModel) -> UserModel:
+        """Меняет роль участника своей компании (user / manager / admin).
+
+        Правила:
+            - только admin компании (проверяется и здесь, не только в роутере);
+            - только пользователи ТОЙ ЖЕ компании — чужой id отвечает 404, как будто его нет;
+            - нельзя понизить последнего активного админа (в т.ч. себя): компания
+              осталась бы без администратора, а вернуть доступ можно только через SQLAdmin;
+            - is_platform_admin эндпоинтом не затрагивается;
+            - то же значение — no-op без записи в аудит.
+
+        Raises:
+            HTTPException 403: текущий пользователь не admin.
+            HTTPException 404: пользователь не найден (или из другой компании).
+            HTTPException 400: попытка понизить единственного админа.
+        """
+        if current_user.role != "admin":
+            current_admin()
+
+        user = await self.user_repo.get_user_id(user_id)
+        if not user or user.workspace_id != current_user.workspace_id:
+            user_not_found(USER_NOT_FOUND)
+            raise
+
+        if str(user.role) == new_role:
+            return user
+
+        if str(user.role) == "admin" and new_role != "admin":
+            if await self.user_repo.count_active_admins(user.workspace_id) <= 1:
+                incorrect_request(LAST_ADMIN_CANNOT_BE_DEMOTED)
+
+        return await self.user_repo.update_role(user, new_role, current_user.id)
 
     async def delete_user(self, user_id: int) -> dict:
         """Полностью удаляет пользователя из БД (hard delete).

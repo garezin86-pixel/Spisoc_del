@@ -2,7 +2,8 @@ from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.tenant_scope import SKIP_WORKSPACE_SCOPE, set_session_workspace
-from src.models.user import UserModel
+from src.models.audit import AuditAction, AuditLog
+from src.models.user import UserModel, UserRole
 from src.models.workspace import WorkspaceModel
 from src.repositories.abstract.base_user_repository import AbstractUserRepository
 
@@ -108,6 +109,39 @@ class UserRepository(AbstractUserRepository):
         """
         await self.session.execute(update(UserModel).where(UserModel.username == username).values(role=role))
         await self.session.commit()
+
+    async def count_active_admins(self, workspace_id: int) -> int:
+        """Считает активных админов компании (явный фильтр по workspace_id —
+        не полагаемся только на автоскоуп сессии)."""
+        result = await self.session.scalar(
+            select(func.count())
+            .select_from(UserModel)
+            .where(
+                UserModel.workspace_id == workspace_id,
+                UserModel.role == UserRole.admin.value,
+                UserModel.is_active.is_(True),
+            )
+        )
+        return result or 0
+
+    async def update_role(self, user: UserModel, new_role: str, actor_id: int) -> UserModel:
+        """Меняет роль и в той же транзакции пишет audit_log (кто, кому, с какой на какую)."""
+        old_role = str(user.role)
+        user.role = new_role
+        self.session.add(
+            AuditLog(
+                user_id=actor_id,
+                workspace_id=user.workspace_id,
+                entity_type="users",
+                entity_id=user.id,
+                action=AuditAction.update,
+                old_values={"role": old_role},
+                new_values={"role": new_role},
+            )
+        )
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
 
     async def get_admin_by_username(self, username: str) -> UserModel | None:
         """Возвращает пользователя только если он существует и имеет доступ в SQLAdmin.

@@ -6,11 +6,15 @@ import { ChatIcon } from "../components/layout/shellIcons";
 import { ICONS } from "../constants/icons";
 import { ROLE_LABELS, ROLE_COLORS } from "../constants/roles";
 
-export function TeamTab({ token, currentUserId }) {
+export function TeamTab({ token, currentUserId, currentRole }) {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [query, setQuery] = useState("");
+    const [savingId, setSavingId] = useState(null);
+    // Менять роли может только админ компании; себе роль не меняем (защита от случайного
+    // самоотстранения — сервер дополнительно не даёт понизить единственного админа).
+    const canChangeRoles = currentRole === "admin";
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -26,6 +30,29 @@ export function TeamTab({ token, currentUserId }) {
     }, [token]);
 
     useEffect(() => { load(); }, [load]);
+
+    const changeRole = useCallback(async (u, role) => {
+        if (role === u.role) return;
+        let question = null;
+        if (role === "admin") {
+            question = `Сделать «${u.username}» администратором? Он получит полный доступ к компании.`;
+        } else if (u.role === "admin") {
+            question = `Забрать у «${u.username}» права администратора?`;
+        }
+        if (question && !window.confirm(question)) return;
+        setSavingId(u.id);
+        setError(null);
+        try {
+            const updated = await apiRequest({
+                path: `/users/${u.id}/role`, method: "PATCH", token, body: { role },
+            });
+            setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, role: updated.role } : x)));
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSavingId(null);
+        }
+    }, [token]);
 
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -81,9 +108,26 @@ export function TeamTab({ token, currentUserId }) {
                                         {!u.is_active && <span className="inactive-badge" style={{ marginLeft: 6 }}>неакт.</span>}
                                     </div>
                                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
-                                        <span className="role-badge" style={{ color: rc.color, background: rc.bg, fontSize: 11 }}>
-                                            {ROLE_LABELS[u.role] ?? u.role}
-                                        </span>
+                                        {canChangeRoles && u.id !== currentUserId ? (
+                                            <select
+                                                className="form-input"
+                                                aria-label={`Роль: ${u.username}`}
+                                                value={u.role}
+                                                disabled={savingId === u.id}
+                                                onClick={e => e.stopPropagation()}
+                                                onKeyDown={e => e.stopPropagation()}
+                                                onChange={e => changeRole(u, e.target.value)}
+                                                style={{ width: "auto", padding: "2px 6px", fontSize: 12, color: rc.color }}
+                                            >
+                                                {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                                                    <option key={value} value={value}>{label}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <span className="role-badge" style={{ color: rc.color, background: rc.bg, fontSize: 11 }}>
+                                                {ROLE_LABELS[u.role] ?? u.role}
+                                            </span>
+                                        )}
                                         {u.position && (
                                             <span style={{
                                                 fontSize: 12, color: "var(--text-muted)",

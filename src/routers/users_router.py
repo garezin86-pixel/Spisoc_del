@@ -17,7 +17,14 @@ from src.repositories.tag_repository import TagRepository
 from src.repositories.task_repository import TaskRepository
 from src.repositories.users_repository import UserRepository
 from src.schemas.pagination import PaginatedResponse, PaginationParams
-from src.schemas.user import ChangePasswordRequest, UserMeSchema, UserRegister, UserSchema, UserUpdate
+from src.schemas.user import (
+    ChangePasswordRequest,
+    UserMeSchema,
+    UserRegister,
+    UserRoleUpdate,
+    UserSchema,
+    UserUpdate,
+)
 from src.services.active_storage import storage
 from src.services.task_service import TaskService
 from src.services.user_service import UserService
@@ -225,6 +232,42 @@ async def update_user(
     current_user: UserModel = Depends(get_current_user),
 ):
     user = await get_user_service(session).update_user(user_id, data, current_user)
+
+    await cache_manager.invalidate_users()
+    await cache_manager.invalidate_groups()
+
+    return user
+
+
+@router.patch(
+    "/{user_id}/role",
+    response_model=UserSchema,
+    summary="Сменить роль участника",
+    description="""
+Меняет роль участника своей компании: `user`, `manager` или `admin`.
+
+**Требует роль admin.** Нельзя понизить единственного администратора компании.
+Изменение записывается в историю (audit_log). Новая роль действует со следующего запроса
+участника; флаг доступа в SQLAdmin (`is_platform_admin`) этим эндпоинтом не меняется.
+
+Side-effects:
+- Инвалидирует кэш пользователей и групп в Redis.
+""",
+    responses={
+        200: {"description": "Пользователь с новой ролью"},
+        400: {"description": "Нельзя понизить единственного администратора"},
+        403: {"description": "Недостаточно прав — требуется роль admin"},
+        404: {"description": "Пользователь не найден"},
+        422: {"description": "Недопустимая роль"},
+    },
+)
+async def change_user_role(
+    user_id: int,
+    data: UserRoleUpdate,
+    session: SessionDep,
+    admin: UserModel = Depends(get_current_admin),
+):
+    user = await get_user_service(session).change_role(user_id, data.role, admin)
 
     await cache_manager.invalidate_users()
     await cache_manager.invalidate_groups()

@@ -19,6 +19,7 @@ WORKSPACE_DISABLED = "Company account is disabled"
 # Admin
 FOR_ADMIN_ONLY = "For administrator only"
 NO_ACCESS = "No access"
+LAST_ADMIN_CANNOT_BE_DEMOTED = "Нельзя понизить единственного администратора компании"
 USER_OR_GROUP_NOT_FOUND = "User or group not found"
 
 # Goup

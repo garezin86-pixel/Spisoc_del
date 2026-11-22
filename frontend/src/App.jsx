@@ -1438,7 +1438,7 @@ function App() {
                     {/* ── TEAM TAB ── */}
                     {tab === "team" && (
                         <div className="cl-page">
-                            <TeamTab token={token} currentUserId={currentUserId} />
+                            <TeamTab token={token} currentUserId={currentUserId} currentRole={currentRole} />
                             {currentRole === "admin" && <InvitesPanel token={token} />}
                         </div>
                     )}

@@ -64,6 +64,12 @@ class UserUpdate(BaseModel):
         return _validate_username(v)
 
 
+class UserRoleUpdate(BaseModel):
+    """Тело PATCH /users/{id}/role. Только роли внутри компании — is_platform_admin сюда не входит."""
+
+    role: Literal["user", "manager", "admin"]
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=6, max_length=100)

@@ -77,6 +77,17 @@ class MockUserRepository(AbstractUserRepository):
         if user:
             user.role = role
 
+    async def count_active_admins(self, workspace_id: int) -> int:
+        return sum(
+            1
+            for u in self._users
+            if u.workspace_id == workspace_id and str(u.role) == "admin" and u.is_active is not False
+        )
+
+    async def update_role(self, user: UserModel, new_role: str, actor_id: int) -> UserModel:
+        user.role = new_role
+        return user
+
     async def get_admin_by_username(self, username: str) -> UserModel | None:
         # См. src/repositories/users_repository.py — доступ в SQLAdmin даёт
         # is_platform_admin, а не role == "admin" (тот означает "админ
