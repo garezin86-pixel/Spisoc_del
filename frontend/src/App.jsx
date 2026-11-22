@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setTokenRefreshHandler } from "./api";
+import { ADMIN_URL, API_BASE, apiRequest, clearTokens, getRefreshToken, saveTokens, setTokenRefreshHandler } from "./api";
 import { AIPanel } from "./components/AIPanel";
 import { ChatBubble } from "./components/ChatBubble";
 import { ClientPicker } from "./components/ClientPicker";
@@ -924,7 +924,7 @@ function App() {
                 currentRole={currentRole}
                 onOpenProfile={setProfileUserId}
                 isPlatformAdmin={isPlatformAdmin}
-                adminUrl={import.meta.env.DEV ? "http://127.0.0.1:8000/admin/" : "https://spisoc-del.onrender.com/admin/"}
+                adminUrl={ADMIN_URL}
                 onLogout={logout}
                 onOpenTask={(title) => { setTab("tasks"); setSearchQuery(title); }}
             />

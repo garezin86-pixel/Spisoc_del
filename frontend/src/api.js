@@ -1,5 +1,26 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
+// Ссылка на SQLAdmin (меню пользователя). Ничего подгонять под окружение не нужно:
+//   * по умолчанию относительная "/admin/" — на проде интерфейс и админку отдаёт один и тот же
+//     сервер (Render, Docker, за reverse proxy), а в разработке запрос идёт через dev-прокси
+//     Vite (см. vite.config.js, правило "/admin");
+//   * если API вынесен на другой домен (VITE_API_BASE=https://api.example.com), админка берётся
+//     оттуда же: https://api.example.com/admin/;
+//   * явная VITE_ADMIN_URL перекрывает всё (нестандартный адрес админки).
+function resolveAdminUrl() {
+    const explicit = import.meta.env.VITE_ADMIN_URL;
+    if (explicit) return explicit;
+    try {
+        const api = new URL(API_BASE, window.location.origin);
+        if (api.origin !== window.location.origin) return `${api.origin}/admin/`;
+    } catch {
+        // некорректный VITE_API_BASE — остаёмся на относительной ссылке
+    }
+    return "/admin/";
+}
+
+export const ADMIN_URL = resolveAdminUrl();
+
 // ─── Ключи хранилища ──────────────────────────────────────────────────────────
 const TOKEN_KEY = "spisoc_token";
 const REFRESH_TOKEN_KEY = "spisoc_refresh_token";
