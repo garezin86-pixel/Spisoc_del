@@ -9,7 +9,9 @@ from .chat_router import router as chat_router
 from .checklist_router import router as checklist_router
 from .client_router import router as client_router
 from .comments_router import router as comments_router
+from .custom_fields_router import router as custom_fields_router
 from .dashboard_router import router as dashboard_router
+from .deal_items_router import router as deal_items_router
 from .deal_router import router as deal_router
 from .demo_router import router as demo_router
 from .group_router import router as group_router
@@ -26,6 +28,7 @@ from .tags_router import router as tags_router
 from .tasks_router import router as tasks_router
 from .templates_router import router as templates_router
 from .two_factor_router import router as two_factor_router
+from .user_custom_tables_router import router as user_custom_tables_router
 from .users_router import router as users_router
 from .webhook_router import router as webhook_router
 from .workspace_router import router as workspace_router
@@ -48,6 +51,9 @@ api_router.include_router(ai_router)
 api_router.include_router(pipeline_router)
 api_router.include_router(pipelines_router)
 api_router.include_router(deal_router)
+api_router.include_router(deal_items_router)
+api_router.include_router(custom_fields_router)
+api_router.include_router(user_custom_tables_router)
 api_router.include_router(tables_router)
 api_router.include_router(demo_router)
 api_router.include_router(push_router)

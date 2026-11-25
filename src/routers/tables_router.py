@@ -40,13 +40,14 @@ def _parse_json_list(raw: str | None, adapter: TypeAdapter, name: str) -> list:
     "",
     response_model=list[SourceSchema],
     summary="Источники таблиц",
-    description="Список источников данных, из которых можно собирать таблицы (клиенты, сделки).",
+    description="Список источников данных, из которых можно собирать таблицы: клиенты, сделки, оборудование и "
+    "самостоятельные таблицы пользователей (`uct_<id>`), которые видит пользователь.",
 )
 async def list_sources(
     service: TableQueryService = Depends(get_table_service),
     current_user: UserModel = Depends(get_current_user),
 ):
-    return service.list_sources()
+    return await service.list_sources(current_user)
 
 
 @router.get(
@@ -62,7 +63,7 @@ async def table_meta(
     service: TableQueryService = Depends(get_table_service),
     current_user: UserModel = Depends(get_current_user),
 ):
-    return service.meta(source)
+    return await service.meta(source, current_user)
 
 
 @router.get(

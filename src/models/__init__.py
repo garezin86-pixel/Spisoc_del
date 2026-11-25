@@ -5,7 +5,9 @@ from src.models.chat_message import ChatMessageModel
 from src.models.checklist import TaskChecklistItemModel
 from src.models.client import ClientModel, ContactModel
 from src.models.comment import CommentModel
+from src.models.custom_field import CustomFieldModel, CustomFieldValueModel
 from src.models.deal import DealModel, PipelineModel, StageModel
+from src.models.deal_item import DealItemModel
 from src.models.filter_preset import FilterPresetModel
 from src.models.group import GroupModel, user_group
 from src.models.interaction import InteractionModel
@@ -21,6 +23,13 @@ from src.models.task_dependency import TaskDependencyModel
 from src.models.template import TaskTemplateItemModel, TaskTemplateModel
 from src.models.two_factor_recovery_code import TwoFactorRecoveryCodeModel
 from src.models.user import UserModel
+from src.models.user_custom_table import (
+    UserCustomTableCellModel,
+    UserCustomTableColumnModel,
+    UserCustomTableMemberModel,
+    UserCustomTableModel,
+    UserCustomTableRowModel,
+)
 from src.models.webhook import WebhookModel
 from src.models.workspace import WorkspaceModel
 from src.models.workspace_invite import WorkspaceInviteModel
@@ -56,6 +65,14 @@ __all__ = [
     "WorkspaceModel",
     "WorkspaceInviteModel",
     "DealModel",
+    "UserCustomTableModel",
+    "UserCustomTableColumnModel",
+    "UserCustomTableRowModel",
+    "UserCustomTableCellModel",
+    "UserCustomTableMemberModel",
+    "CustomFieldModel",
+    "CustomFieldValueModel",
+    "DealItemModel",
     "PipelineModel",
     "StageModel",
 ]

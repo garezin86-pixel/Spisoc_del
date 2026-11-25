@@ -6,6 +6,8 @@
 или значение не того типа не доходят до базы.
 
 Читать таблицы клиентов и сделок могут все пользователи компании — как и обычные списки CRM.
+Самостоятельные таблицы пользователей (`uct_<id>`, этап 4.3) читает тот, кто их видит: общие — вся компания,
+личные — владелец, admin и manager, с ограниченным доступом — они и участники (недоступная таблица — 404).
 """
 
 import math
@@ -26,7 +28,16 @@ from src.schemas.tables import (
     TableRowsSchema,
     TableSort,
 )
-from src.services.table_registry import OPS_BY_TYPE, SOURCES, ColumnDef, SourceDef
+from src.services.table_registry import (
+    OPS_BY_TYPE,
+    SOURCES,
+    ColumnDef,
+    SourceDef,
+    custom_columns,
+    parse_user_table_source_key,
+    user_table_source,
+)
+from src.services.user_custom_table_service import can_view_table
 
 MAX_FILTERS = 20
 MAX_SORTS = 3
@@ -45,9 +56,9 @@ def _bad(detail: str) -> HTTPException:
 
 
 def _json_value(value: Any) -> Any:
-    """Значение ячейки в JSON: деньги строкой (без потери точности), даты в ISO."""
+    """Значение ячейки в JSON: деньги числом (как во всём API, см. Money в schemas/deal.py), даты в ISO."""
     if isinstance(value, Decimal):
-        return str(value)
+        return float(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     return value
@@ -58,19 +69,42 @@ class TableQueryService:
         self.repo = repo
 
     # ── описание ─────────────────────────────────────────────────────────────
-    @staticmethod
-    def list_sources() -> list[SourceSchema]:
-        return [SourceSchema(key=s.key, label=s.label) for s in SOURCES.values()]
+    async def list_sources(self, current_user: UserModel) -> list[SourceSchema]:
+        """Источники: клиенты, сделки, оборудование и самостоятельные таблицы, которые видит пользователь."""
+        sources = [SourceSchema(key=s.key, label=s.label) for s in SOURCES.values()]
+        member_access = await self.repo.user_table_member_access(current_user.id)
+        for table in await self.repo.list_user_tables():
+            if can_view_table(table, current_user, member_access.get(table.id)):
+                sources.append(SourceSchema(key=f"uct_{table.id}", label=table.name))
+        return sources
 
-    @staticmethod
-    def _source_or_404(source_key: str) -> SourceDef:
-        source = SOURCES.get(source_key)
-        if source is None:
+    async def _resolve(self, source_key: str, current_user: UserModel) -> tuple[SourceDef, dict[str, ColumnDef]]:
+        """Источник и его колонки. Самостоятельная таблица строится из её колонок; скрытая — 404."""
+        table_id = parse_user_table_source_key(source_key)
+        if table_id is not None:
+            table = await self.repo.get_user_table(table_id)
+            member_can_edit = (await self.repo.user_table_member_access(current_user.id)).get(table_id)
+            if table is None or not can_view_table(table, current_user, member_can_edit):
+                raise HTTPException(404, "Источник таблицы не найден")
+            columns = await self.repo.list_user_columns(table_id)
+            source = user_table_source(table, columns, current_user.workspace_id)
+            return source, {c.key: c for c in source.columns}
+        static = SOURCES.get(source_key)
+        if static is None:
             raise HTTPException(404, "Источник таблицы не найден")
-        return source
+        return static, await self._columns(static, current_user.workspace_id)
 
-    def meta(self, source_key: str) -> TableMetaSchema:
-        source = self._source_or_404(source_key)
+    async def _columns(self, source: SourceDef, workspace_id: int) -> dict[str, ColumnDef]:
+        """Все колонки источника: из реестра плюс свои поля компании (cf_<id>)."""
+        columns = {c.key: c for c in source.columns}
+        if source.custom_entities:
+            fields = await self.repo.list_custom_fields([ce.entity_type for ce in source.custom_entities])
+            for col in custom_columns(source, fields, workspace_id):
+                columns[col.key] = col
+        return columns
+
+    async def meta(self, source_key: str, current_user: UserModel) -> TableMetaSchema:
+        source, columns = await self._resolve(source_key, current_user)
         return TableMetaSchema(
             source=source.key,
             label=source.label,
@@ -87,7 +121,7 @@ class TableQueryService:
                     ops=list(OPS_BY_TYPE[c.type]) if c.filterable else [],  # type: ignore[arg-type]
                     options=list(c.options) if c.options else None,
                 )
-                for c in source.columns
+                for c in columns.values()
             ],
             default_columns=list(source.default_columns),
         )
@@ -106,8 +140,8 @@ class TableQueryService:
                 return value
             if isinstance(value, bool):  # True/False не годятся ни для чего, кроме boolean
                 raise ValueError
-            if kind in ("number", "user"):
-                if kind == "user" or col.integer:
+            if kind in ("number", "user", "client", "deal"):
+                if kind != "number" or col.integer:
                     if isinstance(value, float) and not value.is_integer():
                         raise ValueError
                     return int(value)
@@ -137,8 +171,8 @@ class TableQueryService:
         except (ValueError, TypeError, InvalidOperation):
             raise _bad(f"Некорректное значение для колонки «{col.key}»") from None
 
-    def _condition(self, source: SourceDef, flt: TableFilter) -> Any:
-        col = source.column(flt.field)
+    def _condition(self, columns: dict[str, ColumnDef], flt: TableFilter) -> Any:
+        col = columns.get(flt.field)
         if col is None:
             raise _bad(f"Неизвестная колонка «{flt.field}»")
         if not col.filterable:
@@ -173,11 +207,11 @@ class TableQueryService:
             return expr < value
         return expr <= value  # lte
 
-    def _order(self, source: SourceDef, sorts: list[TableSort]) -> list[Any]:
+    def _order(self, source: SourceDef, columns: dict[str, ColumnDef], sorts: list[TableSort]) -> list[Any]:
         order: list[Any] = []
         effective = sorts or [TableSort(field=key, direction=direction) for key, direction in source.default_sort]  # type: ignore[arg-type]
         for item in effective:
-            col = source.column(item.field)
+            col = columns.get(item.field)
             if col is None:
                 raise _bad(f"Неизвестная колонка «{item.field}»")
             if not col.sortable:
@@ -191,11 +225,13 @@ class TableQueryService:
         return order
 
     @staticmethod
-    def _select_columns(source: SourceDef, requested: list[str] | None) -> list[ColumnDef]:
+    def _select_columns(
+        source: SourceDef, columns_by_key: dict[str, ColumnDef], requested: list[str] | None
+    ) -> list[ColumnDef]:
         keys = list(dict.fromkeys(requested)) if requested else list(source.default_columns)
         columns: list[ColumnDef] = []
         for key in keys:
-            col = source.column(key)
+            col = columns_by_key.get(key)
             if col is None:
                 raise _bad(f"Неизвестная колонка «{key}»")
             columns.append(col)
@@ -212,19 +248,19 @@ class TableQueryService:
         page: int,
         size: int,
     ) -> TableRowsSchema:
-        source = self._source_or_404(source_key)
         if len(filters) > MAX_FILTERS:
             raise _bad(f"Не больше {MAX_FILTERS} условий фильтра")
         if len(sorts) > MAX_SORTS:
             raise _bad(f"Не больше {MAX_SORTS} ключей сортировки")
 
-        selected = self._select_columns(source, columns)
+        source, available = await self._resolve(source_key, current_user)
+        selected = self._select_columns(source, available, columns)
         model = source.model
         conditions = [
             model.workspace_id == current_user.workspace_id,
             model.not_deleted_filter(),
             *source.extra_conditions(),
-            *[self._condition(source, f) for f in filters],
+            *[self._condition(available, f) for f in filters],
         ]
 
         count_stmt: Select = source.joins(select(func.count())).where(*conditions)
@@ -237,7 +273,7 @@ class TableQueryService:
                 *[c.expr.label(c.key) for c in selected],
             )
         ).where(*conditions)
-        stmt = stmt.order_by(*self._order(source, sorts)).offset((page - 1) * size).limit(size)
+        stmt = stmt.order_by(*self._order(source, available, sorts)).offset((page - 1) * size).limit(size)
 
         rows = await self.repo.rows(stmt)
         items = [

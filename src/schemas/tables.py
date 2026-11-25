@@ -10,7 +10,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 FilterOp = Literal["eq", "ne", "contains", "gt", "gte", "lt", "lte", "in", "is_null", "not_null"]
-ColumnType = Literal["text", "number", "date", "datetime", "select", "user", "boolean"]
+ColumnType = Literal["text", "number", "date", "datetime", "select", "user", "client", "deal", "boolean"]
 
 
 class TableFilter(BaseModel):

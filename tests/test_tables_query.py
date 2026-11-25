@@ -49,7 +49,7 @@ async def test_sources_and_meta(client, world):
     _, _, logins = world
     h = await _headers(client, logins, "other")  # читать может и обычный пользователь
     sources = (await client.get("/api/tables", headers=h)).json()
-    assert {s["key"] for s in sources} == {"clients", "deals"}
+    assert {s["key"] for s in sources} == {"clients", "deals", "deal_items"}
 
     meta = (await client.get("/api/tables/deals/meta", headers=h)).json()
     cols = {c["key"]: c for c in meta["columns"]}
@@ -213,7 +213,9 @@ async def test_deals_table_manager_client_stage(client, world):
     assert body["total"] == 2
     assert [r["title"] for r in body["items"]] == ["ONU", "Роутер"]
     assert body["items"][0]["client_name"] == "Ромашка" and body["items"][0]["owner_name"] == "owner"
-    assert body["items"][1]["amount"] == "120.50" and body["items"][1]["currency"] == "USD"  # деньги строкой
+    assert (
+        body["items"][1]["amount"] == 120.5 and body["items"][1]["currency"] == "USD"
+    )  # деньги числом, как во всём API
     assert body["items"][1]["_id"] == won1
 
     by_manager = await client.get(
